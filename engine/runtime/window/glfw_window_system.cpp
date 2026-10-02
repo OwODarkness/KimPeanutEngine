@@ -47,6 +47,7 @@ namespace kpengine
         }
         else if (create_info.graphics_api_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
+            glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
             glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
             glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
             glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);

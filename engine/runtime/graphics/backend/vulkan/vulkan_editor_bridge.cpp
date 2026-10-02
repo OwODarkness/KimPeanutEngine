@@ -6,14 +6,29 @@
 #include "vulkan_device.h"
 #include "vulkan_frame_context.h"
 #include "vulkan_swapchain.h"
+#include "graphics/backend/common/render_backend.h"
+#include "graphics/backend/common/command_recorder.h"
 
 namespace kpengine::graphics
 {
-    VulkanEditorBridge::VulkanEditorBridge(VulkanDevice &device, VulkanSwapchain &swapchain,
-                                           VulkanFrameContext &frame_context)
-        : device_(&device), swapchain_(&swapchain), frame_context_(&frame_context)
+    VulkanEditorBridge::VulkanEditorBridge(VulkanDevice &device,
+                                           VulkanSwapchain &swapchain,
+                                           VulkanFrameContext &frame_context,
+                                           RenderBackend &backend)
+        : device_(&device), swapchain_(&swapchain), frame_context_(&frame_context),
+          backend_(&backend)
     {
         OnSwapchainRecreated();
+    }
+
+    bool VulkanEditorBridge::ExecuteRhiFrame(const RhiFrameCallback &record_frame)
+    {
+        if (!frame_active_ || backend_ == nullptr || !record_frame)
+        {
+            return false;
+        }
+        CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        return recorder != nullptr && record_frame(*backend_, *recorder);
     }
 
     VulkanEditorBridgeInfo VulkanEditorBridge::GetInfo() const

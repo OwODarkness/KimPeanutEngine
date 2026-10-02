@@ -1,6 +1,6 @@
 # Editor TODO
 
-**Status: ED1–ED3 implemented; ED4 planned; ED5 proposed (design only).** Architecture and stage designs are mapped in [PLANS.md](PLANS.md); landed editor design is in [editor_module.md](editor_module.md). Parent work remains in the root [status ledger](../status.md).
+**Status: ED1–ED3 implemented; ED4 loading wireframe present; ED5 implementation in progress, acceptance open.** Architecture and stage designs are mapped in [PLANS.md](PLANS.md); landed editor design is in [editor_module.md](editor_module.md). Parent work remains in the root [status ledger](../status.md).
 
 ## ED — Editor shell and layout
 
@@ -43,9 +43,11 @@
 
 ## ED5 — Selective editor UI bloom
 
-Canonical design: [ED5](.plan/ED5.md). ImGui core and vendored backend sources
+Canonical design: [ED5](.plan/ED5.md); active execution contract:
+[spec](../../.spec/specs/editor-selective-ui-bloom.md). ImGui core and vendored backend sources
 remain untouched. Editor owns effect policy and UI presentation; Render owns
 the frame schedule, and Graphics owns physical GPU objects and synchronization.
+Progress journal: [2026-10-02](../../.spec/journal/2026-10-02-editor-selective-ui-bloom.md).
 
 - [ ] **ED5.1 — Contracts and baseline:** freeze color/callback/texture rules,
   loading-safe frame access, copied markers, and Vulkan/OpenGL baseline captures.
@@ -56,6 +58,15 @@ the frame schedule, and Graphics owns physical GPU objects and synchronization.
 - [ ] **ED5.4 — Integration and acceptance:** theme presets, loading wire and
   selected label, budget/failure behavior, retirement stress, and matched
   RelWithDebInfo performance evidence.
+
+The common Editor adapter now copies ImGui geometry and marker payloads, uploads
+the font, presents a linear color canvas through Graphics, and records bounded
+emission, half-resolution Gaussian filtering, and ordered halo composition.
+Loading wire/status and the selected World Outliner row provide explicit source
+regions; the Tool menu's **UI Glow** switch disables them. Runtime captures
+show readable Vulkan presentation. OpenGL currently differs in UI color and
+needs correction before cross-backend acceptance. Retirement stress,
+selected-row visual verification, and RelWithDebInfo measurements remain open.
 
 Acceptance requires readable base UI, explicit emission only, clipped sources,
 later-window occlusion, no accidental scene-image bloom, and loading presentation

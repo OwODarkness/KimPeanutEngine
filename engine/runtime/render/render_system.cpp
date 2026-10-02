@@ -244,6 +244,13 @@ namespace kpengine::render
         return serial;
     }
 
+    void RenderSystem::QueueEditorPresentationAssets(
+        std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets)
+    {
+        std::lock_guard lock(request_mutex_);
+        pending_editor_presentation_assets_ = std::move(prepared_assets);
+    }
+
     PreparedAssetsUpdateResult RenderSystem::GetPreparedAssetsUpdateResult(
         const uint64_t serial) const
     {
@@ -265,6 +272,11 @@ namespace kpengine::render
         {
             std::lock_guard lock(request_mutex_);
             catalog_update = std::exchange(pending_catalog_update_, std::nullopt);
+            if (pending_editor_presentation_assets_ != nullptr)
+            {
+                editor_presentation_assets_ = std::move(
+                    pending_editor_presentation_assets_);
+            }
         }
         if (catalog_update)
         {
@@ -794,6 +806,14 @@ namespace kpengine::render
         return backend_ ? backend_->GetEditorPresentationBridge() : nullptr;
     }
 
+    std::shared_ptr<const PreparedRenderAssetCatalog>
+    RenderSystem::GetEditorPresentationAssets() const
+    {
+        std::lock_guard lock(request_mutex_);
+        return editor_presentation_assets_ != nullptr
+                   ? editor_presentation_assets_ : pending_editor_presentation_assets_;
+    }
+
     IRenderCaptureService *RenderSystem::GetRenderCaptureService()
     {
         return render_capture_service_.get();
@@ -871,6 +891,8 @@ namespace kpengine::render
             std::lock_guard lock(request_mutex_);
             debug_view_demands_.fill(std::nullopt);
             pending_path_trace_settings_.reset();
+            editor_presentation_assets_.reset();
+            pending_editor_presentation_assets_.reset();
         }
     }
 

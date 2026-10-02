@@ -1,10 +1,14 @@
 # Project Status
 
-- **Editor UI bloom (2026-10-02; design only)** — Proposed explicit emission
-  tags, bounded ordered glow regions, and an Editor-owned RHI presentation
-  adapter without modifying ImGui. Vulkan/OpenGL implementation, loading-safe
-  frame access, color/lifetime acceptance, and performance remain open.
-  → [design](editor/.plan/ED5.md), [roadmap](editor/TODO.md)
+- **Editor UI bloom (2026-10-02; implementation in progress)** — The working
+  tree contains a common Editor RHI adapter, copied explicit emission markers,
+  bounded half-resolution filters, ordered halo composition, loading/status and
+  selected-row accents, a global toggle, and frame-boundary shader publication.
+  Debug builds and initial Vulkan/OpenGL captures completed; OpenGL's duplicate
+  viewport V inversion is fixed. OpenGL UI color still differs from Vulkan, and
+  selected-row visual, retirement, and matched RelWithDebInfo acceptance remain
+  open. → [design](editor/.plan/ED5.md),
+  [roadmap](editor/TODO.md)
 
 - **3DGS module (2026-09-30; design only)** — Planned GraphDeco PLY import,
   backend-neutral CPU-sorted raster rendering and HDR mesh/splat composition,

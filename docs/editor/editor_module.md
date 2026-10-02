@@ -1,7 +1,10 @@
 # Editor Module
 
-The architecture/design map is [PLANS.md](PLANS.md). Proposed selective UI
-bloom is specified in [ED5](.plan/ED5.md); it is not implemented behavior.
+The architecture/design map is [PLANS.md](PLANS.md). ED5's copied ImGui markers,
+common frame-scoped RHI adapter, bounded filter passes, and loading/selection
+accent integration are implemented in the working tree. Cross-backend color,
+selected-row visual, retirement, and performance acceptance remain open. See
+[ED5](.plan/ED5.md) and the [execution spec](../../.spec/specs/editor-selective-ui-bloom.md).
 
 **Snapshot: 2026-08-26.** The editor is the engine's *core center*: a thin application shell that hosts the runtime engine and owns the tool UI on top of it. Its job is not to render or simulate — those belong to the runtime — but to be the hub that wires the runtime systems to the tooling UI, and to build/draw that UI.
 

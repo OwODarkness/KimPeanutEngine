@@ -124,15 +124,25 @@ namespace kpengine::graphics
         RenderTargetDesc desc;
     };
 
+    enum class TextureOrigin : uint8_t
+    {
+        TopLeft,
+        BottomLeft,
+    };
+
     // Borrowed presentation data for a render target's first color attachment.
-    // The values are backend-native tokens only; their lifetime stays with the
-    // render target and callers must never destroy or retain them past resize.
+    // The sampled handle and metadata are portable; native tokens are retained
+    // only for legacy adapters. All values expire when the target is resized or
+    // destroyed and callers must never destroy or retain them past that point.
     struct RenderTargetView
     {
         uint32_t width = 0;
         uint32_t height = 0;
         uintptr_t native_image = 0;
         uintptr_t native_image_view = 0;
+        TextureHandle sampled_color;
+        TextureFormat color_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+        TextureOrigin origin = TextureOrigin::TopLeft;
 
         bool IsValid() const
         {

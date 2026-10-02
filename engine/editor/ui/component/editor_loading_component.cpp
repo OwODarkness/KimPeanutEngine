@@ -13,6 +13,7 @@
 
 #include "core/config/path.h"
 #include "editor/ui/component/editor_loading_icosahedron.h"
+#include "editor/ui/editor_ui_glow.h"
 #include "image_io/image_io.h"
 
 namespace kpengine::editor
@@ -137,7 +138,8 @@ namespace kpengine::editor
         void DrawLoadingIcosahedron(ImDrawList *const draw_list,
                                     const ImVec2 &rail_min, const ImVec2 &rail_max,
                                     const double elapsed_seconds,
-                                    const EditorLoadingViewModel &model)
+                                    const EditorLoadingViewModel &model,
+                                    const bool glow_enabled)
         {
             constexpr float kMinimumRailWidth = 132.0f;
             constexpr float kMinimumRailHeight = 168.0f;
@@ -181,6 +183,12 @@ namespace kpengine::editor
                 ProjectLoadingIcosahedron(elapsed_seconds, center, radius);
 
             draw_list->PushClipRect(rail_min, rail_max, true);
+            constexpr uint32_t kLoadingWireGlowRegion = 0xed050001U;
+            if (glow_enabled && !model.failed && !model.closing)
+            {
+                BeginEditorGlowRegion(draw_list, kLoadingWireGlowRegion, rail_min,
+                                      rail_max, 9.0f);
+            }
             for (const LoadingIcosahedronProjectedEdge &edge : frame.edges)
             {
                 const LoadingIcosahedronPoint &a = frame.vertices[edge.a];
@@ -196,11 +204,26 @@ namespace kpengine::editor
                 }
                 const LoadingIcosahedronPoint &a = frame.vertices[edge.a];
                 const LoadingIcosahedronPoint &b = frame.vertices[edge.b];
-                draw_list->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y),
-                                   ScaleAlpha(front_color, edge.front_facing_weight),
-                                   rear_thickness +
-                                       (front_thickness - rear_thickness) *
-                                           edge.front_facing_weight);
+                const ImU32 edge_color =
+                    ScaleAlpha(front_color, edge.front_facing_weight);
+                const float edge_thickness =
+                    rear_thickness + (front_thickness - rear_thickness) *
+                                         edge.front_facing_weight;
+                if (!glow_enabled || model.failed || model.closing)
+                {
+                    draw_list->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y),
+                                       edge_color, edge_thickness);
+                }
+                else
+                {
+                    AddEditorGlowLine(draw_list, ImVec2(a.x, a.y), ImVec2(b.x, b.y),
+                                      edge_color, edge_thickness,
+                                      kLoadingWireGlowRegion);
+                }
+            }
+            if (glow_enabled && !model.failed && !model.closing)
+            {
+                EndEditorGlowRegion(draw_list, kLoadingWireGlowRegion);
             }
 
             DrawBinaryReadouts(draw_list, ImVec2(center.x, center.y), radius,
@@ -227,8 +250,9 @@ namespace kpengine::editor
     }
 
     EditorLoadingComponent::EditorLoadingComponent(
-        std::function<runtime::StartupSnapshot()> snapshot_source)
-        : snapshot_source_(std::move(snapshot_source))
+        std::function<runtime::StartupSnapshot()> snapshot_source,
+        const bool *glow_enabled)
+        : snapshot_source_(std::move(snapshot_source)), glow_enabled_(glow_enabled)
     {
         LoadIconPixels();
     }
@@ -326,7 +350,8 @@ namespace kpengine::editor
             std::min(card_max.y - 8.0f, screen_max.y - 54.0f));
         DrawLoadingIcosahedron(draw_list, icosahedron_rail_min,
                                icosahedron_rail_max, ImGui::GetTime(),
-                               last_view_model_);
+                               last_view_model_,
+                               glow_enabled_ == nullptr || *glow_enabled_);
         draw_list->AddRectFilled(card_min, card_max, kPanel, 12.0f);
         draw_list->AddRect(card_min, card_max, IM_COL32(53, 113, 137, 155), 12.0f,
                            ImDrawFlags_RoundCornersAll, 1.0f);
@@ -351,7 +376,24 @@ namespace kpengine::editor
         draw_list->AddCircleFilled(ImVec2(status_position.x - 13.0f,
                                           status_position.y + 6.0f),
                                    3.0f, status_color);
-        AddText(draw_list, status_position, status_color, status);
+        if ((glow_enabled_ == nullptr || *glow_enabled_) &&
+            !last_view_model_.failed && !last_view_model_.closing)
+        {
+            constexpr uint32_t kStatusGlowRegion = 0xed050002U;
+            BeginEditorGlowRegion(draw_list, kStatusGlowRegion,
+                                  ImVec2(status_position.x - 5.0f,
+                                         status_position.y - 5.0f),
+                                  ImVec2(status_position.x + status_size.x + 5.0f,
+                                         status_position.y + status_size.y + 5.0f),
+                                  7.0f);
+            AddEditorGlowText(draw_list, status_position, status_color, status,
+                              kStatusGlowRegion);
+            EndEditorGlowRegion(draw_list, kStatusGlowRegion);
+        }
+        else
+        {
+            AddText(draw_list, status_position, status_color, status);
+        }
         draw_list->AddLine(ImVec2(content_left, top + 22.0f),
                            ImVec2(content_right, top + 22.0f),
                            IM_COL32(64, 111, 133, 100));

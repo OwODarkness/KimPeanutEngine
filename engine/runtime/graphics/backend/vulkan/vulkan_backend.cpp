@@ -115,7 +115,8 @@ namespace kpengine::graphics
                        "GPU pass timestamp query pool unavailable; CPU profile remains active");
             }
         }
-        editor_bridge_ = std::make_unique<VulkanEditorBridge>(*device_, *swapchain_, *frame_context_);
+        editor_bridge_ = std::make_unique<VulkanEditorBridge>(
+            *device_, *swapchain_, *frame_context_, *this);
         upload_context_ = std::make_unique<VulkanUploadContext>();
         upload_context_->Initialize(device_.get(), frame_context_.get(), buffer_manager_.get());
         InitVulkanContext();

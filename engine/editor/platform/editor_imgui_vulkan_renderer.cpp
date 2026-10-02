@@ -1,6 +1,7 @@
 #include "editor/platform/editor_imgui_vulkan_renderer.h"
 #include <array>
 #include <stdexcept>
+#include <utility>
 #include "imgui_impl_vulkan.h"
 #include "log/logger.h"
 #include "graphics/backend/vulkan/vulkan_editor_bridge.h"
@@ -48,6 +49,7 @@ namespace kpengine::editor
                 throw std::runtime_error("Failed to initialize ImGui Vulkan renderer");
             }
             imgui_backend_initialized_ = true;
+            rhi_renderer_.Initialize(editor_bridge_);
             return true;
         }
         catch (...)
@@ -59,6 +61,7 @@ namespace kpengine::editor
 
     void EditorImguiVulkanRenderer::Shutdown()
     {
+        rhi_renderer_.Shutdown();
         // The most recently submitted frame can still reference ImGui's scene
         // descriptor and transient vertex/index buffers. Retire it before any
         // ImGui Vulkan destruction; RenderSystem's later shutdown wait is too
@@ -99,6 +102,36 @@ namespace kpengine::editor
             return;
         }
         ImDrawData *draw_data = ImGui::GetDrawData();
+        const std::array<float, 4> clear_color{
+            background_color_.r, background_color_.g,
+            background_color_.b, background_color_.a};
+        std::string rhi_diagnostic;
+        if (rhi_renderer_.Render(draw_data, clear_color, &rhi_diagnostic))
+        {
+            return;
+        }
+        if (!rhi_diagnostic.empty() && rhi_diagnostic != last_rhi_diagnostic_)
+        {
+            KP_LOG(LogName, LOG_LEVEL_WARNING,
+                   "Common Editor UI rendering fell back to native Vulkan: %s",
+                   rhi_diagnostic.c_str());
+            last_rhi_diagnostic_ = std::move(rhi_diagnostic);
+        }
+        EditorGlowPacket glow_packet;
+        std::string glow_diagnostic;
+        if (!BuildEditorGlowPacket(draw_data, glow_packet, &glow_diagnostic))
+        {
+            if (glow_diagnostic != last_glow_diagnostic_)
+            {
+                KP_LOG(LogName, LOG_LEVEL_WARNING,
+                       "Ignoring invalid editor glow packet: %s", glow_diagnostic.c_str());
+                last_glow_diagnostic_ = std::move(glow_diagnostic);
+            }
+        }
+        else
+        {
+            last_glow_diagnostic_.clear();
+        }
         editor_bridge_->Record([draw_data](VkCommandBuffer command_buffer)
         {
             ImGui_ImplVulkan_RenderDrawData(draw_data, command_buffer);
@@ -108,6 +141,13 @@ namespace kpengine::editor
     void EditorImguiVulkanRenderer::SetBackgroundColor(const LogColor &color)
     {
         background_color_ = color;
+        rhi_renderer_.SetBackgroundColor(color);
+    }
+
+    void EditorImguiVulkanRenderer::SetBloomShaders(const data::ShaderData *vertex,
+                                                    const data::ShaderData *fragment)
+    {
+        rhi_renderer_.SetBloomShaders(vertex, fragment);
     }
 
     ImTextureID EditorImguiVulkanRenderer::GetTextureID(const graphics::RenderTargetView &view)
@@ -125,9 +165,13 @@ namespace kpengine::editor
             const VkDescriptorSet descriptor_set = ImGui_ImplVulkan_AddTexture(
                 scene_sampler_, image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             scene_textures_.emplace(image_view_key, descriptor_set);
-            return reinterpret_cast<ImTextureID>(descriptor_set);
+            const ImTextureID texture_id = reinterpret_cast<ImTextureID>(descriptor_set);
+            rhi_renderer_.RegisterTexture(texture_id, view);
+            return texture_id;
         }
-        return reinterpret_cast<ImTextureID>(existing_texture->second);
+        const ImTextureID texture_id = reinterpret_cast<ImTextureID>(existing_texture->second);
+        rhi_renderer_.RegisterTexture(texture_id, view);
+        return texture_id;
     }
 
     void EditorImguiVulkanRenderer::DrawSceneImage(ImTextureID texture_id, const ImVec2 &size)

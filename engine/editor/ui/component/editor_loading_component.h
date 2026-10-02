@@ -14,7 +14,8 @@ namespace kpengine::editor
     {
     public:
         explicit EditorLoadingComponent(
-            std::function<runtime::StartupSnapshot()> snapshot_source);
+            std::function<runtime::StartupSnapshot()> snapshot_source,
+            const bool *glow_enabled = nullptr);
 
         void Render() override;
 
@@ -27,6 +28,7 @@ namespace kpengine::editor
         void LoadIconPixels();
 
         std::function<runtime::StartupSnapshot()> snapshot_source_;
+        const bool *glow_enabled_ = nullptr;
         EditorLoadingViewModel last_view_model_{};
         std::vector<uint32_t> icon_pixels_;
         static constexpr uint32_t kIconSize = 56;

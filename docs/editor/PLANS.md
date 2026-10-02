@@ -21,14 +21,20 @@ Existing behavior, build targets, threading, and known boundary debt are in
 
 ## UI bloom extension
 
-[ED5](.plan/ED5.md) proposes public ImGui draw-list markers and an editor-owned
-RHI renderer. Editor owns glow semantics, region policy, draw adaptation, and
+[ED5](.plan/ED5.md) uses public ImGui draw-list markers and an editor-owned RHI
+renderer. Editor owns glow semantics, region policy, draw adaptation, and
 logical resource lifetimes. Graphics allocates and retires the physical
 objects. Render retains the scene graph and chooses when the editor composite
-runs. This explicitly extends the existing editor-presentation exception;
-it does not transfer scene rendering into Editor.
+runs. The implementation now includes copied markers, sampled render-target
+metadata, a frame-scoped common RHI callback, linear UI composition, bounded
+filter passes, and loading/selection accents. Cross-backend color, selected-row
+visual, retirement, and performance acceptance remain in progress; see the
+[ED5 execution spec](../../.spec/specs/editor-selective-ui-bloom.md).
+This explicitly extends the existing editor-presentation exception; it does
+not transfer scene rendering into Editor.
 
 The intended data flow is component emission tags → immutable UI frame packet
 → bounded emission/blur passes → ordered UI composition → presentation.
 ImGui core, widget behavior, vertex layout, and vendored sources stay intact.
-The feature is proposed, with no runtime or performance acceptance yet.
+The loading wire/status currently use layered geometry; no filtered-bloom,
+cross-backend visual, or performance acceptance is claimed.

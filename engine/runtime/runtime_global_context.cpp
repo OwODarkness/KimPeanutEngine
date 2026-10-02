@@ -751,6 +751,10 @@ namespace kpengine
                 return {false, result.diagnostic};
             }
             prepared_render_assets_ = result.catalog;
+            if (render_system_ != nullptr)
+            {
+                render_system_->QueueEditorPresentationAssets(prepared_render_assets_);
+            }
             if (level_instance_ != nullptr)
             {
                 level_instance_->SetErrorMaterialAsset(
@@ -773,6 +777,10 @@ namespace kpengine
                 return {false, result.diagnostic};
             }
             prepared_render_assets_ = result.catalog;
+            if (render_system_ != nullptr)
+            {
+                render_system_->QueueEditorPresentationAssets(prepared_render_assets_);
+            }
             return {true, {}};
         }
 

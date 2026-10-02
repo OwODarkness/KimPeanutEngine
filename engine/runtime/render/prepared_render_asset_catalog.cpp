@@ -27,6 +27,8 @@ namespace kpengine::render
                  "shader/ray_tracing_path_tracer.shader", asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::DirectionalShadowProgram,
                  "shader/directional_shadow_depth.shader", asset::AssetType::KPAT_ShaderProgram},
+                {BuiltInRenderAsset::EditorUiBloomProgram, "shader/editor_ui_bloom.shader",
+                 asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::DefaultWhiteTexture, "texture/default/default_white.png",
                  asset::AssetType::KPAT_Texture},
                 {BuiltInRenderAsset::DefaultFlatNormalTexture,
@@ -297,6 +299,13 @@ namespace kpengine::render
     {
         const size_t index = static_cast<size_t>(role);
         return index < built_ins_.size() ? built_ins_[index] : asset::AssetID{};
+    }
+
+    std::shared_ptr<const asset::ShaderProgramResource>
+    PreparedRenderAssetCatalog::GetEditorUiBloomProgram() const
+    {
+        return Get<asset::ShaderProgramResource>(
+            GetBuiltIn(BuiltInRenderAsset::EditorUiBloomProgram));
     }
 
     asset::AssetID PreparedRenderAssetCatalog::ResolveDependency(

@@ -34,6 +34,9 @@
 #include "platform/memory_stats_sampler.h"
 #include "runtime/engine.h"
 #include "runtime/render/render_system.h"
+#include "asset/shader.h"
+#include "asset/shader_program.h"
+#include "render/prepared_render_asset_catalog.h"
 #include "runtime/runtime_camera_control.h"
 #include "runtime/screenshot/runtime_screenshot_service.h"
 #include "log/logger.h"
@@ -328,6 +331,13 @@ namespace kpengine::editor
             [this] { TriggerScreenshot(); },
             {},
         });
+        tool_menu.items.push_back(MenuItem{
+            "UI Glow",
+            {},
+            true,
+            [this] { glow_enabled_ = !glow_enabled_; },
+            [this] { return glow_enabled_; },
+        });
         menus.push_back(std::move(tool_menu));
         menus.push_back(Menu{"Help"});
         components_.push_back(std::make_unique<EditorMainMenuBarComponent>(menus));
@@ -573,7 +583,8 @@ namespace kpengine::editor
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildWorldOutlinerPanel()
     {
-        return std::make_unique<EditorWorldOutlinerComponent>(*actor_model_);
+        return std::make_unique<EditorWorldOutlinerComponent>(*actor_model_,
+                                                              &glow_enabled_);
     }
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildActorInspectorPanel()
@@ -1057,7 +1068,7 @@ namespace kpengine::editor
     {
         loading_components_.clear();
         loading_components_.push_back(std::make_unique<EditorLoadingComponent>(
-            init_info_.startup_snapshot_source));
+            init_info_.startup_snapshot_source, &glow_enabled_));
         BuildStartupProfilerWindow();
     }
 
@@ -1213,6 +1224,25 @@ namespace kpengine::editor
         }
         ImGui::Render();
         const auto imgui_build_finished = std::chrono::steady_clock::now();
+        if (init_info_.render_system != nullptr)
+        {
+            const auto prepared = init_info_.render_system->GetEditorPresentationAssets();
+            const auto program = prepared != nullptr
+                                     ? prepared->GetEditorUiBloomProgram()
+                                     : nullptr;
+            const auto vertex = program != nullptr
+                                    ? prepared->Get<asset::ShaderResource>(program->GetData(
+                                          ShaderStage::SHADER_STAGE_VERTEX,
+                                          ShaderFormat::SHADER_FORMAT_GLSL))
+                                    : nullptr;
+            const auto fragment = program != nullptr
+                                      ? prepared->Get<asset::ShaderResource>(program->GetData(
+                                            ShaderStage::SHADER_STAGE_FRAGMENT,
+                                            ShaderFormat::SHADER_FORMAT_GLSL))
+                                      : nullptr;
+            renderer_->SetBloomShaders(vertex != nullptr ? vertex->data.get() : nullptr,
+                                       fragment != nullptr ? fragment->data.get() : nullptr);
+        }
         renderer_->Render();
         const auto imgui_submit_finished = std::chrono::steady_clock::now();
         EndDraw();

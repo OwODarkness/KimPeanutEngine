@@ -2,10 +2,12 @@
 #define KPENGINE_EDITOR_IMGUI_VULKAN_RENDERER_H
 
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 
 #include <vulkan/vulkan.h>
 
+#include "editor/platform/editor_imgui_rhi_renderer.h"
 #include "editor/platform/editor_imgui_renderer.h"
 
 namespace kpengine::graphics{
@@ -25,6 +27,8 @@ namespace kpengine::editor
         void NewFrame() override;
         void Render() override;
         void SetBackgroundColor(const LogColor &color) override;
+        void SetBloomShaders(const data::ShaderData *vertex,
+                             const data::ShaderData *fragment) override;
         ImTextureID GetTextureID(const graphics::RenderTargetView &view) override;
         void DrawSceneImage(ImTextureID texture_id, const ImVec2 &size) override;
     private:
@@ -33,6 +37,7 @@ namespace kpengine::editor
         void ReleaseSceneTextures();
 
         graphics::VulkanEditorBridge *editor_bridge_ = nullptr;
+        EditorImguiRhiRenderer rhi_renderer_;
         VkDevice logical_device_ = VK_NULL_HANDLE;
         VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
         VkSampler scene_sampler_ = VK_NULL_HANDLE;
@@ -42,6 +47,8 @@ namespace kpengine::editor
         std::unordered_map<uintptr_t, VkDescriptorSet> scene_textures_;
         bool imgui_backend_initialized_ = false;
         LogColor background_color_{0.1f, 0.1f, 0.1f, 1.f};
+        std::string last_glow_diagnostic_;
+        std::string last_rhi_diagnostic_;
     };
 
 }

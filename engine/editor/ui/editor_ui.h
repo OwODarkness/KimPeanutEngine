@@ -219,6 +219,7 @@ namespace kpengine::editor
         bool workspace_promoted_ = false;
         bool closing_ = false;
         bool viewer_mode_ = false;
+        bool glow_enabled_ = true;
         EditorUIInitInfo init_info_{};
         std::function<void()> viewer_content_;
         LogLevelColorTable log_colors_;

@@ -21,6 +21,12 @@ namespace kpengine::graphics{
         sampler_create_info.mipLodBias = settings.mip_lod_bias;
         sampler_create_info.minLod = settings.min_lod;
         sampler_create_info.maxLod = settings.max_lod;
+        if (settings.mipmap_mode == SamplerMipmapMode::None)
+        {
+            // Vulkan has no no-mipmap token; retain minification filtering at level zero.
+            sampler_create_info.minLod = 0.f;
+            sampler_create_info.maxLod = 0.25f;
+        }
         sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
         sampler_create_info.compareEnable = VK_FALSE;
         sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;

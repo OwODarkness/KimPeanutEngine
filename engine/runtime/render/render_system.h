@@ -118,6 +118,10 @@ namespace kpengine::render
             std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
         uint64_t QueuePreparedAssetsUpdate(
             std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
+        // Publishes CPU shader artifacts to Editor presentation at a frame
+        // boundary without promoting the scene renderer.
+        void QueueEditorPresentationAssets(
+            std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
         uint64_t GetAppliedPreparedAssetsUpdate() const noexcept
         { return applied_catalog_update_.load(std::memory_order_acquire); }
         PreparedAssetsUpdateResult GetPreparedAssetsUpdateResult(uint64_t serial) const;
@@ -183,6 +187,11 @@ namespace kpengine::render
         IEnvironmentSourceSink *GetEnvironmentSourceSink()
         { return scene_coordinator_.GetEnvironmentSourceSink(); }
         graphics::IEditorPresentationBridge *GetEditorPresentationBridge();
+        // Borrowed immutable CPU shader catalog, available once render assets
+        // have been prepared. Editor presentation can initialize optional UI
+        // pipelines without taking ownership of Asset or Graphics resources.
+        std::shared_ptr<const PreparedRenderAssetCatalog>
+        GetEditorPresentationAssets() const;
         // Borrowed Runtime/tooling boundary. RenderSystem owns the implementation
         // and cancels any pending request before this object is destroyed.
         IRenderCaptureService *GetRenderCaptureService();
@@ -208,6 +217,7 @@ namespace kpengine::render
         std::vector<FrameContext> frame_contexts_;
         RenderSceneCoordinator scene_coordinator_;
         std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets_;
+        std::shared_ptr<const PreparedRenderAssetCatalog> editor_presentation_assets_;
         std::unique_ptr<RenderCaptureService> render_capture_service_;
         std::function<CaptureResult()> window_capture_;
         uint64_t frame_number_ = 0;
@@ -229,6 +239,8 @@ namespace kpengine::render
         bool profile_scene_seen_ = false;
         CaptureView debug_view_ = CaptureView::SceneColor;
         mutable std::mutex request_mutex_;
+        std::shared_ptr<const PreparedRenderAssetCatalog>
+            pending_editor_presentation_assets_;
         std::array<std::optional<CaptureView>,
                    static_cast<std::size_t>(DebugViewConsumer::Count)> debug_view_demands_{};
         PathTraceSettings requested_path_trace_settings_{};

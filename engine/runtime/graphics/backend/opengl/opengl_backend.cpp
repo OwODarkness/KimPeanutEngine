@@ -24,6 +24,16 @@
 
 namespace kpengine::graphics
 {
+    bool OpenglEditorBridge::ExecuteRhiFrame(const RhiFrameCallback &record_frame)
+    {
+        if (backend_ == nullptr || !record_frame)
+        {
+            return false;
+        }
+        CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        return recorder != nullptr && record_frame(*backend_, *recorder);
+    }
+
     static_assert(!std::is_base_of_v<IRenderTargetReadback, OpenglBackend>);
     static_assert(!std::is_base_of_v<CommandRecorder, OpenglBackend>);
 
@@ -47,6 +57,7 @@ namespace kpengine::graphics
 
     void OpenglBackend::Initialize(WindowHandle native_window)
     {
+        editor_presentation_bridge_.BindBackend(*this);
         FinalizeGpuProfilePassConfiguration();
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
@@ -300,6 +311,37 @@ namespace kpengine::graphics
     Extent2D OpenglBackend::GetRenderExtent() const
     {
         return {static_cast<uint32_t>(width_), static_cast<uint32_t>(height_)};
+    }
+
+    TextureFormat OpenglBackend::GetPresentationColorFormat() const
+    {
+        GLint previous_draw_framebuffer = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previous_draw_framebuffer);
+        if (previous_draw_framebuffer != 0)
+        {
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        }
+        GLint color_encoding = GL_LINEAR;
+        glGetFramebufferAttachmentParameteriv(
+            GL_DRAW_FRAMEBUFFER, GL_BACK_LEFT,
+            GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING, &color_encoding);
+        if (previous_draw_framebuffer != 0)
+        {
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
+                              static_cast<GLuint>(previous_draw_framebuffer));
+        }
+        const bool is_srgb = color_encoding == GL_SRGB;
+        static bool encoding_reported = false;
+        if (!encoding_reported)
+        {
+            KP_LOG("OpenglBackendLog", LOG_LEVEL_INFO,
+                   "Default framebuffer color encoding is %s",
+                   is_srgb ? "sRGB" : "linear");
+            encoding_reported = true;
+        }
+        return is_srgb
+                   ? TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB
+                   : TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM;
     }
 
     void OpenglBackend::Cleanup()
@@ -817,7 +859,10 @@ namespace kpengine::graphics
         }
         const OpenglTextureResource resource =
             ConvertToOpenglTextureResource(color_texture->GetTextueHandle());
-        return {target.desc.width, target.desc.height, resource.image, resource.image};
+        return {target.desc.width, target.desc.height, resource.image, resource.image,
+                target.color_attachments[0],
+                target.desc.color_attachments[0].format,
+                TextureOrigin::BottomLeft};
     }
 
     DescriptorSetHandle OpenglBackend::CreateResourceBindingSet(

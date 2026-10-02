@@ -12,6 +12,7 @@
 
 namespace kpengine::graphics
 {
+    class RenderBackend;
     class VulkanDevice;
     class VulkanFrameContext;
     class VulkanSwapchain;
@@ -33,12 +34,13 @@ namespace kpengine::graphics
     {
     public:
         VulkanEditorBridge(VulkanDevice &device, VulkanSwapchain &swapchain,
-                           VulkanFrameContext &frame_context);
+                           VulkanFrameContext &frame_context, RenderBackend &backend);
 
         GraphicsAPIType GetGraphicsAPI() const override
         {
             return GraphicsAPIType::GRAPHICS_API_VULKAN;
         }
+        bool ExecuteRhiFrame(const RhiFrameCallback &record_frame) override;
         VulkanEditorBridgeInfo GetInfo() const;
         void BeginFrame(uint32_t image_index);
         void EndFrame();
@@ -57,6 +59,7 @@ namespace kpengine::graphics
         VulkanDevice *device_ = nullptr;
         VulkanSwapchain *swapchain_ = nullptr;
         VulkanFrameContext *frame_context_ = nullptr;
+        RenderBackend *backend_ = nullptr;
         std::vector<VkImageLayout> image_layouts_;
         uint32_t current_image_index_ = 0;
         bool frame_active_ = false;

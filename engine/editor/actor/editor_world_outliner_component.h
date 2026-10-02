@@ -9,12 +9,14 @@ namespace kpengine::editor
     class EditorWorldOutlinerComponent final : public EditorWindowComponent
     {
     public:
-        explicit EditorWorldOutlinerComponent(ActorEditorModel &model);
+        explicit EditorWorldOutlinerComponent(ActorEditorModel &model,
+                                              const bool *glow_enabled = nullptr);
 
         void RenderContent() override;
 
     private:
         ActorEditorModel &model_;
+        const bool *glow_enabled_ = nullptr;
     };
 }
 

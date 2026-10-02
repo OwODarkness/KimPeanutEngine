@@ -1,4 +1,5 @@
 #include "opengl_pipeline.h"
+#include <algorithm>
 #include "log/logger.h"
 #include "data/shader.h"
 #include "opengl_enum.h"
@@ -129,11 +130,17 @@ namespace kpengine::graphics
 
     void OpenglPipeline::Bind() const
     {
-        // The default framebuffer is created as an sRGB-capable target by the
-        // window backend, so an sRGB attachment's stored value is the encoded
-        // shader output. Vulkan's render pass applies the same conversion from
-        // the attachment format alone.
-        glEnable(GL_FRAMEBUFFER_SRGB);
+        // UNORM presentation shaders already encode their output; only declared
+        // sRGB attachments need the hardware transfer, matching Vulkan formats.
+        if (std::any_of(color_attachment_formats_.begin(), color_attachment_formats_.end(),
+                        [](TextureFormat format) { return IsSrgbTextureFormat(format); }))
+        {
+            glEnable(GL_FRAMEBUFFER_SRGB);
+        }
+        else
+        {
+            glDisable(GL_FRAMEBUFFER_SRGB);
+        }
         glUseProgram(shader_program_);
 
         // Depth pipelines own the depth test and writes; color-only pipelines

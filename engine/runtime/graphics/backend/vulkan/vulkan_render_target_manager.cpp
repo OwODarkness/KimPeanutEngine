@@ -226,7 +226,10 @@ namespace kpengine::graphics
         const VkImageView view = states_[index].editor_preview_view != VK_NULL_HANDLE
             ? states_[index].editor_preview_view : resource.view;
         return {target.desc.width, target.desc.height,
-                reinterpret_cast<uintptr_t>(resource.image), reinterpret_cast<uintptr_t>(view)};
+                reinterpret_cast<uintptr_t>(resource.image), reinterpret_cast<uintptr_t>(view),
+                target.color_attachments[0],
+                target.desc.color_attachments[0].format,
+                TextureOrigin::TopLeft};
     }
 
     bool VulkanRenderTargetManager::CanReadback(RenderTargetHandle handle) const

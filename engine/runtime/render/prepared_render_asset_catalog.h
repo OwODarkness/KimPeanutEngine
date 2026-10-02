@@ -22,6 +22,11 @@ namespace kpengine::runtime
     class RenderAssetPreparer;
 }
 
+namespace kpengine::asset
+{
+    struct ShaderProgramResource;
+}
+
 namespace kpengine::render
 {
     enum class BuiltInRenderAsset : uint8_t
@@ -32,6 +37,7 @@ namespace kpengine::render
         CaptureViewProgram,
         RayTracingPathTracerProgram,
         DirectionalShadowProgram,
+        EditorUiBloomProgram,
         DefaultWhiteTexture,
         DefaultFlatNormalTexture,
         Count,
@@ -106,6 +112,7 @@ namespace kpengine::render
         }
 
         asset::AssetID GetBuiltIn(BuiltInRenderAsset role) const noexcept;
+        std::shared_ptr<const asset::ShaderProgramResource> GetEditorUiBloomProgram() const;
         asset::AssetID ResolveDependency(asset::AssetID owner, size_t index,
                                          asset::AssetType expected_type) const noexcept;
         const PreparedEnvironmentIbl *FindEnvironmentIbl(asset::AssetID source_texture) const;

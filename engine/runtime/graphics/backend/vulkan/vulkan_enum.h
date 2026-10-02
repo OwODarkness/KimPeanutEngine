@@ -413,6 +413,8 @@ inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
     {
         switch (mode)
         {
+        case SamplerMipmapMode::None:
+            return VK_SAMPLER_MIPMAP_MODE_NEAREST;
         case SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR:
             return VK_SAMPLER_MIPMAP_MODE_LINEAR;
         case SamplerMipmapMode::SAMPLER_MIPMAP_MODE_NEAREST:

@@ -242,6 +242,13 @@ TEST(VulkanRayTracingValidation, BoundsPipelineRecursionDepth)
     EXPECT_FALSE(IsRayTracingRecursionDepthWithinLimit(0, 31));
 }
 
+TEST(VulkanSamplerContract, NoMipmapsUsesAValidNativeFilter)
+{
+    EXPECT_EQ(kpengine::graphics::ConvertToVulkanMipmapMode(
+                  kpengine::graphics::SamplerMipmapMode::None),
+              VK_SAMPLER_MIPMAP_MODE_NEAREST);
+}
+
 TEST(TextureFormatContract, DefinesBlockSizedMipPayloadsAndBackendMappings)
 {
     EXPECT_TRUE(kpengine::data::IsTextureFormatBlockCompressed(
