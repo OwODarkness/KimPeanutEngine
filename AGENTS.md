@@ -99,6 +99,40 @@ Do not start concurrent CMake/MSBuild builds. If compilation is blocked by the e
 
 For runtime rendering changes, compilation is insufficient: use the Runtime command registry and a checked-in startup fixture. Launch `build/Debug/KimPeanutEngine.exe --graphics-api <api> --startup-level <fixture> --agent-port 37373`, send JSON-lines to `127.0.0.1:37373`, and use `capture.screenshot` followed by `poll`. Captures must stay under `save/screenshots/validation/`, end in `.png`, and preserve captures from other tasks. Do not access backend objects or scrape the Editor console. `KimPeanutCommand` alone does not bootstrap Render.
 
+### Standalone Audio Player
+
+Build `KimPeanutEngine`, then launch its visible GUI outside the sandbox with
+`build/Debug/KimPeanutEngine.exe --mode audio-player --graphics-api vulkan --agent-port 37373`.
+Verify that its `GLFW30` window is on the `Default` desktop before claiming
+the user can see it. In the Library dock, choose an optional SRT, WebVTT, or
+LRC subtitle, then use **ADD FILES** or enter an audio path and press
+**QUEUE FILE**. Select the track in the playlist and press **Play** in Now
+Playing. Subtitle paths must be inside the audio file's folder; leaving the
+subtitle empty is valid. The player imports to session products under
+`save/audio_player/` and does not modify source music files.
+
+For agent-driven playback, send newline-delimited JSON to `127.0.0.1:37373`:
+
+```json
+{"op":"execute","command":"audio.import_file","arguments":{"path":"D:\\music\\example.mp3"}}
+```
+
+Add `"subtitle":"D:\\music\\example.lrc"` to the import arguments only
+when a subtitle was selected. Game-thread commands return `pending`; poll the
+returned request ID with `{"op":"poll","request_id":1}` or query
+`audio.status` until `pending_imports` is zero. Then send:
+
+```json
+{"op":"execute","command":"audio.play","arguments":{}}
+{"op":"execute","command":"audio.status","arguments":{}}
+```
+
+Check `error` is empty, `state` is playing, and `elapsed_seconds` advances.
+Reimport by importing the same source path again or using **Reimport** in the Info dock. Capture the full
+UI with `capture.glfw_window` into `save/screenshots/validation/*.png` and
+poll its request ID. A moving cursor and initialized output device verify the
+playback path, but cannot establish perceived audio quality.
+
 ## Documentation ownership
 
 - Use the `modular-documentation` skill before creating, moving, splitting, or substantially reorganizing module documentation.

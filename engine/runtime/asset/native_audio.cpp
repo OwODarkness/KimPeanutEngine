@@ -5,6 +5,7 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <set>
@@ -137,12 +138,14 @@ namespace kpengine::asset
                    codec == static_cast<std::uint32_t>(NativeAudioCodec::Flac);
         }
 
-        void ValidateData(const NativeAudioData &data)
+        void ValidateData(const NativeAudioData &data,
+                          const std::optional<std::uint64_t> encoded_audio_size = std::nullopt)
         {
+            const std::uint64_t audio_size = encoded_audio_size.value_or(data.encoded_audio.size());
             if (!IsKnownCodec(static_cast<std::uint32_t>(data.codec)) || data.channels != 2 ||
                 data.sample_rate != kNativeAudioTimelineSampleRate || data.duration_frames == 0 ||
-                data.duration_frames > kNativeAudioMaxDurationFrames || data.encoded_audio.empty() ||
-                data.encoded_audio.size() > kNativeAudioMaxSourceBytes ||
+                data.duration_frames > kNativeAudioMaxDurationFrames || audio_size == 0 ||
+                audio_size > kNativeAudioMaxSourceBytes ||
                 data.waveform.size() != kNativeAudioWaveformBucketCount ||
                 data.subtitles.size() > kNativeAudioMaxSubtitleCues ||
                 data.subtitle_language.size() > 63 ||
@@ -178,9 +181,14 @@ namespace kpengine::asset
                 Fail(NativeAudioErrorCode::Overflow, "native audio subtitle data exceeds its limit");
         }
 
-        std::map<std::uint32_t, Chunk> ReadDirectory(std::span<const std::byte> bytes)
+        std::map<std::uint32_t, Chunk> ReadDirectory(
+            std::span<const std::byte> bytes, const std::uint64_t declared_file_size = 0)
         {
-            if (bytes.size() < kNativeAudioHeaderSize || bytes.size() > kNativeAudioMaxProductBytes)
+            const std::uint64_t total_size = declared_file_size == 0
+                ? bytes.size() : declared_file_size;
+            if (bytes.size() < kNativeAudioHeaderSize ||
+                total_size < kNativeAudioHeaderSize || total_size > kNativeAudioMaxProductBytes ||
+                bytes.size() > total_size)
                 Fail(NativeAudioErrorCode::Truncated, "native audio product size is invalid");
             for (std::size_t index = 0; index < kMagic.size(); ++index)
                 if (std::to_integer<std::uint8_t>(bytes[index]) != kMagic[index])
@@ -189,10 +197,11 @@ namespace kpengine::asset
                 Fail(NativeAudioErrorCode::UnsupportedVersion, "native audio version is unsupported");
             if (ReadU16(bytes, 10) != kNativeAudioHeaderSize || ReadU32(bytes, 12) != kNoRequiredFeatures)
                 Fail(NativeAudioErrorCode::UnsupportedFeatures, "native audio header features are unsupported");
-            const std::uint64_t total_size = ReadU64(bytes, 16);
+            if (ReadU64(bytes, 16) != total_size)
+                Fail(NativeAudioErrorCode::InvalidDirectory, "native audio declared size is invalid");
             const std::uint64_t directory_offset = ReadU64(bytes, 24);
             const std::uint32_t count = ReadU32(bytes, 32);
-            if (total_size != bytes.size() || directory_offset != kNativeAudioHeaderSize ||
+            if (directory_offset != kNativeAudioHeaderSize ||
                 ReadU32(bytes, 36) != 0 || count < 3 || count > 64)
                 Fail(NativeAudioErrorCode::InvalidDirectory, "native audio directory header is invalid");
             const std::uint64_t directory_size = static_cast<std::uint64_t>(count) *
@@ -496,6 +505,147 @@ namespace kpengine::asset
         }
         ValidateData(data);
         return {std::move(data), ReadHash(bytes, kNativeAudioDigestOffset), Sha256(bytes)};
+    }
+
+    NativeAudioFileProduct ReadNativeAudioFile(const std::filesystem::path &path)
+    {
+        std::error_code error;
+        const std::uint64_t file_size = std::filesystem::file_size(path, error);
+        if (error || file_size < kNativeAudioHeaderSize || file_size > kNativeAudioMaxProductBytes)
+            Fail(NativeAudioErrorCode::Truncated, "native audio product file size is invalid");
+
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open())
+            Fail(NativeAudioErrorCode::InvalidArgument, "failed to open native audio product");
+
+        std::vector<std::byte> prefix(kNativeAudioHeaderSize);
+        file.read(reinterpret_cast<char *>(prefix.data()),
+                  static_cast<std::streamsize>(prefix.size()));
+        if (file.gcount() != static_cast<std::streamsize>(prefix.size()))
+            Fail(NativeAudioErrorCode::Truncated, "native audio header is truncated");
+        const std::uint32_t chunk_count = ReadU32(prefix, 32);
+        if (chunk_count < 3 || chunk_count > 64)
+            Fail(NativeAudioErrorCode::InvalidDirectory, "native audio chunk count is invalid");
+        const std::size_t prefix_size = kNativeAudioHeaderSize +
+            static_cast<std::size_t>(chunk_count) * kNativeAudioDirectoryEntrySize;
+        prefix.resize(prefix_size);
+        file.read(reinterpret_cast<char *>(prefix.data() + kNativeAudioHeaderSize),
+                  static_cast<std::streamsize>(prefix_size - kNativeAudioHeaderSize));
+        if (file.gcount() != static_cast<std::streamsize>(prefix_size - kNativeAudioHeaderSize))
+            Fail(NativeAudioErrorCode::Truncated, "native audio directory is truncated");
+        const auto chunks = ReadDirectory(prefix, file_size);
+
+        const auto read_chunk = [&file](const Chunk &chunk)
+        {
+            if (chunk.size > std::numeric_limits<std::size_t>::max() ||
+                chunk.offset > static_cast<std::uint64_t>(std::numeric_limits<std::streamoff>::max()))
+                Fail(NativeAudioErrorCode::Overflow, "native audio metadata chunk is too large");
+            std::vector<std::byte> bytes(static_cast<std::size_t>(chunk.size));
+            file.clear();
+            file.seekg(static_cast<std::streamoff>(chunk.offset), std::ios::beg);
+            if (!file)
+                Fail(NativeAudioErrorCode::Truncated, "failed to seek to native audio metadata");
+            file.read(reinterpret_cast<char *>(bytes.data()),
+                      static_cast<std::streamsize>(bytes.size()));
+            if (file.gcount() != static_cast<std::streamsize>(bytes.size()))
+                Fail(NativeAudioErrorCode::Truncated, "native audio metadata chunk is truncated");
+            return bytes;
+        };
+
+        const Chunk &audio_chunk = chunks.at(kAudioChunk);
+        if (audio_chunk.size > kNativeAudioMaxSourceBytes)
+            Fail(NativeAudioErrorCode::Overflow, "native audio payload exceeds its limit");
+        const std::vector<std::byte> metadata = read_chunk(chunks.at(kMetadataChunk));
+        if (metadata.size() != kMetadataBytes || ReadU32(metadata, 12) != 0 ||
+            !IsKnownCodec(ReadU32(metadata, 0)) || ReadU32(metadata, 4) != 2 ||
+            ReadU32(metadata, 8) != kNativeAudioTimelineSampleRate ||
+            ReadU64(metadata, 16) == 0 || ReadU64(metadata, 16) > kNativeAudioMaxDurationFrames)
+            Fail(NativeAudioErrorCode::InvalidValue, "native audio metadata chunk is invalid");
+
+        NativeAudioData data{};
+        data.codec = static_cast<NativeAudioCodec>(ReadU32(metadata, 0));
+        data.channels = ReadU32(metadata, 4);
+        data.sample_rate = ReadU32(metadata, 8);
+        data.duration_frames = ReadU64(metadata, 16);
+        const std::vector<std::byte> waveform = read_chunk(chunks.at(kWaveformChunk));
+        if (waveform.size() != kNativeAudioWaveformBucketCount * 8u)
+            Fail(NativeAudioErrorCode::InvalidValue, "native audio waveform chunk size is invalid");
+        data.waveform.reserve(kNativeAudioWaveformBucketCount);
+        for (std::size_t offset = 0; offset < waveform.size(); offset += 8)
+        {
+            const NativeAudioPeak peak{std::bit_cast<float>(ReadU32(waveform, offset)),
+                                       std::bit_cast<float>(ReadU32(waveform, offset + 4))};
+            if (!std::isfinite(peak.minimum) || !std::isfinite(peak.maximum) ||
+                peak.minimum < -1.0f || peak.maximum > 1.0f || peak.minimum > peak.maximum)
+                Fail(NativeAudioErrorCode::InvalidValue, "native audio waveform peak is invalid");
+            data.waveform.push_back(peak);
+        }
+
+        const auto subtitle_chunk = chunks.find(kSubtitleChunk);
+        if (subtitle_chunk != chunks.end())
+        {
+            const std::vector<std::byte> subtitle = read_chunk(subtitle_chunk->second);
+            if (subtitle.size() > kNativeAudioMaxSubtitleBytes || subtitle.size() < 8)
+                Fail(NativeAudioErrorCode::InvalidValue, "native audio subtitle chunk size is invalid");
+            const std::uint16_t language_size = ReadU16(subtitle, 0);
+            const std::uint32_t cue_count = ReadU32(subtitle, 4);
+            if (ReadU16(subtitle, 2) != 0 || language_size == 0 || language_size > 63 ||
+                cue_count == 0 || cue_count > kNativeAudioMaxSubtitleCues ||
+                language_size > subtitle.size() - 8)
+                Fail(NativeAudioErrorCode::InvalidValue, "native audio subtitle header is invalid");
+            std::size_t cursor = 8;
+            data.subtitles.reserve(cue_count);
+            std::uint64_t previous_start = 0;
+            for (std::uint32_t index = 0; index < cue_count; ++index)
+            {
+                if (subtitle.size() - cursor < 24)
+                    Fail(NativeAudioErrorCode::Truncated, "native audio subtitle cue is truncated");
+                NativeAudioCue cue{};
+                cue.start_frame = ReadU64(subtitle, cursor);
+                cue.end_frame = ReadU64(subtitle, cursor + 8);
+                const std::uint32_t text_size = ReadU32(subtitle, cursor + 16);
+                if (ReadU32(subtitle, cursor + 20) != 0 || cue.start_frame >= cue.end_frame ||
+                    cue.end_frame > data.duration_frames || text_size == 0 ||
+                    text_size > subtitle.size() - cursor - 24 ||
+                    (index > 0 && cue.start_frame < previous_start))
+                    Fail(NativeAudioErrorCode::InvalidValue, "native audio subtitle cue range is invalid");
+                cursor += 24;
+                cue.text.assign(reinterpret_cast<const char *>(subtitle.data() + cursor), text_size);
+                if (!IsValidUtf8(cue.text) || cue.text.find('\0') != std::string::npos)
+                    Fail(NativeAudioErrorCode::InvalidUtf8, "native audio subtitle cue is not valid UTF-8");
+                previous_start = cue.start_frame;
+                cursor += text_size;
+                data.subtitles.push_back(std::move(cue));
+            }
+            if (language_size != subtitle.size() - cursor)
+                Fail(NativeAudioErrorCode::InvalidValue, "native audio subtitle language range is invalid");
+            data.subtitle_language.assign(
+                reinterpret_cast<const char *>(subtitle.data() + cursor), language_size);
+        }
+        ValidateData(data, audio_chunk.size);
+
+        const auto hashes = Sha256FileWithZeroedRange(
+            path, kNativeAudioDigestOffset, kNativeAudioDigestSize);
+        if (!hashes)
+            Fail(NativeAudioErrorCode::Truncated, "native audio digest range is outside the product");
+        const ContentHash digest = ReadHash(prefix, kNativeAudioDigestOffset);
+        if (digest != hashes->zeroed_range_hash)
+            Fail(NativeAudioErrorCode::IntegrityMismatch, "native audio integrity digest mismatch");
+
+        return {path, std::move(data), audio_chunk.offset, audio_chunk.size,
+                digest, hashes->content_hash};
+    }
+
+    std::vector<std::string_view> NativeAudioFileProduct::SubtitleTextAt(
+        const std::uint64_t frame) const
+    {
+        std::vector<std::string_view> active;
+        for (const NativeAudioCue &cue : metadata.subtitles)
+        {
+            if (cue.start_frame > frame) break;
+            if (frame < cue.end_frame) active.emplace_back(cue.text);
+        }
+        return active;
     }
 
     void ValidateNativeAudioProductStructure(std::span<const std::byte> bytes,

@@ -3,9 +3,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "asset_product.h"
@@ -69,6 +71,21 @@ namespace kpengine::asset
         ContentHash product_hash{};
     };
 
+    // File-backed view: encoded bytes stay in the immutable product file.
+    // Metadata chunks are copied into bounded memory after streaming integrity
+    // verification, so playback can seek without retaining the whole payload.
+    struct NativeAudioFileProduct
+    {
+        std::filesystem::path path;
+        NativeAudioData metadata;
+        std::uint64_t encoded_audio_offset{};
+        std::uint64_t encoded_audio_size{};
+        ContentHash integrity_digest{};
+        ContentHash product_hash{};
+
+        std::vector<std::string_view> SubtitleTextAt(std::uint64_t frame) const;
+    };
+
     enum class NativeAudioErrorCode : std::uint8_t
     {
         InvalidArgument,
@@ -96,6 +113,7 @@ namespace kpengine::asset
     NativeAudioProduct DeserializeNativeAudio(
         std::span<const std::byte> bytes,
         const ContentHashPair *verified_hashes = nullptr);
+    NativeAudioFileProduct ReadNativeAudioFile(const std::filesystem::path &path);
     void ValidateNativeAudioProductStructure(
         std::span<const std::byte> bytes,
         const ContentHashPair *verified_hashes = nullptr);

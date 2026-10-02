@@ -247,16 +247,18 @@ namespace kpengine::audio_player
             return result;
         }
 
-        std::vector<std::string> PickAudioFiles()
+        std::vector<std::string> PickAudioFiles(const bool allow_multiple = true)
         {
             std::vector<wchar_t> buffer(65536, L'\0');
             OPENFILENAMEW dialog{};
             dialog.lStructSize = sizeof(dialog);
-            dialog.lpstrFilter = L"Audio files\0*.wav;*.mp3;*.ogg;*.flac\0All files\0*.*\0\0";
+            dialog.lpstrFilter = L"Audio files\0*.wav;*.mp3;*.flac\0All files\0*.*\0\0";
             dialog.lpstrFile = buffer.data();
             dialog.nMaxFile = static_cast<DWORD>(buffer.size());
             dialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
-                           OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY;
+                           OFN_HIDEREADONLY;
+            if (allow_multiple)
+                dialog.Flags |= OFN_ALLOWMULTISELECT;
             if (!GetOpenFileNameW(&dialog))
             {
                 return {};
@@ -280,6 +282,19 @@ namespace kpengine::audio_player
             return paths;
         }
 
+        std::string PickSubtitleFile()
+        {
+            std::array<wchar_t, 32768> path{};
+            OPENFILENAMEW dialog{};
+            dialog.lStructSize = sizeof(dialog);
+            dialog.lpstrFilter = L"Subtitle files\0*.srt;*.vtt;*.lrc\0All files\0*.*\0\0";
+            dialog.lpstrFile = path.data();
+            dialog.nMaxFile = static_cast<DWORD>(path.size());
+            dialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
+                           OFN_HIDEREADONLY;
+            return GetOpenFileNameW(&dialog) ? ToUtf8(path.data()) : std::string{};
+        }
+
         std::string PickAudioFolder()
         {
             BROWSEINFOW dialog{};
@@ -296,15 +311,17 @@ namespace kpengine::audio_player
             return resolved ? ToUtf8(folder.data()) : std::string{};
         }
 #else
-        std::vector<std::string> PickAudioFiles() { return {}; }
+        std::vector<std::string> PickAudioFiles(bool = true) { return {}; }
+        std::string PickSubtitleFile() { return {}; }
         std::string PickAudioFolder() { return {}; }
 #endif
 
         void SubmitFile(AudioPlayerController &controller, const std::string &path,
+                        const std::string &subtitle_path,
                         std::string &status, std::string &error)
         {
             std::string diagnostic;
-            if (controller.ImportFile(path, diagnostic))
+            if (controller.ImportFile(path, subtitle_path, diagnostic))
             {
                 status = "Import queued";
                 error.clear();
@@ -351,7 +368,7 @@ namespace kpengine::audio_player
                 {
                     ImGui::Spacing();
                     ImGui::TextColored(kMuted, "The queue is empty.");
-                    ImGui::TextWrapped("Add audio files or a folder. WAV, MP3, OGG, and FLAC are supported.");
+                    ImGui::TextWrapped("Add audio files or a folder. WAV, MP3, and FLAC are supported.");
                 }
                 else
                 {
@@ -442,7 +459,7 @@ namespace kpengine::audio_player
         }
 
         void RenderLibrary(AudioPlayerController &controller, const std::vector<TrackView> &queue,
-                           int &filter, char *import_path,
+                           int &filter, char *import_path, char *subtitle_path,
                            const std::size_t import_path_capacity,
                            std::string &status, std::string &error)
         {
@@ -467,11 +484,25 @@ namespace kpengine::audio_player
             }
             ImGui::Spacing();
             ImGui::Separator();
-            if (ImGui::Button("ADD FILES", ImVec2(-1.0f, 0.0f)))
+            ImGui::TextColored(kCyan, "// OPTIONAL SUBTITLE");
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint("##SubtitlePath", "Choose an SRT, WebVTT, or LRC file…",
+                                     subtitle_path, import_path_capacity);
+            const float subtitle_action_width = (ImGui::GetContentRegionAvail().x - 6.0f) * 0.5f;
+            if (ImGui::Button("BROWSE SUBTITLE", ImVec2(subtitle_action_width, 0.0f)))
             {
-                for (const auto &path : PickAudioFiles())
+                const std::string selected = PickSubtitleFile();
+                if (!selected.empty())
+                    std::snprintf(subtitle_path, import_path_capacity, "%s", selected.c_str());
+            }
+            ImGui::SameLine();
+            ImGui::TextColored(kMuted, "Attached explicitly to the next track");
+            if (ImGui::Button(subtitle_path[0] == '\0' ? "ADD FILES" : "ADD FILE",
+                              ImVec2(-1.0f, 0.0f)))
+            {
+                for (const auto &path : PickAudioFiles(subtitle_path[0] == '\0'))
                 {
-                    SubmitFile(controller, path, status, error);
+                    SubmitFile(controller, path, subtitle_path, status, error);
                 }
             }
             if (ImGui::Button("ADD FOLDER", ImVec2(-1.0f, 0.0f)))
@@ -498,7 +529,7 @@ namespace kpengine::audio_player
             const float action_width = (ImGui::GetContentRegionAvail().x - 6.0f) * 0.5f;
             if (ImGui::Button("QUEUE FILE", ImVec2(action_width, 0.0f)))
             {
-                SubmitFile(controller, import_path, status, error);
+                SubmitFile(controller, import_path, subtitle_path, status, error);
             }
             ImGui::SameLine();
             if (ImGui::Button("QUEUE FOLDER", ImVec2(action_width, 0.0f)))
@@ -535,8 +566,7 @@ namespace kpengine::audio_player
 
         void RenderAudioPreview(AudioPlayerController &controller,
                                 const PlaybackView &playback, ImFont *font,
-                                const std::array<std::vector<std::uint8_t>, 7> &icon_alpha,
-                                float &playback_rate)
+                                const std::array<std::vector<std::uint8_t>, 7> &icon_alpha)
         {
             char format[96]{};
             if (playback.track.has_value())
@@ -556,10 +586,11 @@ namespace kpengine::audio_player
             state.format_label = format;
             state.status = playback.error.empty() ?
                 std::string_view(playback.status) : std::string_view(playback.error);
+            state.subtitle_text = playback.subtitle_text;
             state.current_time = playback.position_seconds;
             state.duration = playback.duration_seconds;
             state.volume = playback.muted ? 0.0f : playback.volume;
-            state.playback_rate = playback_rate;
+            state.playback_rate = playback.playback_rate;
             state.rms = playback.rms;
             state.peak = playback.peak;
             state.height = ImGui::GetContentRegionAvail().y;
@@ -586,6 +617,7 @@ namespace kpengine::audio_player
             state.is_muted = playback.muted;
             state.is_error = !playback.error.empty();
             state.can_seek = playback.can_seek;
+            state.has_subtitle_track = playback.subtitle_track_attached;
 
             const AudioPreviewActions actions = DrawAudioPreview(state);
             std::string diagnostic;
@@ -601,12 +633,14 @@ namespace kpengine::audio_player
                     controller.SetMuted(false);
                 controller.SetVolume(*actions.volume);
             }
-            if (actions.playback_rate) playback_rate = *actions.playback_rate;
+            if (actions.playback_rate) controller.SetPlaybackRate(*actions.playback_rate);
         }
 
         void RenderInspector(AudioPlayerController &controller,
                              audio::MiniAudioSystem &audio_system,
-                             const PlaybackView &playback, bool &show_diagnostics)
+                             const PlaybackView &playback, char *subtitle_path,
+                             std::string &ui_status, std::string &ui_error,
+                             bool &show_diagnostics)
         {
             if (playback.track.has_value())
             {
@@ -620,10 +654,31 @@ namespace kpengine::audio_player
                 TextField("Sample rate", sample_rate);
                 TextField("Duration", FormatTime(track.duration_seconds).c_str());
                 TextField("File size", FormatBytes(track.file_size).c_str());
-                TextField("Decode", "Float PCM; source bit depth unavailable");
+                TextField("Runtime", track.native_product
+                    ? "Native Audio; file-backed streaming" : "Buffered compatibility clip");
+                if (track.has_subtitles)
+                {
+                    char subtitle_summary[96]{};
+                    std::snprintf(subtitle_summary, sizeof(subtitle_summary), "%s (%u cues)",
+                                  track.subtitle_language.c_str(), track.subtitle_cue_count);
+                    TextField("Subtitles", subtitle_summary);
+                }
+                else
+                {
+                    TextField("Subtitles", "None attached");
+                }
                 if (ImGui::SmallButton(track.favorite ? "Remove favorite" : "Add favorite"))
                 {
                     controller.ToggleFavorite(track.id);
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Reimport"))
+                {
+                    std::string diagnostic;
+                    if (!controller.ReimportSelected(subtitle_path, diagnostic))
+                        ui_error = std::move(diagnostic);
+                    else
+                        ui_status = "Reimport queued";
                 }
             }
             else
@@ -737,7 +792,8 @@ namespace kpengine::audio_player
                 "audio_library", "Library",
                 std::make_unique<AudioPlayerDockPanel>("Library", [this] {
                     RenderLibrary(*controller_, controller_->GetQueue(), library_filter_,
-                                 import_path_, sizeof(import_path_), ui_status_, ui_error_);
+                                 import_path_, subtitle_path_, sizeof(import_path_),
+                                 ui_status_, ui_error_);
                 }), true, editor::EditorLayoutSlot::WorldOutliner);
             dock_host_->AddPanel(
                 "audio_playlists", "Playlists",
@@ -748,8 +804,7 @@ namespace kpengine::audio_player
                 "audio_now_playing", "Now Playing",
                 std::make_unique<AudioPlayerDockPanel>("Now Playing", [this] {
                     RenderAudioPreview(*controller_, controller_->GetPlaybackView(),
-                                       ui_->GetCodeFont(), playback_icon_alpha_,
-                                       playback_rate_);
+                                       ui_->GetCodeFont(), playback_icon_alpha_);
                 }), true, editor::EditorLayoutSlot::Viewport);
             dock_host_->AddPanel(
                 "audio_queue", "Playlist : All",
@@ -761,7 +816,8 @@ namespace kpengine::audio_player
                 "audio_info", "Info",
                 std::make_unique<AudioPlayerDockPanel>("Info", [this] {
                     RenderInspector(*controller_, *audio_system_,
-                                    controller_->GetPlaybackView(), show_diagnostics_);
+                                    controller_->GetPlaybackView(), subtitle_path_,
+                                    ui_status_, ui_error_, show_diagnostics_);
                 }), true, editor::EditorLayoutSlot::CameraSettings);
             dock_host_->AddPanel(
                 "audio_spectrum", "Spectrum",

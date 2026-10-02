@@ -132,10 +132,28 @@ namespace kpengine::audio_player
                 }, CommandThread::Game});
         };
 
-        if (!register_value("audio.import_file", "Queue a local WAV, MP3, OGG, or FLAC file",
-                {"path", CommandValueType::String, true, {}, {}},
-                [](AudioPlayerController &controller, const CommandCall &call, std::string &message)
-                { return controller.ImportFile(std::get<std::string>(call.arguments.at("path")), message); }) ||
+        CommandDesc import_audio{};
+        import_audio.name = "audio.import_file";
+        import_audio.provider = "AudioPlayer";
+        import_audio.help = "Import a local WAV, MP3, or FLAC file; optionally attach an SRT, WebVTT, or LRC subtitle";
+        import_audio.category = CommandCategory::Engine;
+        import_audio.flags = mutate;
+        import_audio.schema.arguments = {
+            {"path", CommandValueType::String, true, {}, {}},
+            {"subtitle", CommandValueType::String, false, {}, {}}};
+        import_audio.handler = [this](const CommandCall &call, const CommandContext &context)
+        {
+            const auto subtitle = call.arguments.find("subtitle");
+            const std::string subtitle_path = subtitle == call.arguments.end()
+                ? std::string{} : std::get<std::string>(subtitle->second);
+            std::string message;
+            const bool succeeded = controller_->ImportFile(
+                std::get<std::string>(call.arguments.at("path")), subtitle_path, message);
+            return CommandResult{succeeded ? CommandStatus::Success : CommandStatus::Failed,
+                succeeded ? "Audio import queued" : message, context.request_id, {}};
+        };
+        import_audio.execution_thread = CommandThread::Game;
+        if (!install(std::move(import_audio)) ||
             !register_value("audio.import_folder", "Queue supported audio files from one folder",
                 {"path", CommandValueType::String, true, {}, {}},
                 [](AudioPlayerController &controller, const CommandCall &call, std::string &message)
@@ -185,6 +203,15 @@ namespace kpengine::audio_player
                     { message = "No seekable track is active"; return false; }
                     return true;
                 }) ||
+            !register_value("audio.speed", "Set playback speed from 0.5x to 2.0x",
+                {"value", CommandValueType::Float, true, {}, {}},
+                [](AudioPlayerController &controller, const CommandCall &call, std::string &message)
+                {
+                    if (!controller.SetPlaybackRate(static_cast<float>(
+                            std::get<double>(call.arguments.at("value")))))
+                    { message = "Playback speed must be between 0.5x and 2.0x"; return false; }
+                    return true;
+                }) ||
             !register_value("audio.volume", "Set selected-track volume from 0 to 1",
                 {"value", CommandValueType::Float, true, {}, {}},
                 [](AudioPlayerController &controller, const CommandCall &call, std::string &)
@@ -232,8 +259,12 @@ namespace kpengine::audio_player
                      {"state", static_cast<std::uint64_t>(view.state)},
                      {"elapsed_seconds", static_cast<double>(view.position_seconds)},
                      {"duration_seconds", static_cast<double>(view.duration_seconds)},
+                     {"playback_rate", static_cast<double>(view.playback_rate)},
                      {"queue_size", static_cast<std::uint64_t>(view.queue_size)},
                      {"pending_imports", static_cast<std::uint64_t>(view.pending_imports)},
+                     {"subtitle_attached", view.subtitle_track_attached},
+                     {"subtitle_language", view.subtitle_language},
+                     {"subtitle_text", view.subtitle_text},
                      {"error", view.error}}};
             }, CommandThread::Immediate};
         if (!install(std::move(status)))

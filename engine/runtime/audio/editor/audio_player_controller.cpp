@@ -11,15 +11,21 @@
 #include <filesystem>
 #include <mutex>
 #include <random>
+#include <span>
 #include <thread>
 #include <unordered_set>
 #include <string_view>
 
 #include "runtime/asset/asset_manager.h"
+#include "runtime/asset/asset_import_registry.h"
 #include "runtime/asset/audio.h"
+#include "runtime/asset/audio_import_service.h"
+#include "runtime/asset/asset_product.h"
 #include "runtime/audio/audio_player.h"
 #include "runtime/audio/buffer_audio_player.h"
 #include "runtime/audio/miniaudio_audio_system.h"
+#include "runtime/audio/seekable_audio_player.h"
+#include "runtime/core/config/path.h"
 #include "log/logger.h"
 
 namespace kpengine::audio_player
@@ -29,8 +35,8 @@ namespace kpengine::audio_player
         constexpr std::uint64_t kMaximumFileBytes = 256ull * 1024ull * 1024ull;
         constexpr std::size_t kMaximumQueueTracks = 512;
         constexpr std::size_t kMaximumFolderFiles = 512;
-        constexpr std::array<std::string_view, 4> kSupportedExtensions{
-            ".wav", ".mp3", ".ogg", ".flac"};
+        constexpr std::array<std::string_view, 3> kSupportedExtensions{
+            ".wav", ".mp3", ".flac"};
 
         std::string PathUtf8(const std::filesystem::path &path)
         {
@@ -106,27 +112,28 @@ namespace kpengine::audio_player
             std::array<float, 48> spectrum{};
         };
 
-        SignalSnapshot SampleSignal(const data::AudioClip &clip, const std::uint64_t played_frame)
+        SignalSnapshot SampleSignal(const std::span<const float> pcm,
+                                    const std::size_t channels)
         {
             SignalSnapshot signal{};
             constexpr std::size_t count = 256;
             constexpr float pi = 3.14159265358979323846f;
             std::array<std::complex<float>, count> bins{};
-            const std::size_t channels = clip.format.channels;
-            if (channels == 0 || clip.frame_count == 0 ||
-                clip.frame_count > clip.pcm.size() / channels)
+            if (channels == 0 || pcm.empty())
                 return signal;
+            const std::size_t frame_count = std::min(count, pcm.size() / channels);
+            const std::size_t first_sample = (pcm.size() / channels - frame_count) * channels;
+            const std::size_t leading_silence = count - frame_count;
 
             float energy = 0.0f;
             for (std::size_t i = 0; i < count; ++i)
             {
-                const std::uint64_t source_frame = played_frame >= count - i
-                    ? played_frame - (count - i) : clip.frame_count;
-                if (source_frame >= clip.frame_count)
+                if (i < leading_silence)
                     continue;
+                const std::size_t source_frame = i - leading_silence;
                 float sample = 0.0f;
                 for (std::size_t channel = 0; channel < channels; ++channel)
-                    sample += clip.pcm[static_cast<std::size_t>(source_frame) * channels + channel];
+                    sample += pcm[first_sample + source_frame * channels + channel];
                 sample /= static_cast<float>(channels);
                 signal.peak = std::max(signal.peak, std::abs(sample));
                 energy += sample * sample;
@@ -200,11 +207,13 @@ namespace kpengine::audio_player
         {
             TrackView view;
             std::shared_ptr<const data::AudioClip> clip;
+            std::shared_ptr<const asset::NativeAudioFileProduct> native_product;
         };
 
         struct ImportJob
         {
             std::filesystem::path path;
+            std::filesystem::path subtitle_path;
             std::uint64_t file_size = 0;
         };
 
@@ -214,12 +223,15 @@ namespace kpengine::audio_player
             std::shared_ptr<audio::AudioPlayer> player;
             std::shared_ptr<audio::BufferAudioPlayer> buffer_player;
             std::shared_ptr<const data::AudioClip> clip;
+            std::shared_ptr<const asset::NativeAudioFileProduct> native_product;
+            TrackView track_snapshot;
             std::uint64_t track_id = 0;
         };
 
         SignalSnapshot CurrentSignal()
         {
-            if (!voice.player || !voice.clip || !audio_system->IsInitialized() ||
+            if (!voice.player || (!voice.clip && !voice.native_product) ||
+                !audio_system->IsInitialized() ||
                 voice.player->GetCurrentState() != audio::AudioState::Playing ||
                 muted || audio_system->IsBusMuted(audio::AudioBus::Music) || volume <= 0.0f)
             {
@@ -232,7 +244,42 @@ namespace kpengine::audio_player
                 frame < signal_frame ||
                 now - signal_updated >= std::chrono::milliseconds(33))
             {
-                signal_cache = SampleSignal(*voice.clip, frame);
+                if (voice.clip != nullptr)
+                {
+                    const std::size_t channels = voice.clip->format.channels;
+                    const std::uint64_t frames_before_cursor = std::min<std::uint64_t>(
+                        frame, voice.clip->frame_count);
+                    const std::uint64_t first_frame = frames_before_cursor > 256
+                        ? frames_before_cursor - 256 : 0;
+                    const std::size_t available_samples = static_cast<std::size_t>(
+                        frames_before_cursor - first_frame) * channels;
+                    if (channels != 0 && available_samples <= voice.clip->pcm.size())
+                    {
+                        signal_cache = SampleSignal(
+                            std::span<const float>{voice.clip->pcm.data() +
+                                static_cast<std::size_t>(first_frame) * channels,
+                                available_samples},
+                            channels);
+                    }
+                }
+                else if (auto seekable =
+                             std::dynamic_pointer_cast<audio::SeekableAudioPlayer>(voice.player))
+                {
+                    constexpr std::uint32_t window_frames = 256;
+                    std::array<float, window_frames * 2> samples{};
+                    std::uint32_t channels = 0;
+                    const std::uint32_t copied = seekable->CopyBufferedFrames(
+                        frame, samples.data(), window_frames, channels);
+                    if (copied == 0)
+                        return signal_cache;
+                    signal_cache = SampleSignal(
+                        std::span<const float>{samples.data(),
+                            static_cast<std::size_t>(copied) * channels}, channels);
+                }
+                else
+                {
+                    signal_cache = {};
+                }
                 const float gain = muted || audio_system->IsBusMuted(audio::AudioBus::Music)
                     ? 0.0f : volume * audio_system->GetBusGain(audio::AudioBus::Music) *
                         audio_system->GetMasterGain();
@@ -264,22 +311,41 @@ namespace kpengine::audio_player
             last_error = message;
         }
 
-        bool EnqueueImport(const std::filesystem::path &path, std::string &diagnostic)
+        bool EnqueueImport(const std::filesystem::path &path,
+                           const std::filesystem::path &subtitle_path,
+                           std::string &diagnostic)
         {
             std::error_code error;
-            if (!std::filesystem::is_regular_file(path, error) || error)
+            const std::filesystem::path absolute_path =
+                std::filesystem::absolute(path, error).lexically_normal();
+            if (error)
+            {
+                diagnostic = "Could not resolve the selected audio path";
+                SetImportError(diagnostic);
+                return false;
+            }
+            const std::filesystem::path absolute_subtitle = subtitle_path.empty()
+                ? std::filesystem::path{}
+                : std::filesystem::absolute(subtitle_path, error).lexically_normal();
+            if (error)
+            {
+                diagnostic = "Could not resolve the selected subtitle path";
+                SetImportError(diagnostic);
+                return false;
+            }
+            if (!std::filesystem::is_regular_file(absolute_path, error) || error)
             {
                 diagnostic = "File does not exist or is not a regular file";
                 SetImportError(diagnostic);
                 return false;
             }
-            if (!IsSupported(path))
+            if (!IsSupported(absolute_path))
             {
-                diagnostic = "Supported formats are WAV, MP3, OGG, and FLAC";
+                diagnostic = "Supported formats are WAV, MP3, and FLAC";
                 SetImportError(diagnostic);
                 return false;
             }
-            const std::uint64_t size = std::filesystem::file_size(path, error);
+            const std::uint64_t size = std::filesystem::file_size(absolute_path, error);
             if (error || size == 0)
             {
                 diagnostic = error ? "Could not read the file size" : "Audio file is empty";
@@ -293,7 +359,7 @@ namespace kpengine::audio_player
                 return false;
             }
 
-            const std::string key = CanonicalKey(path);
+            const std::string key = CanonicalKey(absolute_path);
             std::lock_guard lock(mutex);
             if (stopping)
             {
@@ -307,16 +373,35 @@ namespace kpengine::audio_player
                 last_error = diagnostic;
                 return false;
             }
-            if (queued_paths.contains(key) || track_paths.contains(key))
+            if (queued_paths.contains(key))
             {
-                diagnostic = "This file is already in the queue or importing";
+                diagnostic = "This file is already being imported";
                 last_error = diagnostic;
                 return false;
             }
 
-            import_jobs.push_back({path, size});
+            if (!absolute_subtitle.empty())
+            {
+                error.clear();
+                if (!std::filesystem::is_regular_file(absolute_subtitle, error) || error)
+                {
+                    diagnostic = "Subtitle does not exist or is not a regular file";
+                    last_error = diagnostic;
+                    return false;
+                }
+                const std::string subtitle_extension = Extension(absolute_subtitle);
+                if (subtitle_extension != ".srt" && subtitle_extension != ".vtt" &&
+                    subtitle_extension != ".lrc")
+                {
+                    diagnostic = "Subtitle format must be SRT, WebVTT, or LRC";
+                    last_error = diagnostic;
+                    return false;
+                }
+            }
+
+            import_jobs.push_back({absolute_path, absolute_subtitle, size});
             queued_paths.insert(key);
-            last_status = "Import queued: " + PathUtf8(path.filename());
+            last_status = "Import queued: " + PathUtf8(absolute_path.filename());
             last_error.clear();
             import_changed.notify_one();
             diagnostic.clear();
@@ -342,12 +427,37 @@ namespace kpengine::audio_player
                 }
 
                 std::string failure;
-                std::string path = PathUtf8(job.path);
+                const std::string path = PathUtf8(job.path);
                 std::shared_ptr<asset::AudioResource> resource;
                 try
                 {
-                    const asset::AssetID asset_id =
-                        asset::AssetManager::GetInstance().LoadSync(path);
+                    std::error_code path_error;
+                    const std::filesystem::path canonical_source =
+                        std::filesystem::weakly_canonical(job.path, path_error);
+                    if (path_error)
+                        throw std::runtime_error("Could not resolve the selected audio path");
+
+                    asset::ImportProviderRequest request{};
+                    request.asset_root = job.path.parent_path();
+                    request.archive_root = std::filesystem::path(GetSaveDirectory()) /
+                        "audio_player" /
+                        asset::Sha256(PathUtf8(canonical_source)).ToHex();
+                    request.source_path = job.path.filename();
+                    if (!job.subtitle_path.empty())
+                    {
+                        request.audio_options = asset::AudioImportOptions{};
+                        const std::filesystem::path relative_subtitle =
+                            job.subtitle_path.lexically_relative(request.asset_root);
+                        if (relative_subtitle.empty() || relative_subtitle.is_absolute())
+                            throw std::runtime_error(
+                                "Subtitle must be inside the audio file's folder");
+                        request.audio_options->subtitle_path = relative_subtitle;
+                    }
+
+                    const asset::AudioImportSummary imported =
+                        asset::AudioImportService{}.Import(request);
+                    const asset::AssetID asset_id = asset::AssetManager::GetInstance().LoadSync(
+                        imported.product_path.generic_string());
                     resource = asset_id.IsValid()
                         ? asset::AssetManager::GetInstance().GetResource<asset::AudioResource>(asset_id)
                         : nullptr;
@@ -356,38 +466,65 @@ namespace kpengine::audio_player
                 {
                     failure = exception.what();
                 }
-                if (resource == nullptr || resource->data == nullptr ||
-                    resource->data->frame_count == 0 ||
-                    resource->data->format.channels == 0 ||
-                    resource->data->format.sample_rate == 0)
+                if (resource == nullptr || resource->native_product == nullptr ||
+                    resource->native_product->metadata.duration_frames == 0 ||
+                    resource->native_product->encoded_audio_size == 0)
                 {
-                    failure = "Could not decode this file as playable audio";
+                    if (failure.empty())
+                        failure = "Could not load the native Audio product";
                 }
 
                 std::lock_guard lock(mutex);
                 import_active = false;
                 const std::string key = CanonicalKey(job.path);
                 queued_paths.erase(key);
-                if (failure.empty() && tracks.size() < kMaximumQueueTracks)
+                const auto existing_track = std::find_if(
+                    tracks.begin(), tracks.end(), [&key](const Track &candidate)
+                    { return CanonicalKey(FromUtf8(candidate.view.path)) == key; });
+                if (failure.empty() &&
+                    (tracks.size() < kMaximumQueueTracks || existing_track != tracks.end()))
                 {
                     Track track{};
-                    track.view.id = next_track_id++;
+                    track.view.id = existing_track == tracks.end()
+                        ? next_track_id++ : existing_track->view.id;
+                    track.view.favorite = existing_track != tracks.end() &&
+                        existing_track->view.favorite;
                     track.view.path = path;
                     track.view.name = PathUtf8(job.path.stem());
                     track.view.extension = Extension(job.path);
                     track.view.file_size = job.file_size;
-                    track.view.duration_seconds = resource->data->GetDuration();
-                    track.view.sample_rate = resource->data->format.sample_rate;
-                    track.view.channels = resource->data->format.channels;
-                    track.view.waveform = BuildWaveform(*resource->data);
-                    track.clip = std::move(resource->data);
-                    track_paths.insert(key);
+                    const asset::NativeAudioFileProduct &native = *resource->native_product;
+                    track.view.duration_seconds = static_cast<float>(native.metadata.duration_frames) /
+                        static_cast<float>(asset::kNativeAudioTimelineSampleRate);
+                    track.view.sample_rate = native.metadata.sample_rate;
+                    track.view.channels = static_cast<std::uint16_t>(native.metadata.channels);
+                    track.view.native_product = true;
+                    track.view.has_subtitles = !native.metadata.subtitle_language.empty();
+                    track.view.subtitle_cue_count =
+                        static_cast<std::uint32_t>(native.metadata.subtitles.size());
+                    track.view.subtitle_language = native.metadata.subtitle_language;
+                    auto peaks = std::make_shared<std::vector<float>>();
+                    peaks->reserve(native.metadata.waveform.size());
+                    for (const asset::NativeAudioPeak &peak : native.metadata.waveform)
+                        peaks->push_back(std::max(std::abs(peak.minimum), std::abs(peak.maximum)));
+                    track.view.waveform = std::move(peaks);
+                    track.native_product = resource->native_product;
+                    const bool reimported = existing_track != tracks.end();
                     if (!selected_track_id.has_value())
                     {
                         selected_track_id = track.view.id;
                     }
-                    last_status = "Imported: " + track.view.name;
-                    tracks.push_back(std::move(track));
+                    last_status = std::string(reimported ? "Reimported: " : "Imported: ") +
+                        track.view.name;
+                    if (reimported)
+                    {
+                        *existing_track = std::move(track);
+                    }
+                    else
+                    {
+                        track_paths.insert(key);
+                        tracks.push_back(std::move(track));
+                    }
                     if (!voice.handle.IsValid() && selected_track_id.has_value())
                     {
                         if (Track *selected = FindTrack(*selected_track_id); selected != nullptr)
@@ -438,15 +575,26 @@ namespace kpengine::audio_player
         {
             if (voice.handle.IsValid() && voice.track_id == track.view.id)
             {
-                diagnostic.clear();
-                return true;
+                const bool same_native_product = voice.native_product == track.native_product;
+                const bool same_clip = voice.clip == track.clip;
+                if (same_native_product && same_clip)
+                {
+                    diagnostic.clear();
+                    return true;
+                }
             }
             DestroyVoice();
-            const audio::AudioHandle handle =
-                audio_system->CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+            const audio::AudioPlayerType player_type = track.native_product != nullptr
+                ? audio::AudioPlayerType::Seekable : audio::AudioPlayerType::Buffer;
+            const audio::AudioHandle handle = audio_system->CreateAudioPlayer(player_type);
             auto player = audio_system->GetAudioPlayer(handle);
-            auto buffer = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(player);
-            if (!handle.IsValid() || buffer == nullptr)
+            auto buffer = player_type == audio::AudioPlayerType::Buffer
+                ? std::dynamic_pointer_cast<audio::BufferAudioPlayer>(player) : nullptr;
+            auto seekable = player_type == audio::AudioPlayerType::Seekable
+                ? std::dynamic_pointer_cast<audio::SeekableAudioPlayer>(player) : nullptr;
+            if (!handle.IsValid() || player == nullptr ||
+                (player_type == audio::AudioPlayerType::Buffer && buffer == nullptr) ||
+                (player_type == audio::AudioPlayerType::Seekable && seekable == nullptr))
             {
                 if (handle.IsValid())
                 {
@@ -457,11 +605,34 @@ namespace kpengine::audio_player
                 last_status = "Could not create playback voice";
                 return false;
             }
-            buffer->SetClip(track.clip);
-            buffer->SetBus(audio::AudioBus::Music);
-            buffer->SetVolume(muted ? 0.0f : volume);
-            buffer->SetShouldLoop(loop_track);
-            voice = {handle, std::move(player), std::move(buffer), track.clip, track.view.id};
+            if (buffer != nullptr)
+            {
+                buffer->SetClip(track.clip);
+            }
+            else
+            {
+                const asset::NativeAudioFileProduct &native = *track.native_product;
+                const audio::FileBackedAudioSource source{
+                    native.path, native.encoded_audio_offset, native.encoded_audio_size,
+                    native.metadata.duration_frames, track.native_product};
+                if (!seekable->SetSource(source))
+                {
+                    diagnostic = seekable->GetDiagnostic();
+                    audio_system->DestroyAudioPlayer(handle);
+                    last_error = diagnostic;
+                    last_status = "Could not prepare playback decoder";
+                    return false;
+                }
+            }
+            player->SetBus(audio::AudioBus::Music);
+            player->SetVolume(muted ? 0.0f : volume);
+            player->SetShouldLoop(loop_track);
+            if (buffer != nullptr)
+                buffer->SetPlaybackRate(playback_rate);
+            if (seekable != nullptr)
+                seekable->SetPlaybackRate(playback_rate);
+            voice = {handle, std::move(player), std::move(buffer), track.clip,
+                     track.native_product, track.view, track.view.id};
             selected_track_id = track.view.id;
             diagnostic.clear();
             return true;
@@ -484,11 +655,11 @@ namespace kpengine::audio_player
             const audio::AudioState state = voice.player->GetCurrentState();
             if (state == audio::AudioState::Finished || state == audio::AudioState::Stopped)
             {
-                voice.buffer_player->Restart();
+                voice.player->Restart();
             }
             else
             {
-                voice.buffer_player->Play();
+                voice.player->Play();
             }
             last_error.clear();
             last_status = "Playing: " + track.view.name;
@@ -586,6 +757,7 @@ namespace kpengine::audio_player
         std::uint64_t signal_track_id = 0;
         std::uint64_t next_track_id = 1;
         float volume = 0.8f;
+        float playback_rate = 1.0f;
         bool muted = false;
         bool loop_track = false;
         bool shuffle = false;
@@ -606,7 +778,37 @@ namespace kpengine::audio_player
 
     bool AudioPlayerController::ImportFile(std::string path, std::string &diagnostic)
     {
-        return impl_->EnqueueImport(FromUtf8(path), diagnostic);
+        return ImportFile(std::move(path), {}, diagnostic);
+    }
+
+    bool AudioPlayerController::ImportFile(std::string path, std::string subtitle_path,
+                                           std::string &diagnostic)
+    {
+        return impl_->EnqueueImport(FromUtf8(path),
+            subtitle_path.empty() ? std::filesystem::path{} : FromUtf8(subtitle_path),
+            diagnostic);
+    }
+
+    bool AudioPlayerController::ReimportSelected(std::string subtitle_path,
+                                                 std::string &diagnostic)
+    {
+        std::filesystem::path source;
+        {
+            std::lock_guard lock(impl_->mutex);
+            if (!impl_->selected_track_id.has_value())
+            {
+                diagnostic = "Select a track before reimporting";
+                return false;
+            }
+            const Impl::Track *const track = impl_->FindTrack(*impl_->selected_track_id);
+            if (track == nullptr)
+            {
+                diagnostic = "The selected track is no longer in the queue";
+                return false;
+            }
+            source = FromUtf8(track->view.path);
+        }
+        return ImportFile(PathUtf8(source), std::move(subtitle_path), diagnostic);
     }
 
     bool AudioPlayerController::ImportFolder(std::string path, std::string &diagnostic)
@@ -635,7 +837,7 @@ namespace kpengine::audio_player
         if (files.empty())
         {
             diagnostic = error ? "Could not enumerate the selected folder"
-                               : "No WAV, MP3, OGG, or FLAC files were found";
+                               : "No WAV, MP3, or FLAC files were found";
             return false;
         }
 
@@ -644,7 +846,7 @@ namespace kpengine::audio_player
         for (const auto &file : files)
         {
             std::string file_diagnostic;
-            if (impl_->EnqueueImport(file, file_diagnostic))
+            if (impl_->EnqueueImport(file, {}, file_diagnostic))
             {
                 ++accepted;
             }
@@ -682,21 +884,58 @@ namespace kpengine::audio_player
         {
             if (const auto *track = impl_->FindTrack(*impl_->selected_track_id))
             {
-                result.track = track->view;
-                result.duration_seconds = track->view.duration_seconds;
+                const bool voice_is_audible = impl_->voice.player != nullptr &&
+                    (impl_->voice.player->GetCurrentState() == audio::AudioState::Playing ||
+                     impl_->voice.player->GetCurrentState() == audio::AudioState::Buffering ||
+                     impl_->voice.player->GetCurrentState() == audio::AudioState::Paused);
+                const TrackView &display_track = voice_is_audible &&
+                    impl_->voice.track_id == track->view.id &&
+                    impl_->voice.native_product != track->native_product
+                        ? impl_->voice.track_snapshot : track->view;
+                result.track = display_track;
+                result.duration_seconds = display_track.duration_seconds;
             }
         }
         if (impl_->voice.handle.IsValid() && impl_->voice.player != nullptr)
         {
             result.state = impl_->voice.player->GetCurrentState();
-            result.position_seconds = impl_->voice.buffer_player->GetCurrentSecond();
+            result.position_seconds = impl_->voice.player->GetCurrentSecond();
             result.volume = impl_->volume;
+            result.playback_rate = impl_->voice.player->GetPlaybackRate();
             result.muted = impl_->muted;
             result.can_seek = true;
+            const Impl::Track *const selected_track = impl_->selected_track_id.has_value()
+                ? impl_->FindTrack(*impl_->selected_track_id) : nullptr;
+            const audio::AudioState voice_state = impl_->voice.player->GetCurrentState();
+            const bool voice_is_active = voice_state == audio::AudioState::Playing ||
+                voice_state == audio::AudioState::Buffering ||
+                voice_state == audio::AudioState::Paused;
+            const bool voice_matches_selected = selected_track != nullptr &&
+                impl_->voice.track_id == selected_track->view.id;
+            const bool voice_is_selected_product = voice_matches_selected &&
+                impl_->voice.native_product != nullptr &&
+                impl_->voice.native_product == selected_track->native_product;
+            const bool voice_should_supply_cues = voice_matches_selected &&
+                (voice_is_active || voice_is_selected_product);
+            if (voice_matches_selected && voice_should_supply_cues &&
+                impl_->voice.native_product != nullptr)
+            {
+                result.subtitle_language = impl_->voice.native_product->metadata.subtitle_language;
+                result.subtitle_track_attached = !result.subtitle_language.empty();
+                const auto active = impl_->voice.native_product->SubtitleTextAt(
+                    impl_->voice.player->GetPlayedFrameCursor());
+                for (const std::string_view text : active)
+                {
+                    if (!result.subtitle_text.empty())
+                        result.subtitle_text.push_back('\n');
+                    result.subtitle_text.append(text);
+                }
+            }
         }
         else
         {
             result.volume = impl_->volume;
+            result.playback_rate = impl_->playback_rate;
             result.muted = impl_->muted;
         }
         result.loop_track = impl_->loop_track;
@@ -802,7 +1041,7 @@ namespace kpengine::audio_player
             const audio::AudioState state = impl_->voice.player->GetCurrentState();
             if (state == audio::AudioState::Paused)
             {
-                impl_->voice.buffer_player->Play();
+                impl_->voice.player->Play();
                 impl_->last_status = "Playing: " + impl_->FindTrack(*impl_->selected_track_id)->view.name;
                 diagnostic.clear();
                 return true;
@@ -831,7 +1070,7 @@ namespace kpengine::audio_player
                 const audio::AudioState state = impl_->voice.player->GetCurrentState();
                 if (state == audio::AudioState::Playing || state == audio::AudioState::Buffering)
                 {
-                    impl_->voice.buffer_player->Pause();
+                    impl_->voice.player->Pause();
                     impl_->last_status = "Paused";
                     diagnostic.clear();
                     return true;
@@ -846,7 +1085,7 @@ namespace kpengine::audio_player
         std::lock_guard lock(impl_->mutex);
         if (impl_->voice.handle.IsValid())
         {
-            impl_->voice.buffer_player->Pause();
+            impl_->voice.player->Pause();
             impl_->last_status = "Paused";
         }
     }
@@ -856,7 +1095,7 @@ namespace kpengine::audio_player
         std::lock_guard lock(impl_->mutex);
         if (impl_->voice.handle.IsValid())
         {
-            impl_->voice.buffer_player->Stop();
+            impl_->voice.player->Stop();
         }
         impl_->last_status = impl_->selected_track_id.has_value() ? "Stopped" : "Ready — import audio to begin";
     }
@@ -870,9 +1109,9 @@ namespace kpengine::audio_player
     bool AudioPlayerController::Previous(const bool play, std::string &diagnostic)
     {
         std::lock_guard lock(impl_->mutex);
-        if (impl_->voice.handle.IsValid() && impl_->voice.buffer_player->GetCurrentSecond() > 3.0f)
+        if (impl_->voice.handle.IsValid() && impl_->voice.player->GetCurrentSecond() > 3.0f)
         {
-            impl_->voice.buffer_player->SeekSeconds(0.0f);
+            impl_->voice.player->SeekSeconds(0.0f);
             diagnostic.clear();
             return true;
         }
@@ -882,7 +1121,25 @@ namespace kpengine::audio_player
     bool AudioPlayerController::Seek(const float seconds)
     {
         std::lock_guard lock(impl_->mutex);
-        return impl_->voice.handle.IsValid() && impl_->voice.buffer_player->SeekSeconds(seconds);
+        return impl_->voice.handle.IsValid() && impl_->voice.player->SeekSeconds(seconds);
+    }
+
+    bool AudioPlayerController::SetPlaybackRate(const float playback_rate)
+    {
+        if (!std::isfinite(playback_rate) || playback_rate < 0.5f || playback_rate > 2.0f)
+        {
+            return false;
+        }
+        std::lock_guard lock(impl_->mutex);
+        impl_->playback_rate = playback_rate;
+        if (!impl_->voice.handle.IsValid())
+            return true;
+        if (impl_->voice.buffer_player != nullptr)
+            return impl_->voice.buffer_player->SetPlaybackRate(playback_rate);
+        if (auto seekable = std::dynamic_pointer_cast<audio::SeekableAudioPlayer>(
+                impl_->voice.player))
+            return seekable->SetPlaybackRate(playback_rate);
+        return false;
     }
 
     void AudioPlayerController::SetVolume(const float volume)
@@ -891,7 +1148,7 @@ namespace kpengine::audio_player
         impl_->volume = std::clamp(volume, 0.0f, 1.0f);
         if (impl_->voice.handle.IsValid())
         {
-            impl_->voice.buffer_player->SetVolume(impl_->muted ? 0.0f : impl_->volume);
+            impl_->voice.player->SetVolume(impl_->muted ? 0.0f : impl_->volume);
         }
     }
 
@@ -901,7 +1158,7 @@ namespace kpengine::audio_player
         impl_->muted = muted;
         if (impl_->voice.handle.IsValid())
         {
-            impl_->voice.buffer_player->SetVolume(impl_->muted ? 0.0f : impl_->volume);
+            impl_->voice.player->SetVolume(impl_->muted ? 0.0f : impl_->volume);
         }
     }
 
@@ -915,7 +1172,7 @@ namespace kpengine::audio_player
         }
         if (impl_->voice.handle.IsValid())
         {
-            impl_->voice.buffer_player->SetShouldLoop(enabled);
+            impl_->voice.player->SetShouldLoop(enabled);
         }
     }
 
@@ -928,7 +1185,7 @@ namespace kpengine::audio_player
             impl_->loop_track = false;
             if (impl_->voice.handle.IsValid())
             {
-                impl_->voice.buffer_player->SetShouldLoop(false);
+                impl_->voice.player->SetShouldLoop(false);
             }
         }
     }

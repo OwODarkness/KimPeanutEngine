@@ -83,6 +83,9 @@ namespace kpengine::asset
     std::optional<ContentHashPair> Sha256WithZeroedRange(
         std::span<const std::byte> value, std::size_t zero_offset,
         std::size_t zero_size);
+    std::optional<ContentHashPair> Sha256FileWithZeroedRange(
+        const std::filesystem::path &path, std::uint64_t zero_offset,
+        std::uint64_t zero_size);
 
     // Returns a portable, lower-case Asset-relative path. Absolute paths and
     // traversal outside the Asset root are rejected at the archive boundary.

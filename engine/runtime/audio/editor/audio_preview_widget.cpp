@@ -12,13 +12,14 @@ namespace kpengine::audio_player
     namespace
     {
         constexpr ImU32 kBackground = IM_COL32(2, 9, 14, 255);
-        constexpr ImU32 kBorder = IM_COL32(12, 67, 82, 255);
-        constexpr ImU32 kCyan = IM_COL32(31, 190, 222, 255);
-        constexpr ImU32 kCyanDim = IM_COL32(13, 91, 113, 255);
-        constexpr ImU32 kAmber = IM_COL32(255, 175, 45, 255);
+        constexpr ImU32 kBorder = IM_COL32(16, 82, 101, 255);
+        constexpr ImU32 kCyan = IM_COL32(48, 211, 239, 255);
+        constexpr ImU32 kCyanDim = IM_COL32(20, 111, 137, 255);
+        constexpr ImU32 kAmber = IM_COL32(255, 184, 58, 255);
         constexpr ImU32 kMuted = IM_COL32(133, 160, 169, 255);
         constexpr ImU32 kRed = IM_COL32(245, 85, 78, 255);
         constexpr ImU32 kGreen = IM_COL32(95, 205, 151, 255);
+        constexpr ImU32 kSubtitleText = IM_COL32(220, 242, 248, 255);
         constexpr float kPi = 3.14159265358979323846f;
 
         ImU32 BlendColor(const ImU32 from, const ImU32 to, const float amount)
@@ -29,6 +30,12 @@ namespace kpengine::audio_player
             return ImGui::GetColorU32(ImVec4(a.x + (b.x - a.x) * t,
                 a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t,
                 a.w + (b.w - a.w) * t));
+        }
+
+        ImU32 WithAlpha(const ImU32 color, const int alpha)
+        {
+            return (color & 0x00FFFFFFu) |
+                (static_cast<ImU32>(std::clamp(alpha, 0, 255)) << IM_COL32_A_SHIFT);
         }
 
         ImVec2 PointOnCircle(const ImVec2 center, const float angle, const float radius)
@@ -190,7 +197,7 @@ namespace kpengine::audio_player
             const float plot_height = std::max(1.0f, plot_bottom - plot_top);
             const float center_y = plot_top + plot_height * 0.5f;
             constexpr float kGridSpacing = 16.0f;
-            constexpr ImU32 kGridPoint = IM_COL32(9, 38, 49, 255);
+            constexpr ImU32 kGridPoint = IM_COL32(15, 56, 70, 255);
             for (float y = plot_top; y < plot_bottom; y += kGridSpacing)
             {
                 for (float x = plot_left; x < plot_right; x += kGridSpacing)
@@ -209,7 +216,7 @@ namespace kpengine::audio_player
                 const float fraction = (static_cast<float>(tick) - window_start) /
                     visible_duration;
                 const float x = plot_left + fraction * plot_width;
-                draw.AddLine({x, plot_top}, {x, axis_y}, IM_COL32(13, 51, 64, 255), 1.0f);
+                draw.AddLine({x, plot_top}, {x, axis_y}, IM_COL32(19, 66, 81, 255), 1.0f);
                 draw.AddLine({x, axis_y - 3.0f}, {x, axis_y + 2.0f}, kCyanDim, 1.0f);
                 const int minutes = tick / 60;
                 const int seconds = tick % 60;
@@ -265,12 +272,21 @@ namespace kpengine::audio_player
                     : 0.0f;
                 const float orange_amount = fade_distance * fade_distance *
                     (3.0f - 2.0f * fade_distance);
-                draw.AddLine({x, center_y - half}, {x, center_y + half},
-                    BlendColor(kCyan, kAmber, orange_amount), bar_width);
+                const ImU32 wave_color = BlendColor(kCyan, kAmber, orange_amount);
+                const ImVec2 wave_top{x, center_y - half};
+                const ImVec2 wave_bottom{x, center_y + half};
+                draw.AddLine(wave_top, wave_bottom, WithAlpha(wave_color, 22), bar_width + 5.0f);
+                draw.AddLine(wave_top, wave_bottom, WithAlpha(wave_color, 48), bar_width + 2.5f);
+                draw.AddLine(wave_top, wave_bottom, wave_color, bar_width);
             }
             const float playhead = plot_left + std::clamp(
                 (state.current_time - window_start) / visible_duration, 0.0f, 1.0f) * plot_width;
+            draw.AddLine({playhead, plot_top}, {playhead, plot_bottom},
+                         WithAlpha(kAmber, 28), 9.0f);
+            draw.AddLine({playhead, plot_top}, {playhead, plot_bottom},
+                         WithAlpha(kAmber, 64), 4.5f);
             draw.AddLine({playhead, plot_top}, {playhead, plot_bottom}, kAmber, 1.5f);
+            draw.AddCircleFilled({playhead, plot_top}, 6.0f, WithAlpha(kAmber, 44), 12);
             draw.AddCircleFilled({playhead, plot_top}, 3.0f, kAmber, 8);
             draw.PopClipRect();
             if (state.can_seek && ImGui::IsItemActive() &&
@@ -569,6 +585,32 @@ namespace kpengine::audio_player
             const ImVec2 text_size = ImGui::CalcTextSize(label);
             draw.AddText({min.x + width - text_size.x - 12.0f, min.y + 10.0f}, color, label);
         }
+
+        void DrawSubtitlePanel(ImDrawList &draw, const AudioPreviewState &state,
+                              const ImVec2 min, const ImVec2 size)
+        {
+            const ImVec2 max{min.x + size.x, min.y + size.y};
+            draw.AddText({min.x + 10.0f, min.y + 5.0f}, kCyan, "// SUBTITLE");
+
+            const std::string_view text = !state.subtitle_text.empty()
+                ? state.subtitle_text
+                : state.has_subtitle_track ? "Waiting for timed cue" :
+                                             "No subtitle attached";
+            const ImVec2 text_min{min.x + 10.0f, min.y + 24.0f};
+            const ImVec2 text_max{max.x - 10.0f, max.y - 3.0f};
+            draw.PushClipRect(text_min, text_max, true);
+            const float wrap_width = std::max(1.0f, text_max.x - text_min.x);
+            const float font_size = ImGui::GetFontSize() * 1.35f;
+            const ImVec2 text_size = ImGui::GetFont()->CalcTextSizeA(
+                font_size, wrap_width, wrap_width, text.data(), text.data() + text.size());
+            const ImU32 color = state.subtitle_text.empty() ? kMuted : kSubtitleText;
+            const ImVec2 text_origin{
+                text_min.x + std::max(0.0f, (wrap_width - text_size.x) * 0.5f),
+                text_min.y + std::max(0.0f, (text_max.y - text_min.y - text_size.y) * 0.5f)};
+            draw.AddText(ImGui::GetFont(), font_size, text_origin, color,
+                         text.data(), text.data() + text.size(), wrap_width);
+            draw.PopClipRect();
+        }
     }
 
     AudioPreviewActions DrawAudioPreview(const AudioPreviewState &state)
@@ -608,23 +650,35 @@ namespace kpengine::audio_player
                 panel_max.y - visual_top.y - (narrow ? 125.0f : 100.0f));
             const float scope_width = std::max(88.0f, std::min(
                 content_width * 0.29f, visual_height * 0.98f));
-            const ImVec2 scope_origin{
-                visual_top.x,
-                visual_top.y + (visual_height - scope_width) * 0.5f};
+            const ImVec2 scope_origin{visual_top.x, visual_top.y};
             DrawScopeFrame(*draw, scope_origin, scope_width);
+            constexpr float scope_content_padding = 8.0f;
+            constexpr float progress_point_radius = 2.0f;
+            const ImVec2 scope_content_min{
+                scope_origin.x + scope_content_padding,
+                scope_origin.y + scope_content_padding};
+            const ImVec2 scope_content_max{
+                scope_origin.x + scope_width - scope_content_padding,
+                scope_origin.y + scope_width - scope_content_padding};
+            const float scope_radius = std::max(1.0f,
+                (scope_width * 0.5f - scope_content_padding - progress_point_radius) / 1.08f);
+            draw->PushClipRect(scope_content_min, scope_content_max, true);
             DrawRadialAudioScope(*draw,
                                  {scope_origin.x + scope_width * 0.5f,
                                   scope_origin.y + scope_width * 0.5f},
-                                 scope_width * 0.46f, state);
+                                 scope_radius, state);
+            draw->PopClipRect();
             ImGui::SetCursorScreenPos(scope_origin);
             ImGui::Dummy(ImVec2(scope_width, scope_width));
             ImGui::SameLine(0.0f, gap);
-            const float waveform_height = std::min(
-                std::clamp(visual_height * 0.58f, 68.0f, 350.0f),
-                visual_height - 67.0f);
-            const float details_height = waveform_height + 67.0f;
+            constexpr float subtitle_height = 78.0f;
+            constexpr float subtitle_gap = 7.0f;
+            const float waveform_height = std::max(48.0f, std::min(
+                std::clamp(visual_height * 0.52f, 68.0f, 300.0f),
+                visual_height - 67.0f - subtitle_gap - subtitle_height));
+            const float details_height = waveform_height + 67.0f + subtitle_gap + subtitle_height;
             ImGui::SetCursorScreenPos({scope_origin.x + scope_width + gap,
-                visual_top.y + (visual_height - details_height) * 0.5f});
+                                       visual_top.y});
             ImGui::BeginGroup();
             const float waveform_width = std::max(100.0f, content_width - scope_width - gap);
             const std::string_view name = state.has_clip ? state.clip_name : "NO CLIP LOADED";
@@ -645,6 +699,10 @@ namespace kpengine::audio_player
             ImGui::Dummy(ImVec2(0.0f, 3.0f));
             DrawWaveform(*draw, ImGui::GetCursorScreenPos(),
                          ImVec2(waveform_width, waveform_height), state, actions);
+            ImGui::Dummy(ImVec2(0.0f, subtitle_gap));
+            DrawSubtitlePanel(*draw, state, ImGui::GetCursorScreenPos(),
+                              ImVec2(waveform_width, subtitle_height));
+            ImGui::Dummy(ImVec2(0.0f, subtitle_height));
             ImGui::EndGroup();
             constexpr float progress_padding_x = 12.0f;
             ImGui::SetCursorScreenPos({visual_top.x + progress_padding_x,

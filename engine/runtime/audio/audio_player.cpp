@@ -118,7 +118,10 @@ namespace kpengine::audio
     {
         const bool ready = ResolveFrame(new_frame);
         if (ready)
+        {
             current_frame_.store(new_frame, std::memory_order_release);
+            OnPlaybackCursorSet();
+        }
         return ready;
     }
 
@@ -188,20 +191,20 @@ namespace kpengine::audio
             }
             else
             {
-                current_frame_.store(0, std::memory_order_release);
+                SetCurrentFrame(0);
                 state_.store(AudioState::Stopped, std::memory_order_release);
                 BeginGainRamp(0.0f);
             }
             break;
         case Command::Reset:
-            current_frame_.store(0, std::memory_order_release);
+            SetCurrentFrame(0);
             state_.store(AudioState::Stopped, std::memory_order_release);
             BeginGainRamp(0.0f);
             break;
         case Command::Restart:
             if (CanStartPlayback())
             {
-                current_frame_.store(0, std::memory_order_release);
+                SetCurrentFrame(0);
                 voice_gain_current_ = 0.0f;
                 state_.store(AudioState::Playing, std::memory_order_release);
                 BeginGainRamp(volume_.load(std::memory_order_acquire));
@@ -224,17 +227,17 @@ namespace kpengine::audio
             BeginGainRamp(volume_.load(std::memory_order_relaxed));
     }
 
-    void AudioPlayer::CommitPlayedFrames(uint32_t frame_count)
+    void AudioPlayer::CommitPlayedFrames(uint32_t frame_count, const float playback_rate)
     {
         if (state_.load(std::memory_order_acquire) == AudioState::Stopped &&
             fade_completion_state_ == AudioState::Stopped)
         {
-            current_frame_.store(0, std::memory_order_release);
+            SetCurrentFrame(0);
             return;
         }
         if (frame_count == 0)
             return;
-        OnPlaybackCursorAdvanced(frame_count);
+        OnPlaybackCursorAdvanced(frame_count, playback_rate);
         if (IsSourceDrained())
             MarkFinished();
     }

@@ -598,6 +598,62 @@ namespace kpengine::asset
         return ContentHashPair{content_state.Final(), zeroed_state.Final()};
     }
 
+    std::optional<ContentHashPair> Sha256FileWithZeroedRange(
+        const std::filesystem::path &path, const std::uint64_t zero_offset,
+        const std::uint64_t zero_size)
+    {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open())
+            throw ModelArchiveError(ModelArchiveErrorCode::IoError,
+                                    "failed to open file for SHA-256: " + path.string());
+        file.seekg(0, std::ios::end);
+        const std::streamoff file_size = file.tellg();
+        if (file_size < 0 || zero_offset > static_cast<std::uint64_t>(file_size) ||
+            zero_size > static_cast<std::uint64_t>(file_size) - zero_offset)
+            return std::nullopt;
+        file.seekg(0, std::ios::beg);
+
+        Sha256State content_state;
+        Sha256State zeroed_state;
+        std::array<std::uint8_t, 64 * 1024> buffer{};
+        std::array<std::uint8_t, 64> zeros{};
+        std::uint64_t cursor = 0;
+        while (file)
+        {
+            file.read(reinterpret_cast<char *>(buffer.data()),
+                      static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize read_count = file.gcount();
+            if (read_count <= 0) break;
+            const auto count = static_cast<std::uint64_t>(read_count);
+            content_state.Update(buffer.data(), static_cast<std::size_t>(count));
+
+            const std::uint64_t block_end = cursor + count;
+            const std::uint64_t range_end = zero_offset + zero_size;
+            const std::uint64_t before_end = std::min(block_end, zero_offset);
+            if (before_end > cursor)
+                zeroed_state.Update(buffer.data(), static_cast<std::size_t>(before_end - cursor));
+            const std::uint64_t zero_begin = std::max(cursor, zero_offset);
+            const std::uint64_t zero_end = std::min(block_end, range_end);
+            std::uint64_t zeros_remaining = zero_end > zero_begin ? zero_end - zero_begin : 0;
+            while (zeros_remaining != 0)
+            {
+                const std::size_t zeros_count = static_cast<std::size_t>(
+                    std::min<std::uint64_t>(zeros_remaining, zeros.size()));
+                zeroed_state.Update(zeros.data(), zeros_count);
+                zeros_remaining -= zeros_count;
+            }
+            const std::uint64_t after_begin = std::max(cursor, range_end);
+            if (block_end > after_begin)
+                zeroed_state.Update(buffer.data() + (after_begin - cursor),
+                                    static_cast<std::size_t>(block_end - after_begin));
+            cursor = block_end;
+        }
+        if (!file.eof() || cursor != static_cast<std::uint64_t>(file_size))
+            throw ModelArchiveError(ModelArchiveErrorCode::IoError,
+                                    "failed while reading file for SHA-256: " + path.string());
+        return ContentHashPair{content_state.Final(), zeroed_state.Final()};
+    }
+
     ContentHash Sha256File(const std::filesystem::path &path)
     {
         std::ifstream file(path, std::ios::binary);

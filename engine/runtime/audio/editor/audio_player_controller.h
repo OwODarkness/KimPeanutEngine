@@ -28,6 +28,10 @@ namespace kpengine::audio_player
         std::uint32_t sample_rate = 0;
         std::uint16_t channels = 0;
         bool favorite = false;
+        bool native_product = false;
+        bool has_subtitles = false;
+        std::uint32_t subtitle_cue_count = 0;
+        std::string subtitle_language;
         std::shared_ptr<const std::vector<float>> waveform;
     };
 
@@ -38,12 +42,16 @@ namespace kpengine::audio_player
         float position_seconds = 0.0f;
         float duration_seconds = 0.0f;
         float volume = 0.8f;
+        float playback_rate = 1.0f;
         bool muted = false;
         bool loop_track = false;
         bool shuffle = false;
         bool can_seek = false;
         std::string status;
         std::string error;
+        std::string subtitle_text;
+        std::string subtitle_language;
+        bool subtitle_track_attached = false;
         std::size_t pending_imports = 0;
         std::size_t queue_size = 0;
         float rms = 0.0f;
@@ -61,6 +69,9 @@ namespace kpengine::audio_player
         AudioPlayerController &operator=(const AudioPlayerController &) = delete;
 
         bool ImportFile(std::string path, std::string &diagnostic);
+        bool ImportFile(std::string path, std::string subtitle_path,
+                        std::string &diagnostic);
+        bool ReimportSelected(std::string subtitle_path, std::string &diagnostic);
         bool ImportFolder(std::string path, std::string &diagnostic);
         std::vector<TrackView> GetQueue() const;
         PlaybackView GetPlaybackView() const;
@@ -76,6 +87,7 @@ namespace kpengine::audio_player
         bool Next(bool play, std::string &diagnostic);
         bool Previous(bool play, std::string &diagnostic);
         bool Seek(float seconds);
+        bool SetPlaybackRate(float playback_rate);
         void SetVolume(float volume);
         void SetMuted(bool muted);
         void SetLoopTrack(bool enabled);

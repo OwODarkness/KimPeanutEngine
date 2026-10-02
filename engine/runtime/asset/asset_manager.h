@@ -21,6 +21,7 @@ namespace kpengine::asset{
     class IModelLoader;
     class NativeModelLoader;
     class NativeTextureLoader;
+    class NativeAudioLoader;
     class ShaderProgramLoader;
     class IAudioLoader;
     class MaterialLoader;
@@ -123,6 +124,7 @@ namespace kpengine::asset{
         std::unique_ptr<IModelLoader> model_loader_;
         std::unique_ptr<NativeModelLoader> native_model_loader_;
         std::unique_ptr<NativeTextureLoader> native_texture_loader_;
+        std::unique_ptr<NativeAudioLoader> native_audio_loader_;
         std::unique_ptr<ShaderProgramLoader> shader_program_loader_;
         std::unique_ptr<IAudioLoader> audio_loader_;
         std::unique_ptr<MaterialLoader> material_loader_;

@@ -63,10 +63,10 @@ namespace kpengine::audio_player
         AudioPlayerController *controller_ = nullptr;
         audio::MiniAudioSystem *audio_system_ = nullptr;
         char import_path_[1024]{};
+        char subtitle_path_[1024]{};
         char search_[256]{};
         std::array<std::vector<std::uint8_t>, 7> playback_icon_alpha_{};
         int library_filter_ = 0;
-        float playback_rate_ = 1.0f;
         bool show_diagnostics_ = false;
         std::string ui_status_;
         std::string ui_error_;

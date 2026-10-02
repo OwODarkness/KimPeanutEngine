@@ -71,6 +71,7 @@ add_library(AssetRuntime STATIC
     asset_type_registry.cpp
     asset_load_observation.cpp
     native_model_loader.cpp
+    native_audio_loader.cpp
     native_texture_loader.cpp
     model.cpp
     shader_program.cpp

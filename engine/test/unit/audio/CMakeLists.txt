@@ -1,6 +1,7 @@
 add_executable(
     AudioUnitTest
     audio_decode_test.cpp
+    seekable_audio_player_test.cpp
     )
 
 add_executable(

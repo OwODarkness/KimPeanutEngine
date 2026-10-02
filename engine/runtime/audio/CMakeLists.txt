@@ -6,6 +6,7 @@ add_library(Audio STATIC
     audio_stream.cpp
     audio_stream_decoder.cpp
     stream_audio_player.cpp
+    seekable_audio_player.cpp
 )
 
 target_include_directories(Audio PUBLIC

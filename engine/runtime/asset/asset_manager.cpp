@@ -13,6 +13,7 @@
 #endif
 #include "native_model_loader.h"
 #include "native_texture_loader.h"
+#include "native_audio_loader.h"
 #include "image_io/image_io.h"
 #include "shader_program_loader.h"
 #include "miniaudio_audio_loader.h"
@@ -484,6 +485,7 @@ namespace kpengine::asset
                                        std::filesystem::path(GetRuntimeArchiveDirectory()))),
                                    native_texture_loader_(std::make_unique<NativeTextureLoader>(
                                        std::filesystem::path(GetRuntimeArchiveDirectory()))),
+                                   native_audio_loader_(std::make_unique<NativeAudioLoader>()),
                                    shader_program_loader_(std::make_unique<ShaderProgramLoader>()),
                                    audio_loader_(std::make_unique<MiniAudio_AudioLoader>()),
                                    material_loader_(std::make_unique<MaterialLoader>()),
@@ -534,7 +536,7 @@ namespace kpengine::asset
                              {"texture", "png", "jpg", "jpeg", "tga", "hdr"},
                              AssetLoaderConcurrency::Parallel) &&
                register_type(AssetType::KPAT_Audio, "KPAT_Audio",
-                             {"wav", "mp3", "flac", "ogg"},
+                             {"wav", "mp3", "flac", "ogg", "audio"},
                              AssetLoaderConcurrency::Serialized) &&
                register_type(AssetType::KPAT_Shader, "KPAT_Shader",
                              {"vert", "vs", "frag", "fs", "geom", "gs", "comp", "cs", "spv"},
@@ -1588,6 +1590,11 @@ namespace kpengine::asset
         }
         else if (type == AssetType::KPAT_Audio)
         {
+            if (GetFileExtension(path) == "audio")
+            {
+                assert(native_audio_loader_);
+                return native_audio_loader_->Load(path, info);
+            }
             assert(audio_loader_);
             return audio_loader_->LoadFromFile(path, info);
         }

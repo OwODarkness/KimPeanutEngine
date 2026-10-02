@@ -29,6 +29,7 @@ namespace kpengine::audio_player
         std::string_view clip_name;
         std::string_view format_label;
         std::string_view status;
+        std::string_view subtitle_text;
         float current_time = 0.0f;
         float duration = 0.0f;
         float volume = 0.8f;
@@ -51,6 +52,7 @@ namespace kpengine::audio_player
         bool is_muted = false;
         bool is_error = false;
         bool can_seek = false;
+        bool has_subtitle_track = false;
     };
 
     struct AudioPreviewActions

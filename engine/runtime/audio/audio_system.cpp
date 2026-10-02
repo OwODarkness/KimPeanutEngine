@@ -3,6 +3,7 @@
 #include "audio_player.h"
 #include "buffer_audio_player.h"
 #include "stream_audio_player.h"
+#include "seekable_audio_player.h"
 #include "audio_stream.h"
 
 #include <algorithm>
@@ -93,6 +94,9 @@ namespace kpengine::audio
             break;
         case AudioPlayerType::Stream:
             voice.owner = std::make_shared<StreamAudioPlayer>();
+            break;
+        case AudioPlayerType::Seekable:
+            voice.owner = std::make_shared<SeekableAudioPlayer>();
             break;
         default:
             handle_system_.Destroy(handle);
@@ -286,9 +290,10 @@ namespace kpengine::audio
 
                 player->FillBuffer();
                 uint32_t source_channels = 0;
-                const uint32_t copied = player->CopyFrames(
+                const float playback_rate = player->GetPlaybackRate();
+                const uint32_t copied = player->CopyFramesAtRate(
                     player->GetCurrentFrame(), voice_scratch_.data(), block_frames,
-                    source_channels);
+                    source_channels, playback_rate);
                 const size_t bus = player_buses[voice_index];
                 uint32_t consumed = 0;
                 for (; consumed < copied; ++consumed)
@@ -315,7 +320,7 @@ namespace kpengine::audio
                         break;
                     }
                 }
-                player->CommitPlayedFrames(consumed);
+                player->CommitPlayedFrames(consumed, playback_rate);
                 player->RefreshSourceState();
 
                 if (consumed > 0)

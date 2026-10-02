@@ -123,6 +123,22 @@ include(GoogleTest)
 gtest_discover_tests(NativeMaterialTest PROPERTIES LABELS "asset")
 
 add_executable(
+    NativeAudioRuntimeTest
+    native_audio_runtime_test.cpp
+)
+
+target_link_libraries(NativeAudioRuntimeTest PRIVATE AssetRuntime Config KP::GoogleTest)
+
+add_custom_command(TARGET NativeAudioRuntimeTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll
+        $<TARGET_FILE_DIR:NativeAudioRuntimeTest>
+)
+
+include(GoogleTest)
+gtest_discover_tests(NativeAudioRuntimeTest PROPERTIES LABELS "asset")
+
+add_executable(
     ModelImportServiceTest
     model_import_service_test.cpp
 )

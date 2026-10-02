@@ -1,6 +1,6 @@
 # Conversational Audio Plan
 
-**Status: A1 complete; A2/P1/M1 active; C1/L2D9 proposed.** M1.1 import and M1.2 archive/reimport are implemented; M1.3 bounded playback remains. This is the design map for evolving the
+**Status: A1 complete; A2/P1/M1 active; C1/L2D9 proposed.** M1.1 import, M1.2 archive/reimport, and M1.3 bounded playback are implemented. M1.4 connects the standalone player to native products and subtitle cues; visible playback and active reimport passed, while device restart validation remains. This is the design map for evolving the
 existing [Audio](audio_module.md) and [TTS](../tts/tts_module.md) modules into
 a voice-capable chatbot companion with optional Live2D and a standalone audio
 player. [TODO.md](TODO.md) is the acceptance ledger; [the execution spec](../../.spec/specs/conversational-audio.md)
@@ -106,8 +106,7 @@ The provider interface must never expose GPT-SoVITS types to Audio or Live2D.
 ## Standalone audio player
 
 The player is a standalone ImGui mode in the Editor, using the
-[draft layout](../../save/audio_gui.png). The current mode scaffold exposes device and mixer
-diagnostics; [P1](.plan/P1.md) defines the track player, queue, waveform,
+[draft layout](../../save/audio_gui.png). [P1](.plan/P1.md) defines the track player, queue, waveform,
 transport, and reusable Audio-module playback component. Asset decodes local
 music, Runtime Audio owns its voice and Music bus, and the component exposes
 copied playback state to ImGui. A future Speech instance uses the same

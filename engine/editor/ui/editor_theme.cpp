@@ -1,5 +1,6 @@
 #include "editor/ui/editor_theme.h"
 
+#include <array>
 #include <cstdlib>
 #include <filesystem>
 
@@ -35,7 +36,9 @@ namespace kpengine::editor
         constexpr ImVec4 kRemoved = Color(0xFF, 0x4D, 0x8D);
         constexpr ImVec4 kSkill = Color(0xB9, 0x67, 0xFF);
 
-        ImFont *LoadWindowsFont(const char *file_name, float size)
+        ImFont *LoadWindowsFont(const char *file_name, float size,
+                                const ImWchar *glyph_ranges = nullptr,
+                                const ImFontConfig *font_config = nullptr)
         {
 #ifdef _WIN32
             std::filesystem::path font_directory("C:/Windows/Fonts");
@@ -52,13 +55,38 @@ namespace kpengine::editor
             if (std::filesystem::exists(font_path, error) && !error)
             {
                 return ImGui::GetIO().Fonts->AddFontFromFileTTF(
-                    font_path.string().c_str(), size);
+                    font_path.string().c_str(), size, font_config, glyph_ranges);
             }
 #else
             (void)file_name;
             (void)size;
+            (void)glyph_ranges;
+            (void)font_config;
 #endif
             return nullptr;
+        }
+
+        bool MergeWindowsCjkFallback(ImFont *font, float size)
+        {
+            if (font == nullptr)
+            {
+                return false;
+            }
+
+            constexpr std::array<const char *, 5> kCjkFontFiles{{
+                "msyh.ttc", "simsun.ttc", "meiryo.ttc", "YuGothR.ttc", "msgothic.ttc"}};
+            ImFontConfig merge_config{};
+            merge_config.MergeMode = true;
+            const ImWchar *const glyph_ranges =
+                ImGui::GetIO().Fonts->GetGlyphRangesChineseFull();
+            for (const char *file_name : kCjkFontFiles)
+            {
+                if (LoadWindowsFont(file_name, size, glyph_ranges, &merge_config) != nullptr)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -71,8 +99,10 @@ namespace kpengine::editor
         if (ImFont *const ui_font = LoadWindowsFont("segoeui.ttf", 15.0f))
         {
             io.FontDefault = ui_font;
+            MergeWindowsCjkFallback(ui_font, 15.0f);
         }
         ImFont *const code_font = LoadWindowsFont("CascadiaMono.ttf", 14.0f);
+        MergeWindowsCjkFallback(code_font, 14.0f);
 
         // Surfaces stay close to the reference #0b0e16 base while related
         // layers gain just enough separation for the editor's panels.

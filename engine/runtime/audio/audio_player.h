@@ -26,6 +26,13 @@ namespace kpengine::audio
         virtual void Restart();
         virtual uint32_t CopyFrames(uint64_t first_frame, float* out_data,
                                     uint32_t max_frames, uint32_t& channels) = 0;
+        virtual uint32_t CopyFramesAtRate(uint64_t first_frame, float* out_data,
+                                          uint32_t max_frames, uint32_t& channels,
+                                          float playback_rate)
+        {
+            static_cast<void>(playback_rate);
+            return CopyFrames(first_frame, out_data, max_frames, channels);
+        }
         bool CopyFrameData(uint64_t frame, float* out_data,
                            uint32_t capacity_samples, uint32_t& channels);
 
@@ -46,6 +53,7 @@ namespace kpengine::audio
 
         virtual void SetVolume(float volume);
         virtual float GetVolume() const { return volume_.load(std::memory_order_relaxed); }
+        virtual float GetPlaybackRate() const { return 1.0f; }
         void SetBus(AudioBus bus) { bus_.store(bus, std::memory_order_release); }
         AudioBus GetBus() const { return bus_.load(std::memory_order_acquire); }
 
@@ -62,7 +70,7 @@ namespace kpengine::audio
         // Called by the mixer exactly at a device callback boundary.
         void ApplyPendingCommand(uint32_t gain_ramp_frames);
         void BeginMixCallback(uint32_t gain_ramp_frames);
-        void CommitPlayedFrames(uint32_t frame_count);
+        void CommitPlayedFrames(uint32_t frame_count, float playback_rate = 1.0f);
         void MarkBuffering();
         void MarkPlaying();
         float NextVoiceGain();
@@ -78,6 +86,12 @@ namespace kpengine::audio
         virtual bool IsSourceDrained() const { return false; }
         virtual bool IsStreamingSource() const { return false; }
         virtual void OnPlaybackCursorAdvanced(uint32_t frame_count) = 0;
+        virtual void OnPlaybackCursorAdvanced(uint32_t frame_count, float playback_rate)
+        {
+            static_cast<void>(playback_rate);
+            OnPlaybackCursorAdvanced(frame_count);
+        }
+        virtual void OnPlaybackCursorSet() {}
         void MarkFinished();
         void MarkCancelled();
 

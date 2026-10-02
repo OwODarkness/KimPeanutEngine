@@ -37,7 +37,8 @@ namespace kpengine::audio{
 
     enum class AudioPlayerType: uint8_t{
         Buffer,
-        Stream
+        Stream,
+        Seekable
     };
 
 }

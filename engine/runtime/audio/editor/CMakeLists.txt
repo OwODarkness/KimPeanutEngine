@@ -9,7 +9,7 @@ target_include_directories(AudioPlayerMode PUBLIC
     "${CMAKE_SOURCE_DIR}/engine")
 target_link_libraries(AudioPlayerMode
     PUBLIC Audio RuntimeLib
-    PRIVATE ImageIO EditorUILib KP::ImGui)
+    PRIVATE AssetImport ImageIO EditorUILib KP::ImGui)
 if(WIN32)
     target_link_libraries(AudioPlayerMode PRIVATE comdlg32 shell32 ole32)
 endif()

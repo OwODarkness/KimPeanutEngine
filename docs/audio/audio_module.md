@@ -32,7 +32,8 @@ There are two disjoint playback paths with a shared mixer core:
 - `AudioBus { Speech, Music }` — independent gain and mute controls.
 - `AudioStreamState { Open, ProducerFinished, Cancelled, Drained }` — stream
   producer and consumer lifecycle.
-- `AudioPlayerType { Buffer, Stream }` — selects which player a system constructs.
+- `AudioPlayerType { Buffer, Stream, Seekable }` — selects which player a
+  system constructs.
 
 ### `AudioPlayer` — [`audio_player.h`](../../engine/runtime/audio/audio_player.h)
 
@@ -52,8 +53,31 @@ Holds a retained immutable `AudioClip` owner and publishes its raw pointer to
 the callback. The clip can only be assigned once. `CopyFrames` validates and
 copies complete mono or stereo frames. The mixer input contract is fixed at
 48 kHz; empty, malformed, unsupported-channel, and non-48 kHz clips cannot
-start. Looping wraps within the source frame count; a non-looping end marks the
-player `Finished` after the last consumed frame.
+start. Buffered playback supports 0.5×–2.0× rate through linear interpolation;
+the source cursor advances at the same rate, preserving seek, progress, loop,
+and end behavior. This changes pitch with speed. Looping wraps within the
+source frame count; a non-looping end marks the player `Finished` after the
+last consumed frame. Stream players retain normal 1.0× playback.
+
+### `SeekableAudioPlayer` — [`seekable_audio_player.cpp`](../../engine/runtime/audio/seekable_audio_player.cpp)
+
+Plays the encoded-audio range of a validated native `.audio` product. The
+`NativeAudioLoader` copies bounded metadata, waveform peaks, and subtitle cues
+into `AudioResource::native_product`; it leaves the encoded payload in the
+product file. `SetSource` receives that path/range and retains the product as
+a lifetime pin. A decode worker owns the file and miniaudio decoder, seeks in
+the encoded range, converts to 48 kHz stereo float, and fills a fixed
+96,000-frame cache in 1,024-frame chunks. The cache and decode scratch use
+under 1 MiB per voice regardless of song duration. The mixer callback only
+try-locks the cache and copies/interpolates samples; it performs no file I/O
+or decoding. A miss reports `Buffering` without advancing the played-frame
+cursor. Pause, seek, 0.5×–2.0× rate, and loop all use that source-frame clock.
+`NativeAudioFileProduct::SubtitleTextAt(frame)` returns the active half-open
+cue intervals for presentation code; Audio itself does not own text rendering.
+
+This is the native product playback path used by the standalone Audio Player
+since M1.4. Its externally selected files are cooked into per-source session
+archives and are not registered as project Asset entries.
 
 ### `StreamAudioPlayer` — [`stream_audio_player.cpp`](../../engine/runtime/audio/stream_audio_player.cpp)
 
@@ -100,20 +124,42 @@ The standalone Audio Player is an application host, separate from the Scene3D
 Editor workspace. Its host owns a `MiniAudioSystem` and supplies the Runtime
 error material as a render-catalog root so startup needs no game level. Its
 presentation borrows that instance, starts output only after an explicit user
-action, and displays copied device/mixer telemetry. Audio has no TTS dependency: TTS can submit
+action, and displays copied device/mixer telemetry. The M1.4 library imports
+selected local tracks through AssetImport into session-scoped `.audio`
+products, then plays them with `SeekableAudioPlayer`; the active timed subtitle
+is selected from the played-frame cursor and drawn in a larger borderless area
+below the waveform. RMS and spectrum visualization use a nonblocking snapshot
+of decoded cache frames rather than callback-owned samples. The explicit
+subtitle path is attached during import, and
+selected tracks can be reimported without replacing an active voice's pinned
+product. These external files are session previews rather than project Asset
+registrations. Audio has no TTS dependency: TTS can submit
 generated streams through Audio's player/stream API, while provider requests,
 cancellation, and synthesis state remain owned by TTS and application
 composition.
 
 ## Data flow
 
-### Buffered path (non-streaming TTS, file playback)
+### Buffered path (non-streaming TTS and short-clip compatibility)
 
 ```
 [bytes] → MiniAudio_AudioLoader::LoadFromMemory → AudioClip → BufferAudioPlayer::SetClip → Play
                                                             ↑
                                       Mix copies bounded blocks with CopyFrames
 ```
+
+### Native music path (standalone Audio Player)
+
+```
+external music + optional subtitle
+    └─ AssetImport::AudioImportService -> session `.audio` product
+         ├─ copied waveform peaks and timed subtitle cues -> Now Playing UI
+         └─ verified encoded payload + lifetime pin
+              └─ SeekableAudioPlayer decode worker -> fixed PCM cache -> callback mixer
+```
+
+The UI reads subtitle text from the voice's played-frame cursor. It does not
+advance cues from wall-clock time, so pause and seek follow the audio position.
 
 ### Streaming path (streaming TTS)
 

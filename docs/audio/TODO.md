@@ -37,8 +37,8 @@ is accepted; record resolution evidence in those review files.
   instance frame transaction after authored motion/expression at a defined
   priority. Handle missing lip-sync metadata, pauses, underruns, and character
   changes; verify optional SDK-off builds and both graphics backends.
-- [ ] **P1 — standalone audio player** ([plan](.plan/P1.md)). Plan a
-  three-pane ImGui player based on the [draft](../../save/audio_gui.png), with local queue,
+- [ ] **P1 — standalone audio player** ([plan](.plan/P1.md)). Complete the
+  six-dock ImGui player based on the [draft](../../save/audio_gui.png), with local queue,
   waveform, transport, and a reusable Audio-module playback component.
   Add separate speech status and music ducking for the integrated demo;
   verify visible layout, audible controls, interruption, and clean shutdown.
@@ -51,8 +51,12 @@ is accepted; record resolution evidence in those review files.
   lifetime, and long-track memory are verified. M1.1's offline provider and
   deterministic `.audio` cooking plus M1.2's dependency-aware archive/reimport,
   no-op checks, atomic publication, status, migration, catalog, and integrity
-  support are implemented and validated. Bounded playback and Editor migration
-  remain M1.3–M1.4.
+  support are implemented and validated. M1.3's bounded decode cache, playback
+  clock, file-backed loader, and lifetime contract are also implemented and
+  tested. M1.4 now connects the standalone library to session-scoped native
+  products, selected-track reimport, and played-frame subtitles below the
+  waveform. Visible import/playback and active reimport passed; device restart
+  and perceived audio quality checks remain.
 
 ## End-to-end acceptance
 
@@ -78,5 +82,5 @@ is accepted; record resolution evidence in those review files.
   handling, VAD, transcript correction, and privacy separately.
 - [ ] Evaluate phoneme/viseme timing only after amplitude-driven L2D9 is
   measured. Do not infer phonemes from raw amplitude.
-- [ ] Evaluate playlist/library persistence and streaming music only after P1
-  local playback is sound.
+- [ ] Evaluate playlist/library persistence and remote music streaming only
+  after P1 local playback is sound.
