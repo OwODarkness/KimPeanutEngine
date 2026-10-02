@@ -20,7 +20,7 @@ target_include_directories(AssetArchive PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
-target_link_libraries(AssetArchive PUBLIC AssetProduct Database PRIVATE Log)
+target_link_libraries(AssetArchive PUBLIC AssetProduct Database PRIVATE AssetNative Log)
 # Database-free logical content metadata. Capture is explicit and editor-owned.
 add_library(AssetContent STATIC
     content_metadata.cpp
@@ -110,6 +110,7 @@ target_include_directories(AssetImportRegistry PUBLIC
 add_library(AssetImport STATIC
     asset_import_adapters.cpp
     audio_importer.cpp
+    audio_import_service.cpp
     native_material.cpp
     material_promotion.cpp
     model_import_service.cpp

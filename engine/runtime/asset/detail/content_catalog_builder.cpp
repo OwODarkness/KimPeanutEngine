@@ -40,8 +40,8 @@ namespace kpengine::asset::detail
             if (folded == "model") return AssetType::KPAT_Model;
             if (folded == "material") return AssetType::KPAT_Material;
             if (folded == "texture") return AssetType::KPAT_Texture;
-            if (folded == "level") return AssetType::KPAT_Level;
             if (folded == "audio") return AssetType::KPAT_Audio;
+            if (folded == "level") return AssetType::KPAT_Level;
             if (folded == "shader") return AssetType::KPAT_Shader;
             if (folded == "shaderprogram") return AssetType::KPAT_ShaderProgram;
             if (folded == "mesh") return AssetType::KPAT_Mesh;
@@ -271,9 +271,10 @@ namespace kpengine::asset::detail
             {
                 if (static_cast<std::uint16_t>(node.type) ==
                     static_cast<std::uint16_t>(BuiltInAssetType(
-                        product.type == ArchiveProductType::Model   ? "model"
+                product.type == ArchiveProductType::Model   ? "model"
                         : product.type == ArchiveProductType::Material ? "material"
-                                                                       : "texture")))
+                        : product.type == ArchiveProductType::Texture ? "texture"
+                                                                       : "audio")))
                 {
                     primary_product = &product;
                     break;

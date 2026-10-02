@@ -4,6 +4,8 @@
 #include <memory>
 #include <utility>
 
+#include "audio_import_service.h"
+
 namespace kpengine::asset
 {
     bool RegisterModelImportProvider(ImportProviderRegistry &registry,
@@ -84,17 +86,13 @@ namespace kpengine::asset
         descriptor.source_suffixes = {"wav", "mp3", "flac"};
         descriptor.callback = [](const ImportProviderRequest &request)
         {
-            AudioImportRequest audio_request{};
-            audio_request.asset_root = request.asset_root;
-            audio_request.source_path = request.source_path;
-            if (request.audio_options.has_value()) audio_request.options = *request.audio_options;
-            CookedAudio cooked = AudioImporter{}.Import(audio_request);
-            PublishCookedAudioProduct(request.archive_root, cooked);
+            const AudioImportSummary imported = AudioImportService{}.Import(request);
 
             ImportProviderResult result{};
-            result.status = ImportProviderStatus::Cooked;
+            result.status = imported.up_to_date ? ImportProviderStatus::UpToDate
+                                                : ImportProviderStatus::Imported;
             result.product = std::make_shared<
-                TypedImportProduct<CookedAudio, ImportProviderKind::Audio>>(std::move(cooked));
+                TypedImportProduct<AudioImportSummary, ImportProviderKind::Audio>>(imported);
             return result;
         };
         return registry.Register(std::move(descriptor), diagnostic);

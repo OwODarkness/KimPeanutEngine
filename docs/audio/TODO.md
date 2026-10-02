@@ -48,10 +48,11 @@ is accepted; record resolution evidence in those review files.
   settings, skip unchanged work, publish atomically, preserve the last Ready
   product on failure, and report stale/missing/corrupt status. Switch project
   music to bounded native playback after seeking, clock/cue sync, active-voice
-  lifetime, and long-track memory are verified. M1.1's offline provider, WAV/
-  MP3/FLAC product cooking, UTF-8 SRT/WebVTT/LRC parsing, deterministic `.audio`
-  container, and malformed-input rejection are implemented and validated;
-  archive/reimport and runtime playback remain M1.2–M1.4.
+  lifetime, and long-track memory are verified. M1.1's offline provider and
+  deterministic `.audio` cooking plus M1.2's dependency-aware archive/reimport,
+  no-op checks, atomic publication, status, migration, catalog, and integrity
+  support are implemented and validated. Bounded playback and Editor migration
+  remain M1.3–M1.4.
 
 ## End-to-end acceptance
 

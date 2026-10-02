@@ -38,6 +38,8 @@ namespace kpengine::asset
         std::filesystem::path archive_root;
         std::filesystem::path source_path;
         std::optional<AudioImportOptions> audio_options;
+        bool reimport{false};
+        bool clear_subtitle{false};
     };
 
     class IImportProduct

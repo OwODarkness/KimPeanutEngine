@@ -1,13 +1,17 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
+#include "database/database.h"
 #include "asset/audio_importer.h"
+#include "asset/audio_import_service.h"
 #include "asset/asset_import_adapters.h"
 #include "asset/asset_import_registry.h"
 
@@ -273,16 +277,170 @@ TEST(AudioImportTest, AudioProviderPublishesOnlyAValidatedProduct)
     const auto result = registry.Execute(request, "audio", diagnostic);
     ASSERT_NE(result.product, nullptr) << diagnostic;
     const auto cooked = std::dynamic_pointer_cast<kpengine::asset::TypedImportProduct<
-        kpengine::asset::CookedAudio, kpengine::asset::ImportProviderKind::Audio>>(result.product);
+        kpengine::asset::AudioImportSummary,
+        kpengine::asset::ImportProviderKind::Audio>>(result.product);
     ASSERT_NE(cooked, nullptr);
-    const auto product_path = request.archive_root / "audio" /
-        (cooked->value.product_hash.ToHex() + ".audio");
+    const auto product_path = cooked->value.product_path;
     ASSERT_TRUE(std::filesystem::is_regular_file(product_path));
     const auto stored_size = std::filesystem::file_size(product_path);
-    EXPECT_EQ(stored_size, cooked->value.bytes.size());
+    EXPECT_EQ(cooked->value.duration_frames, 48'000u);
+    EXPECT_EQ(cooked->value.waveform_buckets,
+              kpengine::asset::kNativeAudioWaveformBucketCount);
+    EXPECT_EQ(cooked->value.subtitle_cues, 1u);
+    EXPECT_FALSE(cooked->value.up_to_date);
 
     WriteText(subtitle, "not a subtitle cue\n");
     request.archive_root = root.path / "failed-import" / ".archive";
     EXPECT_THROW(registry.Execute(request, "audio", diagnostic), kpengine::asset::AudioImportError);
     EXPECT_FALSE(std::filesystem::exists(request.archive_root / "audio"));
+}
+
+TEST(AudioImportTest, AudioImportNoOpsAndReimportReuseReplaceAndClearRecordedSubtitle)
+{
+    TempRoot root;
+    WriteWave(root.path / "music" / "tone.wav", 48'000);
+    const auto subtitle_path = root.path / "music" / "tone.srt";
+    WriteText(subtitle_path, "1\n00:00:00,000 --> 00:00:00,250\nFirst\n");
+
+    kpengine::asset::ImportProviderRequest request{};
+    request.asset_root = root.path;
+    request.archive_root = root.path / ".archive";
+    request.source_path = "music/tone.wav";
+    request.audio_options = kpengine::asset::AudioImportOptions{"music/tone.srt", "en"};
+    kpengine::asset::AudioImportService service{};
+    const auto first = service.Import(request);
+    ASSERT_FALSE(first.up_to_date);
+    ASSERT_TRUE(std::filesystem::exists(first.product_path));
+    const auto first_time = std::filesystem::last_write_time(first.product_path);
+
+    request.reimport = true;
+    request.audio_options.reset();
+    const auto no_op = service.Import(request);
+    EXPECT_TRUE(no_op.up_to_date);
+    EXPECT_EQ(no_op.product_hash, first.product_hash);
+    EXPECT_EQ(std::filesystem::last_write_time(no_op.product_path), first_time);
+    EXPECT_EQ(service.Status(request).status, kpengine::asset::ArchiveProbeStatus::UpToDate);
+
+    WriteText(subtitle_path, "1\n00:00:00,000 --> 00:00:00,250\nUpdated\n");
+    const auto replaced = service.Import(request);
+    EXPECT_FALSE(replaced.up_to_date);
+    EXPECT_NE(replaced.product_hash, first.product_hash);
+    EXPECT_EQ(service.Status(request).status, kpengine::asset::ArchiveProbeStatus::UpToDate);
+
+    request.audio_options = kpengine::asset::AudioImportOptions{"music/tone.srt", "ja"};
+    const auto settings_changed = service.Import(request);
+    EXPECT_FALSE(settings_changed.up_to_date);
+    EXPECT_NE(settings_changed.product_hash, replaced.product_hash);
+    request.audio_options.reset();
+    request.clear_subtitle = true;
+    const auto cleared = service.Import(request);
+    EXPECT_FALSE(cleared.up_to_date);
+    EXPECT_NE(cleared.product_hash, replaced.product_hash);
+    const auto snapshot = kpengine::asset::ModelArchiveDatabase{
+        request.archive_root / "archive.sqlite3"}.FindSource("music/tone.wav");
+    ASSERT_TRUE(snapshot.has_value());
+    ASSERT_TRUE(snapshot->source.audio_metadata.has_value());
+    EXPECT_TRUE(snapshot->source.audio_metadata->subtitle_path.empty());
+    EXPECT_EQ(service.Status(request).status, kpengine::asset::ArchiveProbeStatus::UpToDate);
+    kpengine::asset::ModelArchiveDatabase archive{request.archive_root / "archive.sqlite3"};
+    EXPECT_NO_THROW(archive.IntegrityCheck());
+    const auto catalog = archive.ReadCatalog();
+    ASSERT_EQ(catalog.products.size(), 4u);
+    EXPECT_TRUE(std::all_of(catalog.products.begin(), catalog.products.end(),
+        [](const auto &product)
+        {
+            return product.asset_type == kpengine::asset::ArchiveProductType::Audio;
+        }));
+    ASSERT_EQ(catalog.sources.size(), 1u);
+    EXPECT_TRUE(catalog.sources.front().source.audio_metadata.has_value());
+
+    std::vector<char> corrupted;
+    {
+        std::ifstream input(cleared.product_path, std::ios::binary);
+        corrupted.assign(std::istreambuf_iterator<char>{input}, {});
+    }
+    ASSERT_FALSE(corrupted.empty());
+    corrupted.back() ^= 1;
+    {
+        std::ofstream output(cleared.product_path, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(output.is_open());
+        output.write(corrupted.data(), static_cast<std::streamsize>(corrupted.size()));
+    }
+    EXPECT_EQ(service.Status(request).status,
+              kpengine::asset::ArchiveProbeStatus::CorruptProduct);
+    const auto repaired = service.Import(request);
+    EXPECT_FALSE(repaired.up_to_date);
+    EXPECT_EQ(repaired.product_hash, cleared.product_hash);
+    EXPECT_EQ(service.Status(request).status, kpengine::asset::ArchiveProbeStatus::UpToDate);
+
+    std::filesystem::remove(repaired.product_path);
+    EXPECT_EQ(service.Status(request).status,
+              kpengine::asset::ArchiveProbeStatus::MissingProduct);
+    const auto restored = service.Import(request);
+    EXPECT_FALSE(restored.up_to_date);
+    EXPECT_EQ(restored.product_hash, repaired.product_hash);
+
+    WriteWave(root.path / "music" / "tone.wav", 48'001);
+    const auto source_changed = service.Import(request);
+    EXPECT_FALSE(source_changed.up_to_date);
+    EXPECT_NE(source_changed.product_hash, restored.product_hash);
+    EXPECT_EQ(service.Status(request).status, kpengine::asset::ArchiveProbeStatus::UpToDate);
+    std::filesystem::remove(root.path / "music" / "tone.wav");
+    EXPECT_EQ(service.Status(request).status,
+              kpengine::asset::ArchiveProbeStatus::SourceInputMissing);
+}
+
+TEST(AudioImportTest, FailedReimportPreservesReadyAssociationAndStatusFindsMissingSubtitle)
+{
+    TempRoot root;
+    WriteWave(root.path / "music" / "tone.wav", 48'000);
+    const auto subtitle_path = root.path / "music" / "tone.srt";
+    WriteText(subtitle_path, "1\n00:00:00,000 --> 00:00:00,250\nGood\n");
+
+    kpengine::asset::ImportProviderRequest request{};
+    request.asset_root = root.path;
+    request.archive_root = root.path / ".archive";
+    request.source_path = "music/tone.wav";
+    request.audio_options = kpengine::asset::AudioImportOptions{"music/tone.srt", "en"};
+    kpengine::asset::AudioImportService service{};
+    const auto ready = service.Import(request);
+    request.reimport = true;
+
+    WriteText(subtitle_path, "invalid subtitle input\n");
+    EXPECT_THROW(service.Import(request), kpengine::asset::AudioImportError);
+    const auto after_failure = kpengine::asset::ModelArchiveDatabase{
+        request.archive_root / "archive.sqlite3"}.FindSource("music/tone.wav");
+    ASSERT_TRUE(after_failure.has_value());
+    EXPECT_EQ(after_failure->source_products.front().content_hash, ready.product_hash);
+    EXPECT_EQ(service.Status(request).status,
+              kpengine::asset::ArchiveProbeStatus::SourcePackageChanged);
+
+    WriteText(subtitle_path, "1\n00:00:00,000 --> 00:00:00,250\nGood\n");
+    EXPECT_EQ(service.Status(request).status, kpengine::asset::ArchiveProbeStatus::UpToDate);
+
+    WriteText(subtitle_path, "1\n00:00:00,000 --> 00:00:00,250\nCommit failure\n");
+    {
+        kpengine::database::Database raw{
+            (request.archive_root / "archive.sqlite3").string()};
+        raw.Execute(
+            "CREATE TRIGGER reject_audio_source_update BEFORE UPDATE ON sources "
+            "WHEN OLD.normalized_path='music/tone.wav' BEGIN "
+            "SELECT RAISE(ABORT, 'injected archive commit failure'); END;");
+    }
+    EXPECT_THROW(service.Import(request), kpengine::asset::ModelArchiveError);
+    const auto after_commit_failure = kpengine::asset::ModelArchiveDatabase{
+        request.archive_root / "archive.sqlite3"}.FindSource("music/tone.wav");
+    ASSERT_TRUE(after_commit_failure.has_value());
+    EXPECT_EQ(after_commit_failure->source_products.front().content_hash, ready.product_hash);
+    EXPECT_EQ(service.Status(request).status,
+              kpengine::asset::ArchiveProbeStatus::SourcePackageChanged);
+    {
+        kpengine::database::Database raw{
+            (request.archive_root / "archive.sqlite3").string()};
+        raw.Execute("DROP TRIGGER reject_audio_source_update;");
+    }
+
+    std::filesystem::remove(subtitle_path);
+    const auto status = service.Status(request);
+    EXPECT_EQ(status.status, kpengine::asset::ArchiveProbeStatus::DependencyMissing);
 }

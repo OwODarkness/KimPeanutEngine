@@ -113,6 +113,7 @@ namespace kpengine::asset
         Model = 1,
         Material = 2,
         Texture = 3,
+        Audio = 4,
     };
 
     // Verifies an archive product's canonical location and content-addressed

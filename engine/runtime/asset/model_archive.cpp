@@ -11,6 +11,7 @@
 
 #ifndef KPENGINE_MODEL_ARCHIVE_PRODUCT_ONLY
 #include "database/database.h"
+#include "native_audio.h"
 #endif
 
 namespace kpengine::asset
@@ -237,6 +238,8 @@ namespace kpengine::asset
                 return "materials";
             case ArchiveProductType::Texture:
                 return "textures";
+            case ArchiveProductType::Audio:
+                return "audio";
             }
             throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
                                     "unknown archive product type");
@@ -273,6 +276,8 @@ namespace kpengine::asset
                     }
                     return "." + extension;
                 }
+            case ArchiveProductType::Audio:
+                return ".audio";
             }
             throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
                                     "unknown archive product type");
@@ -314,6 +319,84 @@ namespace kpengine::asset
             {
                 ThrowDatabaseError(error);
             }
+        }
+
+        void ReadAudioMetadata(database::Database &database, bool available,
+                               std::int64_t source_id, SourceRecord &source)
+        {
+            if (!available) return;
+            auto statement = database.Prepare(
+                "SELECT native_audio_version, subtitle_path, subtitle_language "
+                "FROM source_audio_metadata WHERE source_id=?;");
+            statement.Bind(1, source_id);
+            if (statement.Step() != database::StatementStep::Row) return;
+
+            const std::int64_t version = statement.ColumnInt64(0);
+            SourceRecord::AudioMetadata metadata{};
+            metadata.subtitle_path = statement.ColumnText(1);
+            metadata.subtitle_language = statement.ColumnText(2);
+            if (version <= 0 || version > std::numeric_limits<std::uint32_t>::max() ||
+                metadata.subtitle_language.empty() || metadata.subtitle_language.size() > 63 ||
+                (!metadata.subtitle_path.empty() &&
+                 NormalizeAssetRelativePath(metadata.subtitle_path) != metadata.subtitle_path))
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive Audio source metadata is invalid");
+            }
+            metadata.native_audio_version = static_cast<std::uint32_t>(version);
+            source.audio_metadata = std::move(metadata);
+        }
+
+        void ValidateAudioAssociation(const SourceRecord &source,
+                                      const std::vector<SourceProductRecord> &links,
+                                      const std::vector<ProductRecord> &products,
+                                      const std::vector<SourceDependencyRecord> &dependencies)
+        {
+            const auto link = std::find_if(links.begin(), links.end(), [](const auto &entry)
+            {
+                return entry.asset_type == ArchiveProductType::Audio;
+            });
+            const std::size_t audio_link_count = static_cast<std::size_t>(std::count_if(
+                links.begin(), links.end(), [](const auto &entry)
+                {
+                    return entry.asset_type == ArchiveProductType::Audio;
+                }));
+            if (link == links.end())
+            {
+                if (source.audio_metadata.has_value())
+                    throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                            "Audio source metadata has no Audio product link");
+                return;
+            }
+            if (!source.audio_metadata.has_value())
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "Audio product link has no source options record");
+            if (audio_link_count != 1)
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "Audio source must link exactly one Audio product");
+            const auto has_dependency = [&dependencies](std::string_view path)
+            {
+                return std::any_of(dependencies.begin(), dependencies.end(),
+                    [path](const SourceDependencyRecord &entry)
+                    {
+                        return entry.normalized_path == path;
+                    });
+            };
+            if (!has_dependency(source.normalized_path) ||
+                (!source.audio_metadata->subtitle_path.empty() &&
+                 !has_dependency(source.audio_metadata->subtitle_path)))
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "Audio product inputs do not match source dependencies");
+            const auto product = std::find_if(products.begin(), products.end(),
+                [&link](const ProductRecord &entry)
+                {
+                    return entry.asset_type == ArchiveProductType::Audio &&
+                           entry.content_hash == link->content_hash;
+                });
+            if (product == products.end() ||
+                product->schema_version != source.audio_metadata->native_audio_version)
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "Audio product and source schema metadata disagree");
         }
 
         void ValidateHashPath(const ProductRecord &product)
@@ -380,13 +463,17 @@ namespace kpengine::asset
             case ArchiveProbeStatus::SettingsChanged:
                 return "import settings fingerprint changed";
             case ArchiveProbeStatus::NativeSchemaChanged:
-                return "native model schema changed";
+                return "native product schema changed";
             case ArchiveProbeStatus::MissingProduct:
                 return "referenced archive product is missing";
             case ArchiveProbeStatus::CorruptProduct:
                 return "referenced archive product failed hash verification";
             case ArchiveProbeStatus::UpToDate:
                 return "source and products are verified and up to date";
+            case ArchiveProbeStatus::SourceInputMissing:
+                return "audio source input is missing";
+            case ArchiveProbeStatus::DependencyMissing:
+                return "audio subtitle dependency is missing";
             }
             return "unknown archive probe result";
         }
@@ -795,6 +882,7 @@ namespace kpengine::asset
 
         std::unique_ptr<database::Database> database;
         bool dependency_metadata_available{false};
+        bool audio_metadata_available{false};
     };
 
     ModelArchiveDatabase::ModelArchiveDatabase(std::filesystem::path database_path,
@@ -941,15 +1029,23 @@ namespace kpengine::asset
         {
             CatchDatabaseErrors([&]
             {
+                database::Transaction transaction{*impl_->database};
                 impl_->database->Execute(
                     "CREATE TABLE IF NOT EXISTS source_dependency_metadata ("
                     "source_id INTEGER NOT NULL, normalized_path TEXT NOT NULL, "
                     "byte_size INTEGER NOT NULL, last_write_time INTEGER NOT NULL, "
                     "PRIMARY KEY(source_id, normalized_path), "
                     "FOREIGN KEY(source_id, normalized_path) REFERENCES "
-                    "source_dependencies(source_id, normalized_path) ON DELETE CASCADE);");
+                    "source_dependencies(source_id, normalized_path) ON DELETE CASCADE);"
+                    "CREATE TABLE IF NOT EXISTS source_audio_metadata ("
+                    "source_id INTEGER PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE, "
+                    "native_audio_version INTEGER NOT NULL, subtitle_path TEXT NOT NULL, "
+                    "subtitle_language TEXT NOT NULL);");
+                impl_->database->Execute("PRAGMA user_version=2;");
+                transaction.Commit();
             });
             impl_->dependency_metadata_available = true;
+            impl_->audio_metadata_available = true;
         }
         else
         {
@@ -960,6 +1056,18 @@ namespace kpengine::asset
                     "name='source_dependency_metadata';");
                 return statement.Step() == database::StatementStep::Row;
             });
+            impl_->audio_metadata_available = CatchDatabaseErrors([&]
+            {
+                auto statement = impl_->database->Prepare(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND "
+                    "name='source_audio_metadata';");
+                return statement.Step() == database::StatementStep::Row;
+            });
+            if (version >= 2 && !impl_->audio_metadata_available)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive schema 2 is missing audio source metadata");
+            }
         }
         QuickDatabaseCheck();
         CatchDatabaseErrors([&]
@@ -1006,6 +1114,8 @@ namespace kpengine::asset
             snapshot.source.status =
                 static_cast<SourceImportStatus>(source_statement.ColumnInt64(9));
             snapshot.source.diagnostic = source_statement.ColumnText(10);
+            ReadAudioMetadata(*impl_->database, impl_->audio_metadata_available,
+                              snapshot.source.id, snapshot.source);
 
             auto dependency_statement = impl_->database->Prepare(
                 "SELECT normalized_path, content_hash FROM source_dependencies "
@@ -1070,6 +1180,8 @@ namespace kpengine::asset
                      static_cast<std::int32_t>(source_product_statement.ColumnInt64(3)),
                      source_product_statement.ColumnText(4)});
             }
+            ValidateAudioAssociation(snapshot.source, snapshot.source_products, snapshot.products,
+                                     snapshot.dependencies);
 
             auto override_statement = impl_->database->Prepare(
                 "SELECT slot, authored_path FROM material_overrides WHERE source_id=? ORDER BY slot;");
@@ -1205,6 +1317,8 @@ namespace kpengine::asset
                 return ArchiveProductType::Material;
             case static_cast<std::int64_t>(ArchiveProductType::Texture):
                 return ArchiveProductType::Texture;
+            case static_cast<std::int64_t>(ArchiveProductType::Audio):
+                return ArchiveProductType::Audio;
             default:
                 throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
                                         "archive row has an unknown product type");
@@ -1301,6 +1415,8 @@ namespace kpengine::asset
             std::size_t related_count = count_rows("source_dependencies");
             AddCatalogRowCount(related_count, count_rows("source_products"));
             AddCatalogRowCount(related_count, count_rows("material_overrides"));
+            if (impl_->audio_metadata_available)
+                AddCatalogRowCount(related_count, count_rows("source_audio_metadata"));
 
             if (source_count > limits.max_sources)
             {
@@ -1355,6 +1471,8 @@ namespace kpengine::asset
                 }
                 entry.source.status = static_cast<SourceImportStatus>(status);
                 entry.source.diagnostic = source_statement.ColumnText(10);
+                ReadAudioMetadata(*impl_->database, impl_->audio_metadata_available,
+                                  entry.source.id, entry.source);
                 if (NormalizeArchiveRelativePath(entry.source.normalized_path) !=
                     entry.source.normalized_path)
                 {
@@ -1546,6 +1664,9 @@ namespace kpengine::asset
                     catalog.sources[index].source_products.push_back(std::move(source_product));
                 }
             }
+            for (const ArchiveCatalogSource &source : catalog.sources)
+                ValidateAudioAssociation(source.source, source.source_products, catalog.products,
+                                         source.dependencies);
 
             {
                 auto statement = impl_->database->Prepare(
@@ -1595,6 +1716,34 @@ namespace kpengine::asset
                                     "archive product failed integrity verification: " +
                                         path.string());
         }
+        if (product.asset_type == ArchiveProductType::Audio)
+        {
+            if (product.schema_version != kNativeAudioVersion ||
+                product.byte_size > kNativeAudioMaxProductBytes ||
+                product.byte_size > std::numeric_limits<std::size_t>::max())
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::CorruptProduct,
+                                        "archive Audio product has an unsupported size or schema");
+            }
+            std::ifstream input(path, std::ios::binary);
+            std::vector<std::byte> bytes(static_cast<std::size_t>(product.byte_size));
+            if (!input || !input.read(reinterpret_cast<char *>(bytes.data()),
+                                      static_cast<std::streamsize>(bytes.size())))
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::IoError,
+                                        "failed to read archive Audio product: " + path.string());
+            }
+            try
+            {
+                ValidateNativeAudioProductStructure(bytes);
+            }
+            catch (const NativeAudioError &error)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::CorruptProduct,
+                                        "archive Audio product structure is invalid: " +
+                                            std::string{error.what()});
+            }
+        }
     }
 
     void ModelArchiveDatabase::ReplaceSource(
@@ -1605,7 +1754,9 @@ namespace kpengine::asset
     {
         const std::string normalized_path = NormalizeAssetRelativePath(source.normalized_path);
         if (normalized_path != source.normalized_path || source.display_name.empty() ||
-            source.importer_id.empty() || source.native_model_version == 0 ||
+            source.importer_id.empty() ||
+            (source.native_model_version == 0 && !source.audio_metadata.has_value()) ||
+            (source.native_model_version != 0 && source.audio_metadata.has_value()) ||
             source.path_hash != Sha256(source.normalized_path))
         {
             throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
@@ -1653,6 +1804,60 @@ namespace kpengine::asset
             {
                 throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
                                         "source product reference has no published product");
+            }
+        }
+        const bool has_audio_product = std::any_of(
+            source_products.begin(), source_products.end(), [](const SourceProductRecord &product)
+            {
+                return product.asset_type == ArchiveProductType::Audio;
+            });
+        if (has_audio_product != source.audio_metadata.has_value())
+        {
+            throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                    "Audio source metadata must match its Audio product association");
+        }
+        if (source.audio_metadata.has_value())
+        {
+            if (std::count_if(source_products.begin(), source_products.end(),
+                              [](const SourceProductRecord &product)
+                              {
+                                  return product.asset_type == ArchiveProductType::Audio;
+                              }) != 1)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                        "Audio source must link exactly one Audio product");
+            }
+            const SourceRecord::AudioMetadata &metadata = *source.audio_metadata;
+            if (metadata.native_audio_version == 0 || metadata.subtitle_language.empty() ||
+                metadata.subtitle_language.size() > 63 ||
+                (!metadata.subtitle_path.empty() &&
+                 NormalizeAssetRelativePath(metadata.subtitle_path) != metadata.subtitle_path))
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                        "Audio source options are not canonical");
+            }
+            const auto has_dependency = [&dependencies](std::string_view path)
+            {
+                return std::any_of(dependencies.begin(), dependencies.end(),
+                    [path](const SourceDependencyRecord &entry)
+                    {
+                        return entry.normalized_path == path;
+                    });
+            };
+            if (!has_dependency(source.normalized_path) ||
+                (!metadata.subtitle_path.empty() && !has_dependency(metadata.subtitle_path)))
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                        "Audio source options do not match source dependencies");
+            }
+            for (const ProductRecord &product : products)
+            {
+                if (product.asset_type == ArchiveProductType::Audio &&
+                    product.schema_version != metadata.native_audio_version)
+                {
+                    throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                            "Audio product schema does not match source metadata");
+                }
             }
         }
         for (const MaterialOverrideRecord &override_record : material_overrides)
@@ -1751,6 +1956,23 @@ namespace kpengine::asset
                     std::string{"DELETE FROM "} + table + " WHERE source_id=?;");
                 delete_statement.Bind(1, source_id);
                 (void)delete_statement.Step();
+            }
+
+            auto audio_metadata_delete = impl_->database->Prepare(
+                "DELETE FROM source_audio_metadata WHERE source_id=?;");
+            audio_metadata_delete.Bind(1, source_id);
+            (void)audio_metadata_delete.Step();
+            if (source.audio_metadata.has_value())
+            {
+                auto audio_metadata_insert = impl_->database->Prepare(
+                    "INSERT INTO source_audio_metadata(source_id, native_audio_version, "
+                    "subtitle_path, subtitle_language) VALUES(?,?,?,?);");
+                audio_metadata_insert.Bind(1, source_id);
+                audio_metadata_insert.Bind(2, static_cast<std::int64_t>(
+                    source.audio_metadata->native_audio_version));
+                audio_metadata_insert.Bind(3, source.audio_metadata->subtitle_path);
+                audio_metadata_insert.Bind(4, source.audio_metadata->subtitle_language);
+                (void)audio_metadata_insert.Step();
             }
 
             auto dependency_insert = impl_->database->Prepare(
@@ -1861,6 +2083,15 @@ namespace kpengine::asset
         else if (source.native_model_version != request.native_model_version)
         {
             result.status = ArchiveProbeStatus::NativeSchemaChanged;
+        }
+        else if (source.audio_metadata != request.audio_metadata)
+        {
+            result.status = source.audio_metadata.has_value() &&
+                                    request.audio_metadata.has_value() &&
+                                    source.audio_metadata->native_audio_version !=
+                                        request.audio_metadata->native_audio_version
+                                ? ArchiveProbeStatus::NativeSchemaChanged
+                                : ArchiveProbeStatus::SettingsChanged;
         }
         else
         {

@@ -57,6 +57,7 @@ namespace
     const ContentHash kModelHash = Sha256("kpengine.catalog-builder/model");
     const ContentHash kStoneHash = Sha256("kpengine.catalog-builder/material/stone");
     const ContentHash kAlbedoHash = Sha256("kpengine.catalog-builder/texture/albedo");
+    const ContentHash kAudioHash = Sha256("kpengine.catalog-builder/audio/music");
 
     std::filesystem::path AssetRoot()
     {
@@ -128,6 +129,8 @@ namespace
             return "Material";
         case AssetType::KPAT_Texture:
             return "Texture";
+        case AssetType::KPAT_Audio:
+            return "Audio";
         case AssetType::KPAT_Mesh:
             return "Mesh";
         case AssetType::KPAT_Level:
@@ -164,6 +167,7 @@ namespace
         input.type_names = {{AssetType::KPAT_Model, "Model"},
                             {AssetType::KPAT_Material, "Material"},
                             {AssetType::KPAT_Texture, "Texture"},
+                            {AssetType::KPAT_Audio, "Audio"},
                             {AssetType::KPAT_Mesh, "Mesh"},
                             {AssetType::KPAT_Level, "Level"}};
         return input;
@@ -355,6 +359,23 @@ namespace
         EXPECT_TRUE(node.logical_path.empty());
         EXPECT_TRUE(node.aliases.empty());
         EXPECT_TRUE(node.provenance.empty());
+    }
+
+    TEST(AssetCatalogBuilderTest, ArchiveAudioProductsMapToTheBuiltInAudioAssetType)
+    {
+        ModelArchiveCatalogSnapshot archive;
+        archive.products.push_back(MakeProduct(ArchiveProductType::Audio, kAudioHash, 8192));
+
+        AssetCatalogBuildInput input = BaseInput();
+        input.archive = &archive;
+        const AssetCatalogSnapshot snapshot = BuildAssetCatalog(input);
+
+        ExpectValid(snapshot);
+        ASSERT_EQ(snapshot.nodes.size(), 1u);
+        EXPECT_EQ(snapshot.nodes.front().type, AssetType::KPAT_Audio);
+        EXPECT_EQ(snapshot.nodes.front().type_name, "Audio");
+        EXPECT_EQ(snapshot.nodes.front().product_path,
+                  ".archive/" + ProductRelativePath(ArchiveProductType::Audio, kAudioHash));
     }
 
     TEST(AssetCatalogBuilderTest, RootModelPrefersTheFirstLogicalPathAndSmallestAlias)

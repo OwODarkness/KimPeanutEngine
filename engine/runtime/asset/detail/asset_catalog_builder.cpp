@@ -37,6 +37,8 @@ namespace kpengine::asset::detail
                 return AssetType::KPAT_Material;
             case ArchiveProductType::Texture:
                 return AssetType::KPAT_Texture;
+            case ArchiveProductType::Audio:
+                return AssetType::KPAT_Audio;
             }
             return AssetType::Undefined;
         }
@@ -419,7 +421,7 @@ namespace kpengine::asset::detail
                                    const std::vector<ProductReference> &references,
                                    std::size_t product_index)
             {
-                AssetCatalogNode node;
+        AssetCatalogNode node;
                 node.kind = AssetCatalogNodeKind::Asset;
                 node.type = MapArchiveProductType(product.asset_type);
                 node.type_name = ResolveTypeName(node.type);

@@ -43,6 +43,15 @@ namespace kpengine::asset
         std::uint32_t native_model_version{};
         SourceImportStatus status{SourceImportStatus::Ready};
         std::string diagnostic;
+        struct AudioMetadata
+        {
+            std::uint32_t native_audio_version{};
+            std::string subtitle_path;
+            std::string subtitle_language{"und"};
+
+            friend bool operator==(const AudioMetadata &, const AudioMetadata &) = default;
+        };
+        std::optional<AudioMetadata> audio_metadata;
     };
 
     struct SourceDependencyRecord
@@ -121,6 +130,8 @@ namespace kpengine::asset
         MissingProduct,
         CorruptProduct,
         UpToDate,
+        SourceInputMissing,
+        DependencyMissing,
     };
 
     struct SourceProbeRequest
@@ -131,6 +142,7 @@ namespace kpengine::asset
         std::uint32_t importer_version{};
         ContentHash settings_hash;
         std::uint32_t native_model_version{};
+        std::optional<SourceRecord::AudioMetadata> audio_metadata;
     };
 
     struct ArchiveProbeResult
@@ -143,7 +155,7 @@ namespace kpengine::asset
     class ModelArchiveDatabase final
     {
     public:
-        static constexpr std::int32_t kSchemaVersion = 1;
+        static constexpr std::int32_t kSchemaVersion = 2;
 
         explicit ModelArchiveDatabase(
             std::filesystem::path database_path,

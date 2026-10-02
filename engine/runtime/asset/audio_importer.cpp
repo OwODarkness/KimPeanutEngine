@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <charconv>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <fstream>
@@ -10,6 +12,13 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include <miniaudio/miniaudio.h>
 
@@ -569,19 +578,40 @@ namespace kpengine::asset
         if (archive_root.empty() || cooked.bytes.empty() ||
             Sha256(cooked.bytes) != cooked.product_hash)
             Fail("audio product publication request is invalid");
-        const auto product_path = archive_root / "audio" /
-            (cooked.product_hash.ToHex() + ".audio");
+        ValidateNativeAudioProductStructure(cooked.bytes);
+        const auto product_path = archive_root /
+            ProductRelativePath(ArchiveProductType::Audio, cooked.product_hash);
         std::error_code error;
         std::filesystem::create_directories(product_path.parent_path(), error);
         if (error) Fail("failed to create audio product directory");
         if (std::filesystem::exists(product_path))
         {
-            const auto existing = ReadBounded(product_path, kNativeAudioMaxProductBytes, "existing audio product");
-            if (existing != cooked.bytes)
-                Fail("immutable audio product hash collision");
-            return;
+            const std::uint64_t existing_size = std::filesystem::file_size(product_path, error);
+            if (!error && existing_size <= kNativeAudioMaxProductBytes &&
+                existing_size == cooked.bytes.size())
+            {
+                const auto existing = ReadBounded(product_path, kNativeAudioMaxProductBytes,
+                                                  "existing audio product");
+                if (existing == cooked.bytes) return;
+                if (Sha256(existing) == cooked.product_hash)
+                    Fail("immutable audio product hash collision");
+            }
+            error.clear();
         }
-        const auto temporary = product_path.string() + ".tmp";
+        static std::atomic<std::uint64_t> temporary_sequence{0};
+        auto temporary = product_path;
+        temporary += std::filesystem::path{
+            ".tmp-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+            "-" + std::to_string(temporary_sequence.fetch_add(1, std::memory_order_relaxed))};
+        struct TemporaryCleanup
+        {
+            std::filesystem::path path;
+            ~TemporaryCleanup()
+            {
+                std::error_code ignored;
+                std::filesystem::remove(path, ignored);
+            }
+        } cleanup{temporary};
         {
             std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
             if (!output) Fail("failed to create staged audio product");
@@ -590,18 +620,23 @@ namespace kpengine::asset
             output.flush();
             if (!output) Fail("failed to write staged audio product");
         }
+#if defined(_WIN32)
+        const BOOL published = MoveFileExW(temporary.c_str(), product_path.c_str(),
+                                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+        if (published == 0)
+        {
+            std::error_code cleanup_error;
+            std::filesystem::remove(temporary, cleanup_error);
+            Fail("failed to atomically publish audio product");
+        }
+#else
         std::filesystem::rename(temporary, product_path, error);
         if (error)
         {
             std::error_code cleanup_error;
             std::filesystem::remove(temporary, cleanup_error);
-            if (std::filesystem::exists(product_path))
-            {
-                const auto existing = ReadBounded(product_path, kNativeAudioMaxProductBytes,
-                                                   "existing audio product");
-                if (existing == cooked.bytes) return;
-            }
-            Fail("failed to publish audio product");
+            Fail("failed to atomically publish audio product");
         }
+#endif
     }
 }

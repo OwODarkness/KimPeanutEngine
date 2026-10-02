@@ -575,6 +575,8 @@ TEST(ModelArchiveHashTest, ProducesStableVectorsAndCanonicalPaths)
               "models/" + Sha256("product").ToHex() + ".model");
     EXPECT_EQ(ProductRelativePath(ArchiveProductType::Texture, Sha256("texture"), "PNG"),
               "textures/" + Sha256("texture").ToHex() + ".png");
+    EXPECT_EQ(ProductRelativePath(ArchiveProductType::Audio, Sha256("audio")),
+              "audio/" + Sha256("audio").ToHex() + ".audio");
 
     const std::vector<std::byte> product_bytes = Bytes("product-with-digest");
     const auto hashes = Sha256WithZeroedRange(product_bytes, 3, 5);
@@ -734,6 +736,49 @@ TEST(ModelArchiveDatabaseTest, RejectsNewerAndCorruptDatabases)
     EXPECT_EQ(CatchArchiveError([&]
                                 { ModelArchiveDatabase database{corrupt_path}; }),
               ModelArchiveErrorCode::InvalidDatabase);
+}
+
+TEST(ModelArchiveDatabaseTest, ReadsLegacySchemaAndMigratesItWithoutChangingModelRecords)
+{
+    TemporaryArchive temporary;
+    {
+        ModelArchiveDatabase archive{temporary.DatabasePath()};
+        PublishedSource published = MakePublishedSource();
+        WriteBytes(archive.ArchiveRoot() / published.product.relative_path,
+                   published.product_bytes);
+        archive.ReplaceSource(published.source, published.dependencies, {published.product},
+                              {published.source_product}, {published.material_override});
+    }
+    {
+        Database legacy{temporary.DatabasePath().string()};
+        legacy.Execute("DROP TABLE source_audio_metadata; PRAGMA user_version=1;");
+    }
+
+    {
+        ModelArchiveDatabase reader{temporary.DatabasePath(), 2500,
+                                    kpengine::asset::ModelArchiveOpenMode::ReadOnly};
+        const auto snapshot = reader.FindSource("models/triangle.obj");
+        ASSERT_TRUE(snapshot.has_value());
+        EXPECT_EQ(snapshot->source.normalized_path, "models/triangle.obj");
+        EXPECT_FALSE(snapshot->source.audio_metadata.has_value());
+        EXPECT_EQ(snapshot->products.front().asset_type, ArchiveProductType::Model);
+    }
+
+    {
+        ModelArchiveDatabase migrated{temporary.DatabasePath()};
+        EXPECT_EQ(migrated.SchemaVersion(), ModelArchiveDatabase::kSchemaVersion);
+        const auto snapshot = migrated.FindSource("models/triangle.obj");
+        ASSERT_TRUE(snapshot.has_value());
+        EXPECT_EQ(snapshot->source.display_name, "Triangle");
+        EXPECT_EQ(snapshot->source.native_model_version, 1u);
+        EXPECT_FALSE(snapshot->source.audio_metadata.has_value());
+    }
+    {
+        Database migrated{temporary.DatabasePath().string()};
+        auto version = migrated.Prepare("PRAGMA user_version;");
+        ASSERT_EQ(version.Step(), kpengine::database::StatementStep::Row);
+        EXPECT_EQ(version.ColumnInt64(0), 2);
+    }
 }
 
 TEST(ModelArchiveDatabaseTest, ReportsBusyWriterAndDoesNotPublishPartialSource)

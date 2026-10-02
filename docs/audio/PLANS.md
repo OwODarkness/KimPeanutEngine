@@ -1,6 +1,6 @@
 # Conversational Audio Plan
 
-**Status: A1 complete; A2/P1/M1 active; C1/L2D9 proposed.** M1.1 has a validated offline importer and native product; M1.2 archive/reimport and M1.3 bounded playback remain. This is the design map for evolving the
+**Status: A1 complete; A2/P1/M1 active; C1/L2D9 proposed.** M1.1 import and M1.2 archive/reimport are implemented; M1.3 bounded playback remains. This is the design map for evolving the
 existing [Audio](audio_module.md) and [TTS](../tts/tts_module.md) modules into
 a voice-capable chatbot companion with optional Live2D and a standalone audio
 player. [TODO.md](TODO.md) is the acceptance ledger; [the execution spec](../../.spec/specs/conversational-audio.md)

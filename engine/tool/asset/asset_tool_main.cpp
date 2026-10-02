@@ -1,11 +1,14 @@
 #include <cstdint>
+#include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -19,6 +22,7 @@
 #endif
 
 #include "asset/asset_import_adapters.h"
+#include "asset/audio_import_service.h"
 #include "asset/asset_import_registry.h"
 #include "asset/material_promotion.h"
 #include "asset/model_archive.h"
@@ -49,6 +53,7 @@ namespace
     {
         std::string command;
         std::map<std::string, std::string> options;
+        std::set<std::string> flags;
     };
 
     void PrintUsage()
@@ -74,6 +79,8 @@ namespace
                "[--compression <portable|bc>] [--bc-encoder <reference|rgbcx>] "
                "[--bc-quality <fast|balanced>] [--max-dimension <n>] [--asset-root <path>] "
                "[--archive-root <path>]\n"
+            << "  reimport --source <asset-relative-path> [--clear-subtitle] "
+               "[--subtitle <asset-relative-path>] [--subtitle-language <tag>] ...\n"
             << "  status --source <asset-relative-path> [--asset-root <path>] "
                "[--archive-root <path>]\n"
             << "  diagnostics --source <asset-relative-path> [--asset-root <path>] "
@@ -94,10 +101,16 @@ namespace
             throw std::invalid_argument("a command is required");
         }
 
-        CommandLine result{argv[1], {}};
+        CommandLine result{argv[1], {}, {}};
         for (int index = 2; index < argc; ++index)
         {
             const std::string option{argv[index]};
+            if (option == "--clear-subtitle")
+            {
+                if (!result.flags.emplace("clear-subtitle").second)
+                    throw std::invalid_argument("duplicate option: " + option);
+                continue;
+            }
             if (option.rfind("--", 0) != 0 || index + 1 >= argc)
             {
                 throw std::invalid_argument("expected an option followed by a value: " + option);
@@ -122,6 +135,19 @@ namespace
             throw std::invalid_argument("missing --" + std::string{name});
         }
         return {};
+    }
+
+    bool HasFlag(const CommandLine &command, std::string_view name)
+    {
+        return command.flags.contains(std::string{name});
+    }
+
+    bool IsAudioPath(std::string_view path)
+    {
+        std::string extension = std::filesystem::path{std::string{path}}.extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        return extension == ".wav" || extension == ".mp3" || extension == ".flac";
     }
 
     std::filesystem::path AssetRoot(const CommandLine &command)
@@ -161,7 +187,7 @@ namespace
         return value.empty() ? (asset_root.filename() == "asset"
                                      ? asset_root.parent_path() / "content" / ".archive"
                                      : asset_root / "content" / ".archive")
-                         : std::filesystem::path{value};
+                         : PathFromUtf8(value);
     }
 
     std::uint32_t Slot(const CommandLine &command)
@@ -797,6 +823,12 @@ namespace
 
     int Run(const CommandLine &command)
     {
+        if (HasFlag(command, "clear-subtitle") && command.command != "reimport")
+            throw std::invalid_argument("--clear-subtitle is valid only on reimport");
+        if (command.command != "import" && command.command != "reimport" &&
+            (command.options.contains("subtitle") ||
+             command.options.contains("subtitle-language")))
+            throw std::invalid_argument("subtitle options are valid only on import or reimport");
         if (command.command == "help" || command.command == "--help")
         {
             PrintUsage();
@@ -847,9 +879,52 @@ namespace
             kpengine::asset::ImportProviderRequest request{};
             request.asset_root = asset_root;
             request.archive_root = archive_root;
-            request.source_path = Option(command, "source", true);
+            request.source_path = PathFromUtf8(Option(command, "source", true));
+            request.reimport = command.command == "reimport";
+            request.clear_subtitle = HasFlag(command, "clear-subtitle");
+            const std::string subtitle = Option(command, "subtitle");
+            const std::string subtitle_language = Option(command, "subtitle-language");
+            if (request.clear_subtitle && (!request.reimport || !subtitle.empty() ||
+                                           !subtitle_language.empty()))
+                throw std::invalid_argument(
+                    "--clear-subtitle is valid only on reimport and conflicts with subtitle options");
+            if (subtitle_language.empty() && !subtitle.empty())
+                request.audio_options = kpengine::asset::AudioImportOptions{
+                    PathFromUtf8(subtitle), "und"};
+            else if (!subtitle.empty())
+                request.audio_options = kpengine::asset::AudioImportOptions{
+                    PathFromUtf8(subtitle),
+                    subtitle_language};
+            else if (!subtitle_language.empty())
+                throw std::invalid_argument("--subtitle-language requires --subtitle");
+            if ((request.audio_options.has_value() || request.clear_subtitle) &&
+                (Option(command, "importer") != "audio" &&
+                 !IsAudioPath(Option(command, "source", true))))
+                throw std::invalid_argument("subtitle options require an audio source");
             const kpengine::asset::ImportProviderResult provider_result =
                 registry.Execute(request, Option(command, "importer"), diagnostic);
+            if (provider_result.provider_id == "audio")
+            {
+                if (provider_result.product == nullptr)
+                    throw std::runtime_error("audio import provider failed: " + diagnostic);
+                const auto result_product = std::dynamic_pointer_cast<
+                    kpengine::asset::TypedImportProduct<kpengine::asset::AudioImportSummary,
+                        kpengine::asset::ImportProviderKind::Audio>>(provider_result.product);
+                if (result_product == nullptr)
+                    throw std::runtime_error("audio provider returned an invalid result type");
+                const auto &audio = result_product->value;
+                std::cout << (audio.up_to_date ? "UpToDate\n" : "Imported\n")
+                          << "source: " << audio.normalized_source_path << '\n'
+                          << "product: " << audio.product_path.string() << '\n'
+                          << "hash: " << audio.product_hash.ToHex() << '\n';
+                if (!audio.up_to_date)
+                    std::cout << "duration_frames: " << audio.duration_frames << '\n'
+                              << "waveform_buckets: " << audio.waveform_buckets << '\n'
+                              << "subtitle_cues: " << audio.subtitle_cues << '\n';
+                return 0;
+            }
+            if (request.audio_options.has_value())
+                throw std::invalid_argument("--subtitle options require an audio source");
             if (provider_result.product == nullptr)
             {
                 throw std::runtime_error("model import provider failed: " + diagnostic);
@@ -948,8 +1023,34 @@ namespace
 
         if (command.command == "status" || command.command == "diagnostics")
         {
+            const std::string source_option = Option(command, "source", true);
+            if (IsAudioPath(source_option))
+            {
+                kpengine::asset::ImportProviderRequest request{};
+                request.asset_root = asset_root;
+                request.archive_root = archive_root;
+                request.source_path = PathFromUtf8(source_option);
+                const auto status = kpengine::asset::AudioImportService{}.Status(request);
+                std::cout << "source: " << kpengine::asset::ArchiveProbeStatusName(status.status)
+                          << '\n'
+                          << "path: " << status.normalized_source_path << '\n'
+                          << "diagnostic: " << status.diagnostic << '\n';
+                if (!status.product_path.empty())
+                    std::cout << "product: " << status.product_path.string() << '\n'
+                              << "hash: " << status.product_hash.ToHex() << '\n';
+                if (command.command == "diagnostics")
+                {
+                    kpengine::asset::ModelArchiveDatabase audio_archive{
+                        archive_root / "archive.sqlite3", 2500,
+                        kpengine::asset::ModelArchiveOpenMode::ReadOnly};
+                    audio_archive.IntegrityCheck();
+                    std::cout << "archive: OK\n";
+                }
+                return status.status == kpengine::asset::ArchiveProbeStatus::UpToDate ? 0 : 2;
+            }
+
             const std::string source =
-                kpengine::asset::NormalizeAssetRelativePath(Option(command, "source", true));
+                kpengine::asset::NormalizeAssetRelativePath(source_option);
             const auto snapshot = archive.FindSource(source);
             if (!snapshot.has_value())
             {
