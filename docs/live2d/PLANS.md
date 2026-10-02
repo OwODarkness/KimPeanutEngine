@@ -12,6 +12,8 @@ staged in [`.plan/L2D4.md`](.plan/L2D4.md), authored playback is staged in
 [`.spec/specs/live2d-v1-rendering.md`](../../.spec/specs/live2d-v1-rendering.md).
 The next semantic behavior policy is staged in [`.plan/L2D8.md`](.plan/L2D8.md);
 the landed speech-bubble companion has its own [plan](.plan/L2D8-speech-bubble.md).
+Speech-driven lip-sync and the chatbot composition boundary are staged in
+[L2D9](.plan/L2D9.md) and the [conversational audio plan](../audio/PLANS.md).
 The in-progress host/editor/emotion decomposition and core math migration are staged in
 [`.plan/L2D10.0.md`](.plan/L2D10.0.md), with the current extraction evidence in
 [`../../.spec/journal/2026-09-29-live2d-L2D10.0.md`](../../.spec/journal/2026-09-29-live2d-L2D10.0.md).

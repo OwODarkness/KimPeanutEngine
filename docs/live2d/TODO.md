@@ -15,8 +15,10 @@ the [live2d-v1-rendering spec](../../.spec/specs/live2d-v1-rendering.md).
   emotion layer; speech bubbles remain a separate presentation channel.
   L2D8.0 through L2D8.3 are complete, including deterministic viewer replay and
   cross-backend command evidence.
-- [ ] **L2D9 — speech integration.** Add lip-sync inputs and optional TTS/audio
-  coupling through narrow interfaces; Live2D must not depend on a provider.
+- [ ] **L2D9 — speech integration** ([plan](.plan/L2D9.md)). Add a played-speech
+  envelope input and optional conversation binding through narrow interfaces;
+  Live2D must not depend on a TTS provider. See the
+  [conversational audio roadmap](../audio/TODO.md).
 - [ ] **L2D10.0 — viewer host decomposition and core math convergence**
   ([plan](.plan/L2D10.0.md)). Reduce `Live2DViewerHost` to lifecycle and
   scheduling, move Live2D-specific UI/session/command code into `editor/`,
