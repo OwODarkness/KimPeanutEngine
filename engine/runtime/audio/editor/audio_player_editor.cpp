@@ -8,6 +8,7 @@
 #include <exception>
 #include <filesystem>
 #include <functional>
+#include <iterator>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -23,7 +24,10 @@
 #endif
 
 #include "audio_player_controller.h"
+#include "audio_player_theme.h"
 #include "audio_preview_widget.h"
+#include "editor/log/editor_log_component.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/ui/component/editor_audio_component.h"
 #include "editor/ui/component/editor_window_component.h"
 #include "editor/ui/component/editor_tool_row_component.h"
@@ -40,10 +44,11 @@ namespace kpengine::audio_player
 {
     namespace
     {
-        constexpr ImVec4 kCyan{0.08f, 0.78f, 0.96f, 1.0f};
-        constexpr ImVec4 kAmber{1.0f, 0.65f, 0.10f, 1.0f};
-        constexpr ImVec4 kMuted{0.39f, 0.60f, 0.69f, 1.0f};
-        constexpr ImVec4 kDanger{0.96f, 0.31f, 0.25f, 1.0f};
+        const ImVec4 kCyan = AudioPlayerTheme::Vec(AudioPlayerTheme::cyan);
+        const ImVec4 kAmber = AudioPlayerTheme::Vec(AudioPlayerTheme::amber);
+        const ImVec4 kMuted = AudioPlayerTheme::Vec(AudioPlayerTheme::muted);
+        const ImVec4 kDanger = AudioPlayerTheme::Vec(AudioPlayerTheme::error);
+        constexpr bool kAudioPlayerLogGlowEnabled = false;
         constexpr std::uint32_t kTransportIconSize = 24;
 
         std::vector<std::uint8_t> LoadTransportIconMask(const std::string_view filename)
@@ -124,36 +129,31 @@ namespace kpengine::audio_player
         class AudioPlayerDockPanel final : public editor::EditorWindowComponent
         {
         public:
-            AudioPlayerDockPanel(std::string title, std::function<void()> render_content)
+            AudioPlayerDockPanel(std::string title, std::function<void()> render_content,
+                                 std::function<ImFont *()> content_font)
                 : EditorWindowComponent(title),
-                  render_content_(std::move(render_content))
+                  render_content_(std::move(render_content)),
+                  content_font_(std::move(content_font))
             {
             }
 
             void RenderContent() override
             {
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.012f, 0.038f, 0.055f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.02f, 0.26f, 0.36f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.02f, 0.22f, 0.30f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.03f, 0.34f, 0.43f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.04f, 0.42f, 0.52f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.02f, 0.13f, 0.19f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.02f, 0.30f, 0.39f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.02f, 0.43f, 0.54f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.01f, 0.07f, 0.10f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.02f, 0.18f, 0.24f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.02f, 0.24f, 0.31f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_SliderGrab, kCyan);
-                ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, kAmber);
+                const ScopedAudioPlayerTheme theme{};
+                ImFont *const font = content_font_ ? content_font_() : nullptr;
+                if (font != nullptr)
+                    ImGui::PushFont(font);
                 if (render_content_)
                 {
                     render_content_();
                 }
-                ImGui::PopStyleColor(13);
+                if (font != nullptr)
+                    ImGui::PopFont();
             }
 
         private:
             std::function<void()> render_content_;
+            std::function<ImFont *()> content_font_;
         };
 
         std::string LowerAscii(std::string value);
@@ -206,7 +206,8 @@ namespace kpengine::audio_player
             if (remaining > 12.0f)
             {
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight() * 0.5f);
-                ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.02f, 0.28f, 0.38f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Separator,
+                                      AudioPlayerTheme::Vec(AudioPlayerTheme::border));
                 ImGui::Separator();
                 ImGui::PopStyleColor();
             }
@@ -215,7 +216,7 @@ namespace kpengine::audio_player
         void TextField(const char *label, const char *value)
         {
             ImGui::TextColored(kMuted, "%s", label);
-            ImGui::SameLine(88.0f);
+            ImGui::SameLine(std::min(116.0f, ImGui::GetWindowWidth() * 0.38f));
             ImGui::TextWrapped("%s", value == nullptr ? "—" : value);
         }
 
@@ -338,6 +339,7 @@ namespace kpengine::audio_player
                          const std::string &status, const std::string &error)
         {
             std::vector<TrackView> queue = controller.GetQueue();
+            const PlaybackView playback = controller.GetPlaybackView();
             std::vector<const TrackView *> visible;
             visible.reserve(queue.size());
             const std::string query = LowerAscii(search);
@@ -359,7 +361,10 @@ namespace kpengine::audio_player
                 std::reverse(visible.begin(), visible.end());
             }
 
-            ImGui::SetNextItemWidth(-1.0f);
+            SectionTitle(library_filter == 1 ? "PLAYLIST / RECENT" :
+                         library_filter == 2 ? "PLAYLIST / FAVORITES" :
+                                               "PLAYLIST / ALL");
+            ImGui::SetNextItemWidth(std::min(340.0f, ImGui::GetContentRegionAvail().x));
             ImGui::InputTextWithHint("##TrackSearch", "Search tracks…", search, search_capacity);
             ImGui::Spacing();
             if (visible.empty())
@@ -384,15 +389,23 @@ namespace kpengine::audio_player
                 const ImGuiTableFlags flags = ImGuiTableFlags_RowBg |
                     ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp |
                     ImGuiTableFlags_ScrollY;
+                const bool wide = ImGui::GetContentRegionAvail().x >= 720.0f;
                 const float table_height = std::max(
                     80.0f, ImGui::GetContentRegionAvail().y - 42.0f);
-                if (ImGui::BeginTable("AudioQueueTable", 4, flags,
+                if (ImGui::BeginTable("AudioQueueTable", wide ? 6 : 4, flags,
                                       ImVec2(0.0f, table_height)))
                 {
-                    ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 46.0f);
+                    ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 74.0f);
                     ImGui::TableSetupColumn("TRACK", ImGuiTableColumnFlags_WidthStretch, 1.7f);
-                    ImGui::TableSetupColumn("LENGTH", ImGuiTableColumnFlags_WidthFixed, 72.0f);
-                    ImGui::TableSetupColumn("FORMAT", ImGuiTableColumnFlags_WidthFixed, 104.0f);
+                    ImGui::TableSetupColumn("DURATION", ImGuiTableColumnFlags_WidthFixed, 86.0f);
+                    ImGui::TableSetupColumn(wide ? "SAMPLE RATE" : "FORMAT",
+                                            ImGuiTableColumnFlags_WidthFixed,
+                                            wide ? 112.0f : 142.0f);
+                    if (wide)
+                    {
+                        ImGui::TableSetupColumn("TYPE", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+                        ImGui::TableSetupColumn("SOURCE", ImGuiTableColumnFlags_WidthFixed, 88.0f);
+                    }
                     ImGui::TableHeadersRow();
 
                     ImGuiListClipper clipper;
@@ -403,14 +416,19 @@ namespace kpengine::audio_player
                         {
                             const TrackView &track = *visible[static_cast<std::size_t>(row)];
                             ImGui::PushID(static_cast<int>(track.id));
-                            ImGui::TableNextRow(ImGuiTableRowFlags_None, 27.0f);
-                            ImGui::TableSetColumnIndex(0);
-                            ImGui::TextColored(kMuted, "%03llu",
-                                static_cast<unsigned long long>(row + 1));
-                            ImGui::TableSetColumnIndex(1);
-                            const PlaybackView playback = controller.GetPlaybackView();
+                            ImGui::TableNextRow(ImGuiTableRowFlags_None, 30.0f);
                             const bool selected = playback.track.has_value() &&
                                                   playback.track->id == track.id;
+                            if (selected)
+                                ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                                                       AudioPlayerTheme::selected);
+                            ImGui::TableSetColumnIndex(0);
+                            ImGui::TextColored(selected ? kAmber : kMuted, "%c%03llu",
+                                selected && playback.state == audio::AudioState::Playing ? '>' : ' ',
+                                static_cast<unsigned long long>(row + 1));
+                            ImGui::TableSetColumnIndex(1);
+                            if (selected)
+                                ImGui::PushStyleColor(ImGuiCol_Text, kAmber);
                             if (ImGui::Selectable(track.name.c_str(), selected,
                                     ImGuiSelectableFlags_SpanAllColumns |
                                     ImGuiSelectableFlags_AllowDoubleClick))
@@ -422,15 +440,33 @@ namespace kpengine::audio_player
                                     controller.PlaySelected(diagnostic);
                                 }
                             }
+                            if (selected)
+                                ImGui::PopStyleColor();
                             if (ImGui::IsItemHovered())
                             {
                                 ImGui::SetTooltip("%s", track.path.c_str());
                             }
                             ImGui::TableSetColumnIndex(2);
-                            ImGui::TextColored(kMuted, "%s", FormatTime(track.duration_seconds).c_str());
+                            ImGui::TextColored(selected ? kAmber : kMuted, "%s",
+                                               FormatTime(track.duration_seconds).c_str());
                             ImGui::TableSetColumnIndex(3);
-                            ImGui::TextColored(kCyan, "%s  %u Hz", track.extension.c_str(),
-                                               track.sample_rate);
+                            if (wide)
+                            {
+                                ImGui::TextColored(selected ? kAmber : kCyan, "%.1f kHz",
+                                                   track.sample_rate / 1000.0f);
+                                ImGui::TableSetColumnIndex(4);
+                                ImGui::TextColored(selected ? kAmber : kCyan, "%s",
+                                                   track.extension.c_str());
+                                ImGui::TableSetColumnIndex(5);
+                                ImGui::TextColored(kMuted, "%s",
+                                                   track.project_asset ? "CONTENT" : "SESSION");
+                            }
+                            else
+                            {
+                                ImGui::TextColored(selected ? kAmber : kCyan, "%s / %.1fk",
+                                                   track.extension.c_str(),
+                                                   track.sample_rate / 1000.0f);
+                            }
                             ImGui::PopID();
                         }
                     }
@@ -443,47 +479,133 @@ namespace kpengine::audio_player
                 controller.RemoveSelected();
             }
             ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.28f, 0.07f, 0.06f, 1.0f));
             if (ImGui::Button("CLEAR QUEUE", ImVec2(110.0f, 0.0f)))
             {
                 controller.ClearQueue();
             }
-            ImGui::PopStyleColor();
             ImGui::SameLine();
-            const PlaybackView playback = controller.GetPlaybackView();
             ImGui::TextColored(error.empty() ? kMuted : kDanger, "%s",
                                error.empty() ? status.c_str() : error.c_str());
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 130.0f);
-            ImGui::TextColored(kCyan, "%llu tracks | %zu importing",
-                static_cast<unsigned long long>(playback.queue_size), playback.pending_imports);
+            if (ImGui::GetContentRegionAvail().x > 145.0f)
+            {
+                ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 145.0f);
+                ImGui::TextColored(kCyan, "%llu tracks | %zu importing",
+                    static_cast<unsigned long long>(playback.queue_size), playback.pending_imports);
+            }
         }
 
         void RenderLibrary(AudioPlayerController &controller, const std::vector<TrackView> &queue,
-                           int &filter, char *import_path, char *subtitle_path,
+                           const ProjectLibraryView &project_library, int &filter,
+                           char *project_search, const std::size_t project_search_capacity,
+                           char *import_path, char *subtitle_path,
                            const std::size_t import_path_capacity,
                            std::string &status, std::string &error)
         {
             const auto favorites = static_cast<int>(std::count_if(queue.begin(), queue.end(),
                 [](const TrackView &track) { return track.favorite; }));
+            SectionTitle("LIBRARY");
             const std::array<std::pair<const char *, int>, 3> categories{{
                 {"All", 0}, {"Recent", 1}, {"Favorites", 2}}};
             for (const auto &[label, value] : categories)
             {
                 const int count = value == 2 ? favorites : static_cast<int>(queue.size());
+                const bool selected = filter == value;
+                if (selected)
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Header,
+                                          AudioPlayerTheme::Vec(AudioPlayerTheme::selected));
+                    ImGui::PushStyleColor(ImGuiCol_Text, kAmber);
+                }
                 if (ImGui::Selectable(label, filter == value, 0, ImVec2(0.0f, 30.0f)))
                 {
                     filter = value;
                 }
+                if (selected)
+                    ImGui::PopStyleColor(2);
                 char count_text[16]{};
                 std::snprintf(count_text, sizeof(count_text), "%03d", count);
                 const float count_width = ImGui::CalcTextSize(count_text).x;
                 ImGui::SameLine();
                 ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
                     ImGui::GetWindowContentRegionMax().x - count_width - 8.0f));
-                ImGui::TextColored(kMuted, "%s", count_text);
+                ImGui::TextColored(selected ? kAmber : kMuted, "[%s]", count_text);
             }
             ImGui::Spacing();
             ImGui::Separator();
+            SectionTitle("PROJECT MUSIC");
+            ImGui::TextColored(kMuted, "%03llu imported products",
+                static_cast<unsigned long long>(project_library.tracks.size()));
+            ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 72.0f);
+            if (ImGui::SmallButton("REFRESH"))
+            {
+                std::string diagnostic;
+                if (!controller.RefreshProjectLibrary(diagnostic))
+                {
+                    error = std::move(diagnostic);
+                    status = "Project Library refresh rejected";
+                }
+            }
+            if (ImGui::GetContentRegionAvail().x > 0.0f)
+            {
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::InputTextWithHint("##ProjectMusicSearch", "Filter project music…",
+                                         project_search, project_search_capacity);
+            }
+            const float project_list_height = std::clamp(
+                ImGui::GetContentRegionAvail().y * 0.32f, 88.0f, 176.0f);
+            if (ImGui::BeginChild("ProjectMusicEntries", ImVec2(0.0f, project_list_height),
+                                  true))
+            {
+                if (project_library.refreshing)
+                {
+                    ImGui::TextColored(kMuted, "Scanning project Content…");
+                }
+                else if (project_library.tracks.empty())
+                {
+                    ImGui::TextColored(kMuted, "No imported project music found.");
+                    ImGui::TextWrapped("Import a track from asset/music, then refresh.");
+                }
+                else
+                {
+                    const std::string project_query = LowerAscii(project_search);
+                    for (const TrackView &track : project_library.tracks)
+                    {
+                        if (!project_query.empty() &&
+                            LowerAscii(track.name + " " + track.path).find(project_query) ==
+                                std::string::npos)
+                        {
+                            continue;
+                        }
+                        ImGui::PushID(track.content_id.c_str());
+                        const std::string label = track.name + "  " + track.extension;
+                        if (ImGui::Selectable(label.c_str(), false,
+                                              ImGuiSelectableFlags_AllowDoubleClick))
+                        {
+                            std::string diagnostic;
+                            if (!controller.QueueProjectTrack(track.content_id, diagnostic))
+                            {
+                                error = std::move(diagnostic);
+                                status = "Project track was not queued";
+                            }
+                            else
+                            {
+                                error.clear();
+                                status = "Project track queued";
+                            }
+                        }
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%s", track.path.c_str());
+                        ImGui::PopID();
+                    }
+                }
+            }
+            ImGui::EndChild();
+            if (!project_library.error.empty())
+                ImGui::TextColored(kDanger, "%s", project_library.error.c_str());
+            else
+                ImGui::TextColored(kMuted, "%s", project_library.status.c_str());
+            ImGui::Separator();
+            SectionTitle("IMPORT / SESSION");
             ImGui::TextColored(kCyan, "// OPTIONAL SUBTITLE");
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::InputTextWithHint("##SubtitlePath", "Choose an SRT, WebVTT, or LRC file…",
@@ -555,13 +677,20 @@ namespace kpengine::audio_player
 
         void RenderPlaylists(const std::vector<TrackView> &queue)
         {
+            SectionTitle("PLAYLISTS");
             char queue_label[96]{};
-            std::snprintf(queue_label, sizeof(queue_label), "Current queue  [%03llu]",
+            std::snprintf(queue_label, sizeof(queue_label), "CURRENT QUEUE  [%03llu]",
                           static_cast<unsigned long long>(queue.size()));
-            ImGui::Selectable(queue_label, true, ImGuiSelectableFlags_Disabled,
-                              ImVec2(0.0f, 30.0f));
+            ImGui::PushStyleColor(ImGuiCol_Header,
+                                  AudioPlayerTheme::Vec(AudioPlayerTheme::selected));
+            ImGui::PushStyleColor(ImGuiCol_Text, kAmber);
+            ImGui::Selectable(queue_label, true, 0, ImVec2(0.0f, 34.0f));
+            ImGui::PopStyleColor(2);
             ImGui::Spacing();
-            ImGui::TextWrapped("Session playlist. Nothing is written to disk.");
+            ImGui::TextColored(kMuted, "// SESSION COLLECTION");
+            ImGui::TextWrapped("Tracks in this queue are available until the player closes.");
+            if (queue.empty())
+                ImGui::TextColored(kMuted, "Add a file or choose project music to begin.");
         }
 
         void RenderAudioPreview(AudioPlayerController &controller,
@@ -642,11 +771,16 @@ namespace kpengine::audio_player
                              std::string &ui_status, std::string &ui_error,
                              bool &show_diagnostics)
         {
+            SectionTitle("AUDIO DETAIL");
             if (playback.track.has_value())
             {
                 const auto &track = *playback.track;
+                ImGui::TextColored(kCyan, "// SOURCE");
                 TextField("Name", track.name.c_str());
                 TextField("Path", track.path.c_str());
+                TextField("Origin", track.project_asset ? "Project Content" : "Session import");
+                ImGui::Spacing();
+                ImGui::TextColored(kCyan, "// FORMAT");
                 TextField("Type", track.extension.c_str());
                 TextField("Channels", track.channels == 1 ? "Mono" : "Stereo");
                 char sample_rate[32]{};
@@ -667,23 +801,33 @@ namespace kpengine::audio_player
                 {
                     TextField("Subtitles", "None attached");
                 }
+                ImGui::Spacing();
+                ImGui::TextColored(kCyan, "// ACTIONS");
                 if (ImGui::SmallButton(track.favorite ? "Remove favorite" : "Add favorite"))
                 {
                     controller.ToggleFavorite(track.id);
                 }
                 ImGui::SameLine();
-                if (ImGui::SmallButton("Reimport"))
+                if (track.project_asset)
                 {
-                    std::string diagnostic;
-                    if (!controller.ReimportSelected(subtitle_path, diagnostic))
-                        ui_error = std::move(diagnostic);
-                    else
-                        ui_status = "Reimport queued";
+                    ImGui::TextColored(kMuted, "Reimport with AssetTool");
+                }
+                else
+                {
+                    if (ImGui::SmallButton("Reimport"))
+                    {
+                        std::string diagnostic;
+                        if (!controller.ReimportSelected(subtitle_path, diagnostic))
+                            ui_error = std::move(diagnostic);
+                        else
+                            ui_status = "Reimport queued";
+                    }
                 }
             }
             else
             {
-                ImGui::TextColored(kMuted, "Select a track to inspect its metadata.");
+                ImGui::TextColored(kMuted, "No track selected.");
+                ImGui::TextWrapped("Choose a playlist row to inspect its source and format.");
             }
 
             ImGui::Spacing();
@@ -722,19 +866,88 @@ namespace kpengine::audio_player
 
         void RenderSpectrum(const PlaybackView &playback)
         {
-            ImGui::TextColored(kCyan, "// SOURCE SIGNAL");
-            if (!playback.track.has_value())
+            SectionTitle("SPECTRUM");
+            ImGui::TextColored(kMuted, "// SOURCE SIGNAL / PLAYED CURSOR");
+
+            const ImVec2 available = ImGui::GetContentRegionAvail();
+            const ImVec2 size{std::max(180.0f, available.x),
+                              std::clamp(available.y * 0.57f, 150.0f, 290.0f)};
+            const ImVec2 min = ImGui::GetCursorScreenPos();
+            const ImVec2 max{min.x + size.x, min.y + size.y};
+            ImGui::Dummy(size);
+            ImDrawList &draw = *ImGui::GetWindowDrawList();
+            draw.AddRectFilled(min, max, AudioPlayerTheme::surface);
+            draw.AddRect(min, max, AudioPlayerTheme::border);
+
+            const float graph_left = min.x + 39.0f;
+            const float graph_right = max.x - 10.0f;
+            const float graph_top = min.y + 16.0f;
+            const float graph_bottom = max.y - 27.0f;
+            const float graph_height = std::max(1.0f, graph_bottom - graph_top);
+            const ImU32 grid_label = AudioPlayerTheme::muted;
+            for (int step = 0; step <= 3; ++step)
             {
-                ImGui::TextColored(kMuted, "Import a clip to inspect its played-cursor spectrum.");
-                return;
+                const float y = graph_top + graph_height * step / 3.0f;
+                draw.AddLine({graph_left, y}, {graph_right, y}, AudioPlayerTheme::grid);
+                char label[12]{};
+                std::snprintf(label, sizeof(label), "%d", -20 * step);
+                draw.AddText({min.x + 4.0f, y - 7.0f}, grid_label, label);
             }
-            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, kCyan);
-            ImGui::PlotHistogram("##SourceSpectrum", playback.spectrum.data(),
-                                 static_cast<int>(playback.spectrum.size()), 0,
-                                 nullptr, 0.0f, 1.0f, ImVec2(-1.0f, 115.0f));
-            ImGui::PopStyleColor();
-            ImGui::Text("RMS %.3f  |  PEAK %.3f", playback.rms, playback.peak);
-            ImGui::TextColored(kMuted, "Decoded source at the played cursor; not device output telemetry.");
+            draw.AddLine({graph_left, graph_bottom}, {graph_right, graph_bottom},
+                         AudioPlayerTheme::border);
+
+            if (playback.track.has_value())
+            {
+                const std::size_t count = playback.spectrum.size();
+                const float bin_width = (graph_right - graph_left) /
+                                        static_cast<float>(count);
+                const float bar_width = std::max(1.0f, bin_width - 2.0f);
+                const auto loudest = std::max_element(playback.spectrum.begin(),
+                                                       playback.spectrum.end());
+                const std::size_t peak_bin = static_cast<std::size_t>(
+                    std::distance(playback.spectrum.begin(), loudest));
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    const float magnitude = std::clamp(playback.spectrum[i], 0.0f, 1.0f);
+                    if (magnitude <= 0.001f)
+                        continue;
+                    const float relative_db = 20.0f * std::log10(magnitude);
+                    const float height = graph_height *
+                        std::clamp((relative_db + 60.0f) / 60.0f, 0.0f, 1.0f);
+                    const float x = graph_left + bin_width * static_cast<float>(i) + 1.0f;
+                    const ImU32 color = playback.state == audio::AudioState::Playing &&
+                                        i == peak_bin ? AudioPlayerTheme::amber :
+                                                        AudioPlayerTheme::cyan;
+                    draw.AddRectFilled({x, graph_bottom - height},
+                                       {x + bar_width, graph_bottom}, color);
+                }
+                constexpr std::array<std::size_t, 4> ticks{0, 16, 32, 47};
+                for (const std::size_t index : ticks)
+                {
+                    const float x = graph_left + bin_width * static_cast<float>(index);
+                    const float ratio = static_cast<float>(index) /
+                        static_cast<float>(count - 1);
+                    const float frequency = std::pow(120.0f, ratio) *
+                        static_cast<float>(playback.track->sample_rate) / 256.0f;
+                    char label[16]{};
+                    if (frequency < 1000.0f)
+                        std::snprintf(label, sizeof(label), "%.0f", frequency);
+                    else
+                        std::snprintf(label, sizeof(label), "%.1fk", frequency / 1000.0f);
+                    draw.AddLine({x, graph_bottom}, {x, graph_bottom + 4.0f},
+                                 AudioPlayerTheme::border);
+                    draw.AddText({std::clamp(x - 8.0f, graph_left, graph_right - 32.0f),
+                                  graph_bottom + 7.0f}, grid_label, label);
+                }
+            }
+            else
+            {
+                draw.AddText({graph_left + 12.0f, graph_top + graph_height * 0.5f},
+                             AudioPlayerTheme::muted, "NO SOURCE SIGNAL");
+            }
+
+            ImGui::TextColored(kCyan, "RMS %.3f  |  PEAK %.3f", playback.rms, playback.peak);
+            ImGui::TextColored(kMuted, "Relative dB / 256-frame source FFT. Not device output.");
         }
 
         std::string LowerAscii(std::string value)
@@ -788,42 +1001,56 @@ namespace kpengine::audio_player
             dock_host_ = std::make_unique<editor::EditorToolRowComponent>(
                 dock_model_, editor::EditorWindowConfig{});
             dock_host_->SetLayoutModel(&layout_);
+            const auto content_font = [this]() -> ImFont * {
+                return ui_ != nullptr ? ui_->GetCodeFont() : nullptr;
+            };
             dock_host_->AddPanel(
                 "audio_library", "Library",
                 std::make_unique<AudioPlayerDockPanel>("Library", [this] {
-                    RenderLibrary(*controller_, controller_->GetQueue(), library_filter_,
+                    RenderLibrary(*controller_, controller_->GetQueue(),
+                                 controller_->GetProjectLibrary(), library_filter_,
+                                 project_search_, sizeof(project_search_),
                                  import_path_, subtitle_path_, sizeof(import_path_),
                                  ui_status_, ui_error_);
-                }), true, editor::EditorLayoutSlot::WorldOutliner);
+                }, content_font), true, editor::EditorLayoutSlot::WorldOutliner);
             dock_host_->AddPanel(
                 "audio_playlists", "Playlists",
                 std::make_unique<AudioPlayerDockPanel>("Playlists", [this] {
                     RenderPlaylists(controller_->GetQueue());
-                }), true, editor::EditorLayoutSlot::ActorInspector);
+                }, content_font), true, editor::EditorLayoutSlot::ActorInspector);
             dock_host_->AddPanel(
                 "audio_now_playing", "Now Playing",
                 std::make_unique<AudioPlayerDockPanel>("Now Playing", [this] {
                     RenderAudioPreview(*controller_, controller_->GetPlaybackView(),
                                        ui_->GetCodeFont(), playback_icon_alpha_);
-                }), true, editor::EditorLayoutSlot::Viewport);
+                }, content_font), true, editor::EditorLayoutSlot::Viewport);
             dock_host_->AddPanel(
                 "audio_queue", "Playlist : All",
                 std::make_unique<AudioPlayerDockPanel>("Playlist : All", [this] {
                     RenderQueue(*controller_, search_, sizeof(search_), library_filter_,
                                 ui_status_, ui_error_);
-                }), true, editor::EditorLayoutSlot::ToolRow);
+                }, content_font), true, editor::EditorLayoutSlot::ToolRow);
+            const auto log_panel = std::make_shared<editor::EditorLogComponent>(
+                context.log_system_.get(), editor::DefaultLogColors(),
+                editor::EditorWindowConfig{},
+                &kAudioPlayerLogGlowEnabled);
+            dock_host_->AddPanel(
+                "audio_log", "Output Log",
+                std::make_unique<AudioPlayerDockPanel>("Output Log", [log_panel] {
+                    log_panel->RenderContent();
+                }, content_font), true, editor::EditorLayoutSlot::ToolRow);
             dock_host_->AddPanel(
                 "audio_info", "Info",
                 std::make_unique<AudioPlayerDockPanel>("Info", [this] {
                     RenderInspector(*controller_, *audio_system_,
                                     controller_->GetPlaybackView(), subtitle_path_,
                                     ui_status_, ui_error_, show_diagnostics_);
-                }), true, editor::EditorLayoutSlot::CameraSettings);
+                }, content_font), true, editor::EditorLayoutSlot::CameraSettings);
             dock_host_->AddPanel(
                 "audio_spectrum", "Spectrum",
                 std::make_unique<AudioPlayerDockPanel>("Spectrum", [this] {
                     RenderSpectrum(controller_->GetPlaybackView());
-                }),
+                }, content_font),
                 true, editor::EditorLayoutSlot::DebugViewer);
             ui_->InitializeViewer(init_info, [this] { RenderDockedWorkspace(); });
         }

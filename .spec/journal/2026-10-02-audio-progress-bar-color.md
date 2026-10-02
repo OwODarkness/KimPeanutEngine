@@ -214,3 +214,24 @@ The user clarified that the progress bar should be fully orange. The played
 portion now uses one orange fill and emits bloom across that full portion; the
 cyan/orange split has been removed. Waveform colors and timeline edge fades are
 unchanged. The background-flash fix remains untouched.
+
+The user compared the result with the reference screenshot and said the orange
+was too red. The progress fill and playhead now use the existing warmer `kAmber`
+token, matching the waveform playhead while keeping the full played section and
+its bloom.
+
+## Waveform bar resampling
+
+The user asked to keep the existing 18-second viewport. Bars previously used
+the maximum amplitude of every source bucket overlapped by a display column,
+which repeated coarse envelope heights across adjacent bars. The viewport is
+restored to its fixed 18-second maximum; each bar now linearly interpolates
+between neighboring whole-track peak buckets at its time center. This preserves
+the stored envelope and track zoom while avoiding repeated bucket plateaus.
+
+## Waveform playhead styling
+
+The user noted that the orange waveform playhead did not match the draft. Its
+wide layered line was replaced with a thin amber line, endpoint glow, and small
+round markers at both plot edges. The line and markers emit through the existing
+waveform bloom region; the waveform and timeline remain unchanged.

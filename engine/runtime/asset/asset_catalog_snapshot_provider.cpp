@@ -17,8 +17,9 @@ namespace kpengine::asset
     {
         // Archive product types have built-in Asset counterparts, so their
         // registry names make archive-only nodes readable without a switch.
-        constexpr std::array<AssetType, 3> kArchiveMappedTypes{
-            AssetType::KPAT_Model, AssetType::KPAT_Material, AssetType::KPAT_Texture};
+        constexpr std::array<AssetType, 4> kArchiveMappedTypes{
+            AssetType::KPAT_Model, AssetType::KPAT_Material, AssetType::KPAT_Texture,
+            AssetType::KPAT_Audio};
 
         std::string ArchiveDiagnosticMessage(const std::filesystem::path &database_path,
                                              const ModelArchiveError &error)

@@ -17,6 +17,7 @@
 #include <string_view>
 
 #include "runtime/asset/asset_manager.h"
+#include "runtime/asset/asset_catalog_snapshot_provider.h"
 #include "runtime/asset/asset_import_registry.h"
 #include "runtime/asset/audio.h"
 #include "runtime/asset/audio_import_service.h"
@@ -215,6 +216,10 @@ namespace kpengine::audio_player
             std::filesystem::path path;
             std::filesystem::path subtitle_path;
             std::uint64_t file_size = 0;
+            std::string content_id;
+            std::filesystem::path product_path;
+            std::string name;
+            bool project_asset = false;
         };
 
         struct Voice
@@ -297,6 +302,65 @@ namespace kpengine::audio_player
         explicit Impl(audio::MiniAudioSystem &in_audio_system)
             : audio_system(&in_audio_system), import_thread([this] { RunImports(); })
         {
+        }
+
+        bool RequestProjectLibraryRefresh(std::string &diagnostic)
+        {
+            std::lock_guard lock(mutex);
+            if (stopping)
+            {
+                diagnostic = "Audio Player is shutting down";
+                return false;
+            }
+            project_refresh_requested = true;
+            project_library.refreshing = true;
+            project_library.error.clear();
+            project_library.status = "Scanning project Content";
+            import_changed.notify_one();
+            diagnostic.clear();
+            return true;
+        }
+
+        bool EnqueueProjectTrack(std::string content_id, std::string &diagnostic)
+        {
+            std::lock_guard lock(mutex);
+            if (stopping)
+            {
+                diagnostic = "Audio Player is shutting down";
+                return false;
+            }
+            const auto found = std::find_if(project_library.tracks.begin(),
+                project_library.tracks.end(), [&content_id](const TrackView &track)
+                {
+                    return track.content_id == content_id;
+                });
+            if (found == project_library.tracks.end())
+            {
+                diagnostic = "Project audio entry is no longer available; refresh the Library";
+                return false;
+            }
+            if (tracks.size() + import_jobs.size() + (import_active ? 1 : 0) >=
+                kMaximumQueueTracks)
+            {
+                diagnostic = "Queue limit reached (512 tracks)";
+                last_error = diagnostic;
+                return false;
+            }
+            const std::string key = "content:" + content_id;
+            if (!queued_paths.insert(key).second)
+            {
+                diagnostic = "This project track is already being queued";
+                return false;
+            }
+            const std::filesystem::path asset_source =
+                FromUtf8(PathUtf8(GetAssetDirectory())) / FromUtf8(found->path);
+            import_jobs.push_back({asset_source, {}, found->file_size, content_id,
+                                   FromUtf8(found->product_path), found->name, true});
+            last_status = "Loading project track: " + found->name;
+            last_error.clear();
+            import_changed.notify_one();
+            diagnostic.clear();
+            return true;
         }
 
         ~Impl()
@@ -408,22 +472,154 @@ namespace kpengine::audio_player
             return true;
         }
 
+        ProjectLibraryView CaptureProjectLibrary()
+        {
+            ProjectLibraryView result;
+            try
+            {
+                asset::AssetCatalogSnapshotProvider provider(
+                    asset::AssetManager::GetInstance(), {});
+                const asset::AssetCatalogSnapshot snapshot = provider.CaptureAssetCatalog();
+                if (!snapshot.diagnostics.empty())
+                    result.error = snapshot.diagnostics.front().message;
+
+                for (const asset::AssetCatalogNode &node : snapshot.nodes)
+                {
+                    if (node.kind != asset::AssetCatalogNodeKind::Asset ||
+                        node.type != asset::AssetType::KPAT_Audio ||
+                        node.archive_product_type != asset::ArchiveProductType::Audio ||
+                        node.content_id.empty() || node.product_path.empty())
+                    {
+                        continue;
+                    }
+
+                    if (node.provenance.empty() || node.provenance.front().source_path.empty())
+                    {
+                        if (result.error.empty())
+                            result.error = "Project audio has no Asset source path: " +
+                                           node.logical_path;
+                        continue;
+                    }
+                    asset::ImportProviderRequest status_request{};
+                    status_request.asset_root = FromUtf8(GetAssetDirectory());
+                    status_request.archive_root = FromUtf8(GetContentArchiveDirectory());
+                    status_request.source_path =
+                        FromUtf8(node.provenance.front().source_path);
+                    const asset::AudioArchiveStatus published =
+                        asset::AudioImportService{}.Status(status_request);
+                    if (published.status != asset::ArchiveProbeStatus::UpToDate ||
+                        !node.content_hash || *node.content_hash != published.product_hash ||
+                        FromUtf8(node.product_path).lexically_normal() !=
+                            published.product_path.lexically_normal())
+                    {
+                        if (result.error.empty())
+                        {
+                            result.error = "Project audio is stale or does not match its published "
+                                "product: " + node.logical_path;
+                            if (!published.diagnostic.empty())
+                                result.error += " (" + published.diagnostic + ")";
+                        }
+                        continue;
+                    }
+
+                    const asset::AssetID asset_id =
+                        asset::AssetManager::GetInstance().LoadSync(node.product_path);
+                    const auto resource = asset_id.IsValid()
+                        ? asset::AssetManager::GetInstance().GetResource<asset::AudioResource>(asset_id)
+                        : nullptr;
+                    if (resource == nullptr || resource->native_product == nullptr ||
+                        resource->native_product->metadata.duration_frames == 0 ||
+                        resource->native_product->encoded_audio_size == 0)
+                    {
+                        if (result.error.empty())
+                            result.error = "Could not validate project audio product: " +
+                                           node.logical_path;
+                        continue;
+                    }
+
+                    TrackView track{};
+                    track.name = node.display_name;
+                    track.path = node.provenance.empty()
+                        ? node.logical_path : node.provenance.front().source_path;
+                    track.extension = Extension(FromUtf8(track.path));
+                    track.content_id = node.content_id;
+                    track.product_path = node.product_path;
+                    track.file_size = node.byte_size;
+                    track.duration_seconds = static_cast<float>(
+                        resource->native_product->metadata.duration_frames) /
+                        static_cast<float>(asset::kNativeAudioTimelineSampleRate);
+                    track.sample_rate = resource->native_product->metadata.sample_rate;
+                    track.channels = static_cast<std::uint16_t>(
+                        resource->native_product->metadata.channels);
+                    track.native_product = true;
+                    track.project_asset = true;
+                    track.has_subtitles = !resource->native_product->metadata.subtitle_language.empty();
+                    track.subtitle_cue_count = static_cast<std::uint32_t>(
+                        resource->native_product->metadata.subtitles.size());
+                    track.subtitle_language =
+                        resource->native_product->metadata.subtitle_language;
+                    auto peaks = std::make_shared<std::vector<float>>();
+                    peaks->reserve(resource->native_product->metadata.waveform.size());
+                    for (const asset::NativeAudioPeak &peak :
+                         resource->native_product->metadata.waveform)
+                    {
+                        peaks->push_back(std::max(std::abs(peak.minimum),
+                                                  std::abs(peak.maximum)));
+                    }
+                    track.waveform = std::move(peaks);
+                    result.tracks.push_back(std::move(track));
+                }
+                result.status = result.tracks.empty()
+                    ? "No project audio found" :
+                      "Found " + std::to_string(result.tracks.size()) + " project tracks";
+            }
+            catch (const std::exception &exception)
+            {
+                result.error = exception.what();
+                result.status = "Project Library refresh failed";
+            }
+            result.refreshing = false;
+            return result;
+        }
+
         void RunImports()
         {
             for (;;)
             {
                 ImportJob job;
+                bool refresh_project_library = false;
                 {
                     std::unique_lock lock(mutex);
-                    import_changed.wait(lock, [this] { return stopping || !import_jobs.empty(); });
+                    import_changed.wait(lock, [this]
+                    {
+                        return stopping || project_refresh_requested || !import_jobs.empty();
+                    });
                     if (stopping && import_jobs.empty())
                     {
                         return;
                     }
-                    job = std::move(import_jobs.front());
-                    import_jobs.pop_front();
-                    import_active = true;
-                    last_status = "Decoding: " + PathUtf8(job.path.filename());
+                    if (project_refresh_requested && !stopping)
+                    {
+                        project_refresh_requested = false;
+                        refresh_project_library = true;
+                    }
+                    else
+                    {
+                        job = std::move(import_jobs.front());
+                        import_jobs.pop_front();
+                        import_active = true;
+                        last_status = job.project_asset
+                            ? "Loading project track: " + job.name
+                            : "Decoding: " + PathUtf8(job.path.filename());
+                    }
+                }
+
+                if (refresh_project_library)
+                {
+                    ProjectLibraryView refreshed = CaptureProjectLibrary();
+                    std::lock_guard lock(mutex);
+                    project_library = std::move(refreshed);
+                    continue;
                 }
 
                 std::string failure;
@@ -431,33 +627,37 @@ namespace kpengine::audio_player
                 std::shared_ptr<asset::AudioResource> resource;
                 try
                 {
-                    std::error_code path_error;
-                    const std::filesystem::path canonical_source =
-                        std::filesystem::weakly_canonical(job.path, path_error);
-                    if (path_error)
-                        throw std::runtime_error("Could not resolve the selected audio path");
-
-                    asset::ImportProviderRequest request{};
-                    request.asset_root = job.path.parent_path();
-                    request.archive_root = std::filesystem::path(GetSaveDirectory()) /
-                        "audio_player" /
-                        asset::Sha256(PathUtf8(canonical_source)).ToHex();
-                    request.source_path = job.path.filename();
-                    if (!job.subtitle_path.empty())
+                    std::filesystem::path product_path = job.product_path;
+                    if (!job.project_asset)
                     {
-                        request.audio_options = asset::AudioImportOptions{};
-                        const std::filesystem::path relative_subtitle =
-                            job.subtitle_path.lexically_relative(request.asset_root);
-                        if (relative_subtitle.empty() || relative_subtitle.is_absolute())
-                            throw std::runtime_error(
-                                "Subtitle must be inside the audio file's folder");
-                        request.audio_options->subtitle_path = relative_subtitle;
+                        std::error_code path_error;
+                        const std::filesystem::path canonical_source =
+                            std::filesystem::weakly_canonical(job.path, path_error);
+                        if (path_error)
+                            throw std::runtime_error("Could not resolve the selected audio path");
+
+                        asset::ImportProviderRequest request{};
+                        request.asset_root = job.path.parent_path();
+                        request.archive_root = std::filesystem::path(GetSaveDirectory()) /
+                            "audio_player" /
+                            asset::Sha256(PathUtf8(canonical_source)).ToHex();
+                        request.source_path = job.path.filename();
+                        if (!job.subtitle_path.empty())
+                        {
+                            request.audio_options = asset::AudioImportOptions{};
+                            const std::filesystem::path relative_subtitle =
+                                job.subtitle_path.lexically_relative(request.asset_root);
+                            if (relative_subtitle.empty() || relative_subtitle.is_absolute())
+                                throw std::runtime_error(
+                                    "Subtitle must be inside the audio file's folder");
+                            request.audio_options->subtitle_path = relative_subtitle;
+                        }
+
+                        product_path = asset::AudioImportService{}.Import(request).product_path;
                     }
 
-                    const asset::AudioImportSummary imported =
-                        asset::AudioImportService{}.Import(request);
                     const asset::AssetID asset_id = asset::AssetManager::GetInstance().LoadSync(
-                        imported.product_path.generic_string());
+                        product_path.generic_string());
                     resource = asset_id.IsValid()
                         ? asset::AssetManager::GetInstance().GetResource<asset::AudioResource>(asset_id)
                         : nullptr;
@@ -476,11 +676,16 @@ namespace kpengine::audio_player
 
                 std::lock_guard lock(mutex);
                 import_active = false;
-                const std::string key = CanonicalKey(job.path);
+                const std::string key = job.project_asset
+                    ? "content:" + job.content_id : CanonicalKey(job.path);
                 queued_paths.erase(key);
                 const auto existing_track = std::find_if(
-                    tracks.begin(), tracks.end(), [&key](const Track &candidate)
-                    { return CanonicalKey(FromUtf8(candidate.view.path)) == key; });
+                    tracks.begin(), tracks.end(), [&job, &key](const Track &candidate)
+                    {
+                        return job.project_asset
+                            ? candidate.view.content_id == job.content_id
+                            : CanonicalKey(FromUtf8(candidate.view.path)) == key;
+                    });
                 if (failure.empty() &&
                     (tracks.size() < kMaximumQueueTracks || existing_track != tracks.end()))
                 {
@@ -490,9 +695,12 @@ namespace kpengine::audio_player
                     track.view.favorite = existing_track != tracks.end() &&
                         existing_track->view.favorite;
                     track.view.path = path;
-                    track.view.name = PathUtf8(job.path.stem());
+                    track.view.name = job.name.empty() ? PathUtf8(job.path.stem()) : job.name;
                     track.view.extension = Extension(job.path);
                     track.view.file_size = job.file_size;
+                    track.view.content_id = job.content_id;
+                    track.view.project_asset = job.project_asset;
+                    track.view.product_path = PathUtf8(resource->native_product->path);
                     const asset::NativeAudioFileProduct &native = *resource->native_product;
                     track.view.duration_seconds = static_cast<float>(native.metadata.duration_frames) /
                         static_cast<float>(asset::kNativeAudioTimelineSampleRate);
@@ -522,7 +730,7 @@ namespace kpengine::audio_player
                     }
                     else
                     {
-                        track_paths.insert(key);
+                        track_paths.insert(CanonicalKey(FromUtf8(track.view.path)));
                         tracks.push_back(std::move(track));
                     }
                     if (!voice.handle.IsValid() && selected_track_id.has_value())
@@ -538,7 +746,9 @@ namespace kpengine::audio_player
                 else
                 {
                     last_error = failure.empty() ? "Queue limit reached during import" : failure;
-                    last_status = "Import failed: " + PathUtf8(job.path.filename());
+                    last_status = (job.project_asset ? "Project track load failed: "
+                                                     : "Import failed: ") +
+                        (job.name.empty() ? PathUtf8(job.path.filename()) : job.name);
                     KP_LOG("Audio", LOG_LEVEL_WARNING, "Audio import failed for %s: %s",
                            path.c_str(), last_error.c_str());
                 }
@@ -736,6 +946,7 @@ namespace kpengine::audio_player
             std::lock_guard lock(mutex);
             DestroyVoice();
             tracks.clear();
+            project_library.tracks.clear();
             import_jobs.clear();
             queued_paths.clear();
             track_paths.clear();
@@ -746,6 +957,7 @@ namespace kpengine::audio_player
         std::condition_variable import_changed;
         std::deque<ImportJob> import_jobs;
         std::vector<Track> tracks;
+        ProjectLibraryView project_library;
         std::unordered_set<std::string> queued_paths;
         std::unordered_set<std::string> track_paths;
         std::mt19937 random{std::random_device{}()};
@@ -762,6 +974,7 @@ namespace kpengine::audio_player
         bool loop_track = false;
         bool shuffle = false;
         bool import_active = false;
+        bool project_refresh_requested = false;
         bool stopping = false;
         bool finished_handled = false;
         std::string last_status = "Ready — import audio to begin";
@@ -804,6 +1017,11 @@ namespace kpengine::audio_player
             if (track == nullptr)
             {
                 diagnostic = "The selected track is no longer in the queue";
+                return false;
+            }
+            if (track->view.project_asset)
+            {
+                diagnostic = "Project audio must be reimported through KimPeanutAssetTool";
                 return false;
             }
             source = FromUtf8(track->view.path);
@@ -874,6 +1092,23 @@ namespace kpengine::audio_player
             result.push_back(track.view);
         }
         return result;
+    }
+
+    ProjectLibraryView AudioPlayerController::GetProjectLibrary() const
+    {
+        std::lock_guard lock(impl_->mutex);
+        return impl_->project_library;
+    }
+
+    bool AudioPlayerController::RefreshProjectLibrary(std::string &diagnostic)
+    {
+        return impl_->RequestProjectLibraryRefresh(diagnostic);
+    }
+
+    bool AudioPlayerController::QueueProjectTrack(std::string content_id,
+                                                  std::string &diagnostic)
+    {
+        return impl_->EnqueueProjectTrack(std::move(content_id), diagnostic);
     }
 
     PlaybackView AudioPlayerController::GetPlaybackView() const

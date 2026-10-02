@@ -879,6 +879,7 @@ namespace
             kpengine::asset::ImportProviderRequest request{};
             request.asset_root = asset_root;
             request.archive_root = archive_root;
+            request.content_root = archive_root.parent_path();
             request.source_path = PathFromUtf8(Option(command, "source", true));
             request.reimport = command.command == "reimport";
             request.clear_subtitle = HasFlag(command, "clear-subtitle");
@@ -916,7 +917,9 @@ namespace
                 std::cout << (audio.up_to_date ? "UpToDate\n" : "Imported\n")
                           << "source: " << audio.normalized_source_path << '\n'
                           << "product: " << audio.product_path.string() << '\n'
-                          << "hash: " << audio.product_hash.ToHex() << '\n';
+                          << "hash: " << audio.product_hash.ToHex() << '\n'
+                          << "content_id: " << audio.content_id << '\n'
+                          << "content_metadata: " << audio.content_metadata_path.string() << '\n';
                 if (!audio.up_to_date)
                     std::cout << "duration_frames: " << audio.duration_frames << '\n'
                               << "waveform_buckets: " << audio.waveform_buckets << '\n'

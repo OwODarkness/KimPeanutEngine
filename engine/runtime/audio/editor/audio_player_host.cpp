@@ -43,6 +43,10 @@ namespace kpengine::audio_player
             return false;
         }
         render_asset_roots_ = {error_material};
+        std::string refresh_diagnostic;
+        if (!controller_->RefreshProjectLibrary(refresh_diagnostic))
+            KP_LOG("Audio", LOG_LEVEL_WARNING, "Could not refresh project music: %s",
+                   refresh_diagnostic.c_str());
         initialized_ = true;
         KP_LOG("Audio", LOG_LEVEL_INFO, "Standalone Audio Player initialized");
         return true;

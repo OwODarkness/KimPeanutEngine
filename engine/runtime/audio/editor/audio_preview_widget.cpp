@@ -9,21 +9,21 @@
 #include <imgui.h>
 
 #include "editor/ui/editor_ui_glow.h"
+#include "audio_player_theme.h"
 
 namespace kpengine::audio_player
 {
     namespace
     {
-        constexpr ImU32 kBackground = IM_COL32(2, 9, 14, 255);
-        constexpr ImU32 kBorder = IM_COL32(16, 82, 101, 255);
-        constexpr ImU32 kCyan = IM_COL32(48, 211, 239, 255);
-        constexpr ImU32 kCyanDim = IM_COL32(20, 111, 137, 255);
-        constexpr ImU32 kAmber = IM_COL32(255, 184, 58, 255);
-        constexpr ImU32 kProgressOrange = IM_COL32(255, 112, 22, 255);
-        constexpr ImU32 kMuted = IM_COL32(133, 160, 169, 255);
-        constexpr ImU32 kRed = IM_COL32(245, 85, 78, 255);
-        constexpr ImU32 kGreen = IM_COL32(95, 205, 151, 255);
-        constexpr ImU32 kSubtitleText = IM_COL32(220, 242, 248, 255);
+        constexpr ImU32 kBackground = AudioPlayerTheme::surface;
+        constexpr ImU32 kBorder = AudioPlayerTheme::border;
+        constexpr ImU32 kCyan = AudioPlayerTheme::cyan;
+        constexpr ImU32 kCyanDim = AudioPlayerTheme::cyan_dim;
+        constexpr ImU32 kAmber = AudioPlayerTheme::amber;
+        constexpr ImU32 kMuted = AudioPlayerTheme::muted;
+        constexpr ImU32 kRed = AudioPlayerTheme::error;
+        constexpr ImU32 kGreen = AudioPlayerTheme::ready;
+        constexpr ImU32 kSubtitleText = AudioPlayerTheme::text;
         constexpr float kPi = 3.14159265358979323846f;
         constexpr std::uint32_t kWaveformGlowRegion = 0x41555746U;
         constexpr std::uint32_t kProgressGlowRegion = 0x41555042U;
@@ -193,6 +193,8 @@ namespace kpengine::audio_player
             constexpr float kVisibleSeconds = 18.0f;
             constexpr float kAxisHeight = 22.0f;
             constexpr float kHorizontalInset = 10.0f;
+            constexpr float kBarSpacing = 12.0f;
+            const std::size_t count = state.waveform_samples.size();
             const float visible_duration = std::min(kVisibleSeconds, state.duration);
             if (visible_duration <= 0.0f)
                 return;
@@ -247,8 +249,6 @@ namespace kpengine::audio_player
             }
             draw.AddLine({plot_left, axis_y}, {plot_right, axis_y}, kCyanDim, 1.0f);
 
-            const std::size_t count = state.waveform_samples.size();
-            constexpr float kBarSpacing = 12.0f;
             const float column_duration = visible_duration * kBarSpacing / plot_width;
             const float column_width = plot_width * column_duration / visible_duration;
             const float bar_width = std::min(2.5f, column_width * 0.5f);
@@ -263,16 +263,19 @@ namespace kpengine::audio_player
             {
                 const float start_time = static_cast<float>(column) * column_duration;
                 const float end_time = std::min(state.duration, start_time + column_duration);
-                const std::size_t first_sample = std::min(count, static_cast<std::size_t>(
-                    std::floor(start_time / state.duration * static_cast<float>(count))));
-                const std::size_t last_sample = std::min(count, std::max(first_sample + 1,
-                    static_cast<std::size_t>(std::ceil(
-                        end_time / state.duration * static_cast<float>(count)))));
-                float amplitude = 0.0f;
-                for (std::size_t sample = first_sample; sample < last_sample; ++sample)
-                    amplitude = std::max(amplitude,
-                        std::clamp(state.waveform_samples[sample], 0.0f, 1.0f));
                 const float column_time = (start_time + end_time) * 0.5f;
+                const float source_position = std::clamp(
+                    column_time / state.duration * static_cast<float>(count) - 0.5f,
+                    0.0f, static_cast<float>(count - 1));
+                const std::size_t first_sample = static_cast<std::size_t>(source_position);
+                const std::size_t second_sample = std::min(first_sample + 1, count - 1);
+                const float sample_blend = source_position - static_cast<float>(first_sample);
+                const float first_amplitude = std::clamp(
+                    state.waveform_samples[first_sample], 0.0f, 1.0f);
+                const float second_amplitude = std::clamp(
+                    state.waveform_samples[second_sample], 0.0f, 1.0f);
+                const float amplitude = first_amplitude +
+                    (second_amplitude - first_amplitude) * sample_blend;
                 const float x = plot_left +
                     (column_time - window_start) / visible_duration * plot_width;
                 const float proximity = std::clamp(
@@ -300,16 +303,18 @@ namespace kpengine::audio_player
                 draw.AddLine(wave_top, wave_bottom, wave_color, bar_width);
                 editor::PopEditorGlowEmission(&draw, kWaveformGlowRegion);
             }
-            editor::EndEditorGlowRegion(&draw, kWaveformGlowRegion);
             const float playhead = plot_left + std::clamp(
                 (state.current_time - window_start) / visible_duration, 0.0f, 1.0f) * plot_width;
-            draw.AddLine({playhead, plot_top}, {playhead, plot_bottom},
-                         WithAlpha(kAmber, 28), 9.0f);
-            draw.AddLine({playhead, plot_top}, {playhead, plot_bottom},
-                         WithAlpha(kAmber, 64), 4.5f);
+            editor::PushEditorGlowEmission(&draw, kWaveformGlowRegion, kAmber, 1.0f);
             draw.AddLine({playhead, plot_top}, {playhead, plot_bottom}, kAmber, 1.5f);
-            draw.AddCircleFilled({playhead, plot_top}, 6.0f, WithAlpha(kAmber, 44), 12);
-            draw.AddCircleFilled({playhead, plot_top}, 3.0f, kAmber, 8);
+            for (const float endpoint_y : {plot_top, plot_bottom})
+            {
+                const ImVec2 endpoint{playhead, endpoint_y};
+                draw.AddCircleFilled(endpoint, 5.0f, WithAlpha(kAmber, 64), 16);
+                draw.AddCircleFilled(endpoint, 2.5f, kAmber, 12);
+            }
+            editor::PopEditorGlowEmission(&draw, kWaveformGlowRegion);
+            editor::EndEditorGlowRegion(&draw, kWaveformGlowRegion);
             draw.PopClipRect();
             if (state.can_seek && ImGui::IsItemActive() &&
                 ImGui::IsMouseDown(ImGuiMouseButton_Left))
@@ -369,10 +374,10 @@ namespace kpengine::audio_player
                 editor::BeginEditorGlowRegion(&draw, kProgressGlowRegion,
                     min, {playhead_x, max.y}, 8.0f);
                 editor::PushEditorGlowEmission(&draw, kProgressGlowRegion,
-                                               kProgressOrange, 1.0f);
-                draw.AddRectFilled(min, {playhead_x, max.y}, kProgressOrange);
+                                               kAmber, 1.0f);
+                draw.AddRectFilled(min, {playhead_x, max.y}, kAmber);
                 draw.AddLine({playhead_x, min.y - 3.0f},
-                             {playhead_x, max.y + 3.0f}, kProgressOrange, 2.0f);
+                             {playhead_x, max.y + 3.0f}, kAmber, 2.0f);
                 editor::PopEditorGlowEmission(&draw, kProgressGlowRegion);
                 editor::EndEditorGlowRegion(&draw, kProgressGlowRegion);
             }

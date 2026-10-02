@@ -15,6 +15,8 @@ namespace kpengine::asset
         std::string normalized_source_path;
         ContentHash product_hash{};
         std::filesystem::path product_path;
+        std::string content_id;
+        std::filesystem::path content_metadata_path;
         std::uint64_t duration_frames{};
         std::uint32_t waveform_buckets{};
         std::uint32_t subtitle_cues{};

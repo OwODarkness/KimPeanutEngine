@@ -23,12 +23,15 @@ namespace kpengine::audio_player
         std::string path;
         std::string name;
         std::string extension;
+        std::string content_id;
+        std::string product_path;
         std::uint64_t file_size = 0;
         float duration_seconds = 0.0f;
         std::uint32_t sample_rate = 0;
         std::uint16_t channels = 0;
         bool favorite = false;
         bool native_product = false;
+        bool project_asset = false;
         bool has_subtitles = false;
         std::uint32_t subtitle_cue_count = 0;
         std::string subtitle_language;
@@ -59,6 +62,14 @@ namespace kpengine::audio_player
         std::array<float, 48> spectrum{};
     };
 
+    struct ProjectLibraryView
+    {
+        std::vector<TrackView> tracks;
+        std::string status{"Not refreshed"};
+        std::string error;
+        bool refreshing{false};
+    };
+
     class AudioPlayerController final
     {
     public:
@@ -74,6 +85,9 @@ namespace kpengine::audio_player
         bool ReimportSelected(std::string subtitle_path, std::string &diagnostic);
         bool ImportFolder(std::string path, std::string &diagnostic);
         std::vector<TrackView> GetQueue() const;
+        ProjectLibraryView GetProjectLibrary() const;
+        bool RefreshProjectLibrary(std::string &diagnostic);
+        bool QueueProjectTrack(std::string content_id, std::string &diagnostic);
         PlaybackView GetPlaybackView() const;
 
         bool Select(std::uint64_t track_id);

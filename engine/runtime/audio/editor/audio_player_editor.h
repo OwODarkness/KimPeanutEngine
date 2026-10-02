@@ -65,6 +65,7 @@ namespace kpengine::audio_player
         char import_path_[1024]{};
         char subtitle_path_[1024]{};
         char search_[256]{};
+        char project_search_[256]{};
         std::array<std::vector<std::uint8_t>, 7> playback_icon_alpha_{};
         int library_filter_ = 0;
         bool show_diagnostics_ = false;

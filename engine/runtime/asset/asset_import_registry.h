@@ -36,6 +36,8 @@ namespace kpengine::asset
     {
         std::filesystem::path asset_root;
         std::filesystem::path archive_root;
+        // Optional project Content root. Session previews leave this empty.
+        std::filesystem::path content_root;
         std::filesystem::path source_path;
         std::optional<AudioImportOptions> audio_options;
         bool reimport{false};

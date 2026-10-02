@@ -129,8 +129,16 @@ selected local tracks through AssetImport into session-scoped `.audio`
 products, then plays them with `SeekableAudioPlayer`; the active timed subtitle
 is selected from the played-frame cursor and drawn in a larger borderless area
 below the waveform. RMS and spectrum visualization use a nonblocking snapshot
-of decoded cache frames rather than callback-owned samples. The explicit
-subtitle path is attached during import, and
+of decoded cache frames rather than callback-owned samples. Project music is a
+separate catalog-backed Library list: AssetTool imports publish stable Audio
+Content metadata beside the `content/.archive` product, and the player's worker
+captures the Asset catalog and loads those existing products through
+`AssetManager`. Queueing a project entry does not cook a session duplicate; an
+explicit Refresh picks up imports made while the player is open. External
+Add File/Folder remains session-scoped. To publish project music, place the
+source under `asset/music/` and run
+`KimPeanutAssetTool import --source music/<track>.flac --importer audio`.
+The explicit subtitle path is attached during import, and
 selected tracks can be reimported without replacing an active voice's pinned
 product. These external files are session previews rather than project Asset
 registrations. Audio has no TTS dependency: TTS can submit

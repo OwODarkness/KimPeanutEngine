@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "audio_importer.h"
+#include "content_metadata.h"
 #include "native_audio.h"
 
 namespace kpengine::asset
@@ -180,6 +181,45 @@ namespace kpengine::asset
             return ResolveInput(asset_root, source_path, "audio source").normalized_path;
         }
 
+        std::filesystem::path PublishAudioContentMetadata(
+            const std::filesystem::path &content_root, const std::string &source_path,
+            const ContentHash &product_hash)
+        {
+            const std::filesystem::path source = PathFromUtf8(source_path);
+            const std::u8string name_u8 = source.stem().generic_u8string();
+            const std::string name{reinterpret_cast<const char *>(name_u8.data()),
+                                   name_u8.size()};
+            ContentMetadata metadata{};
+            metadata.id = MakeContentID("audio", source_path);
+            metadata.asset_type = AssetType::KPAT_Audio;
+            metadata.type_name = "audio";
+            metadata.name = name.empty() ? source_path : name;
+            metadata.content_path = "audio/" + source_path;
+            metadata.source_path = source_path;
+            metadata.products.push_back({ArchiveProductType::Audio, product_hash});
+            const std::filesystem::path metadata_path =
+                MetadataPath(content_root, metadata.content_path);
+            ContentMetadata current;
+            std::error_code error;
+            if (std::filesystem::is_regular_file(metadata_path, error) && !error &&
+                ReadContentMetadata(metadata_path, current) &&
+                current.id == metadata.id && current.asset_type == metadata.asset_type &&
+                current.type_name == metadata.type_name && current.name == metadata.name &&
+                current.content_path == metadata.content_path &&
+                current.source_path == metadata.source_path &&
+                current.status == ContentImportStatus::Ready &&
+                current.products.size() == 1 &&
+                current.products.front().type == ArchiveProductType::Audio &&
+                current.products.front().hash == product_hash)
+            {
+                return metadata_path;
+            }
+            std::string diagnostic;
+            if (!WriteContentMetadata(content_root, metadata, &diagnostic))
+                Fail("Audio product is ready but Content metadata publication failed: " + diagnostic);
+            return metadata_path;
+        }
+
         std::optional<AudioMetadata> ResolveOptions(
             const ImportProviderRequest &request,
             const std::optional<SourceArchiveSnapshot> &existing)
@@ -252,6 +292,9 @@ namespace kpengine::asset
             Fail("--clear-subtitle is valid only on reimport");
         const std::filesystem::path asset_root = AbsoluteRoot(request.asset_root, "Asset root");
         const std::filesystem::path archive_root = AbsoluteRoot(request.archive_root, "archive root");
+        const std::filesystem::path content_root = request.content_root.empty()
+            ? std::filesystem::path{}
+            : AbsoluteRoot(request.content_root, "Content root");
         const std::string source_path = SourceRelativePath(asset_root, request.source_path);
         std::error_code error;
         std::filesystem::create_directories(archive_root, error);
@@ -277,8 +320,12 @@ namespace kpengine::asset
             if (product == nullptr)
                 throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
                                         "up-to-date Audio source has no Audio product");
+            const std::filesystem::path metadata_path = content_root.empty()
+                ? std::filesystem::path{}
+                : PublishAudioContentMetadata(content_root, source_path, hash);
             return {source_path, hash, archive_root / product->relative_path,
-                    0, 0, 0, true};
+                    content_root.empty() ? std::string{} : MakeContentID("audio", source_path).ToString(),
+                    metadata_path, 0, 0, 0, true};
         }
 
         AudioImportRequest importer_request{};
@@ -322,8 +369,12 @@ namespace kpengine::asset
 
         PublishCookedAudioProduct(archive_root, cooked);
         archive.ReplaceSource(source, verified_dependencies, {product}, {source_product}, {});
+        const std::filesystem::path metadata_path = content_root.empty()
+            ? std::filesystem::path{}
+            : PublishAudioContentMetadata(content_root, source_path, cooked.product_hash);
         return {source_path, cooked.product_hash, archive_root / relative_product,
-                cooked.data.duration_frames,
+                content_root.empty() ? std::string{} : MakeContentID("audio", source_path).ToString(),
+                metadata_path, cooked.data.duration_frames,
                 static_cast<std::uint32_t>(cooked.data.waveform.size()),
                 static_cast<std::uint32_t>(cooked.data.subtitles.size()), false};
     }
