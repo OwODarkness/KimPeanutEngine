@@ -1,14 +1,15 @@
 # Project Status
 
-- **Audio Player P1 panel presentation (2026-10-02; partial)** — Library,
-  playlist, Info, and Spectrum bodies now use a shared audio content palette,
-  while the Editor's window chrome and tabs retain their original theme.
-  The playlist shows actual queue metadata and Spectrum visualizes the existing
-  source FFT as relative levels. The Debug engine build and empty-queue
-  `audio.status` startup check passed; the final rebuilt UI still needs a
-  screenshot comparison, narrow-width review, and real-track check. →
+- **Audio Player P1 presentation (2026-10-02; partial)** — Player panels share
+  the audio palette while Editor chrome retains its theme. Queue and Output Log
+  share the bottom-center tab dock. The reusable transport strip now lives in
+  `EditorUILib`, with stable IDs, explicit playback states, optional duration,
+  disabled seeking for unknown-duration streams, and separate voice-stop/job-
+  cancel intents. RelWithDebInfo engine and TTS builds passed; a visible Vulkan
+  real-track capture confirms the composed music preview. A compact TTS
+  consumer and its played-cursor snapshot remain future work. →
   [checkpoint](../.spec/journal/2026-10-02-audio-player-panel-theme.md),
-  [P1 roadmap](audio/TODO.md)
+  [P1 review](audio/.review/P1.md), [P1 roadmap](audio/TODO.md)
 
 - **Audio player bloom corrections (2026-10-02)** — The played progress bar is
   fully orange and blooms across its played portion. Waveform time ticks and

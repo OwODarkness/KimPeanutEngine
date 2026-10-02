@@ -157,6 +157,8 @@ namespace kpengine::audio_player
         };
 
         std::string LowerAscii(std::string value);
+        editor::TransportPlaybackState ToTransportPlaybackState(
+            audio::AudioState state, bool has_clip, bool has_error);
 
         std::string FormatTime(const float seconds)
         {
@@ -716,6 +718,8 @@ namespace kpengine::audio_player
             state.status = playback.error.empty() ?
                 std::string_view(playback.status) : std::string_view(playback.error);
             state.subtitle_text = playback.subtitle_text;
+            state.playback_state = ToTransportPlaybackState(
+                playback.state, playback.track.has_value(), !playback.error.empty());
             state.current_time = playback.position_seconds;
             state.duration = playback.duration_seconds;
             state.volume = playback.muted ? 0.0f : playback.volume;
@@ -742,18 +746,17 @@ namespace kpengine::audio_player
             state.spectrum_bins = playback.spectrum;
             state.font = font;
             state.has_clip = playback.track.has_value();
-            state.is_playing = playback.state == audio::AudioState::Playing;
             state.is_muted = playback.muted;
             state.is_error = !playback.error.empty();
             state.can_seek = playback.can_seek;
             state.has_subtitle_track = playback.subtitle_track_attached;
 
-            const AudioPreviewActions actions = DrawAudioPreview(state);
+            const AudioPreviewActions actions = DrawAudioPreview(state, "music-preview");
             std::string diagnostic;
             if (actions.previous) controller.Previous(true, diagnostic);
             if (actions.toggle_play_pause) controller.TogglePlayPause(diagnostic);
             if (actions.next) controller.Next(true, diagnostic);
-            if (actions.stop) controller.Stop();
+            if (actions.stop_voice) controller.Stop();
             if (actions.seek_seconds) controller.Seek(*actions.seek_seconds);
             if (actions.muted) controller.SetMuted(*actions.muted);
             if (actions.volume)
@@ -956,6 +959,26 @@ namespace kpengine::audio_player
                 return static_cast<char>(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
             });
             return value;
+        }
+
+        editor::TransportPlaybackState ToTransportPlaybackState(
+            const audio::AudioState state, const bool has_clip, const bool has_error)
+        {
+            if (has_error)
+                return editor::TransportPlaybackState::Failed;
+            switch (state)
+            {
+            case audio::AudioState::Playing: return editor::TransportPlaybackState::Playing;
+            case audio::AudioState::Buffering: return editor::TransportPlaybackState::Buffering;
+            case audio::AudioState::FadingOut: return editor::TransportPlaybackState::Draining;
+            case audio::AudioState::Paused: return editor::TransportPlaybackState::Paused;
+            case audio::AudioState::Stopped:
+                return has_clip ? editor::TransportPlaybackState::Ready :
+                                  editor::TransportPlaybackState::Idle;
+            case audio::AudioState::Finished: return editor::TransportPlaybackState::Finished;
+            case audio::AudioState::Cancelled: return editor::TransportPlaybackState::Cancelled;
+            }
+            return editor::TransportPlaybackState::Failed;
         }
     }
 

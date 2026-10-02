@@ -7,22 +7,13 @@
 #include <span>
 #include <string_view>
 
+#include "editor/ui/audio_transport_strip.h"
+
 struct ImFont;
 
 namespace kpengine::audio_player
 {
-    struct AudioControlIcon
-    {
-        std::span<const std::uint8_t> alpha;
-        std::uint32_t width = 0;
-        std::uint32_t height = 0;
-
-        bool IsValid() const noexcept
-        {
-            return width > 0 && height > 0 && alpha.size() >=
-                static_cast<std::size_t>(width) * height;
-        }
-    };
+    using AudioControlIcon = editor::EditorControlIcon;
 
     struct AudioPreviewState
     {
@@ -30,6 +21,7 @@ namespace kpengine::audio_player
         std::string_view format_label;
         std::string_view status;
         std::string_view subtitle_text;
+        editor::TransportPlaybackState playback_state = editor::TransportPlaybackState::Idle;
         float current_time = 0.0f;
         float duration = 0.0f;
         float volume = 0.8f;
@@ -48,7 +40,6 @@ namespace kpengine::audio_player
         AudioControlIcon voice_close_icon;
         ImFont *font = nullptr;
         bool has_clip = false;
-        bool is_playing = false;
         bool is_muted = false;
         bool is_error = false;
         bool can_seek = false;
@@ -60,7 +51,8 @@ namespace kpengine::audio_player
         bool previous = false;
         bool toggle_play_pause = false;
         bool next = false;
-        bool stop = false;
+        bool stop_voice = false;
+        bool cancel_job = false;
         std::optional<float> seek_seconds;
         std::optional<float> volume;
         std::optional<float> playback_rate;
@@ -68,7 +60,8 @@ namespace kpengine::audio_player
     };
 
     // Rendering consumes a snapshot and returns intent; playback stays outside ImGui.
-    AudioPreviewActions DrawAudioPreview(const AudioPreviewState &state);
+    AudioPreviewActions DrawAudioPreview(const AudioPreviewState &state,
+                                         std::string_view instance_id);
 }
 
 #endif

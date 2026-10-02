@@ -26,7 +26,6 @@ namespace kpengine::audio_player
         constexpr ImU32 kSubtitleText = AudioPlayerTheme::text;
         constexpr float kPi = 3.14159265358979323846f;
         constexpr std::uint32_t kWaveformGlowRegion = 0x41555746U;
-        constexpr std::uint32_t kProgressGlowRegion = 0x41555042U;
 
         ImU32 BlendColor(const ImU32 from, const ImU32 to, const float amount)
         {
@@ -121,7 +120,9 @@ namespace kpengine::audio_player
                                          2.0f, kAmber, 6);
                 }
             }
-            if (!state.is_playing || state.spectrum_bins.empty())
+            if ((state.playback_state != editor::TransportPlaybackState::Playing &&
+                 state.playback_state != editor::TransportPlaybackState::Buffering) ||
+                state.spectrum_bins.empty())
             {
                 const char *label = state.has_clip ? "IDLE" : "NO SIGNAL";
                 const ImVec2 text_size = ImGui::CalcTextSize(label);
@@ -281,7 +282,7 @@ namespace kpengine::audio_player
                 const float proximity = std::clamp(
                     1.0f - std::abs(column_time - state.current_time) / 2.5f,
                     0.0f, 1.0f);
-                const float pulse = state.is_playing
+                const float pulse = state.playback_state == editor::TransportPlaybackState::Playing
                     ? std::sin(static_cast<float>(ImGui::GetTime()) * 12.0f +
                                static_cast<float>(column) * 0.37f) *
                         std::clamp(state.rms, 0.0f, 1.0f) * proximity * 0.55f
@@ -334,74 +335,6 @@ namespace kpengine::audio_player
                 ImGui::SetTooltip("Drag or use arrow keys to seek");
         }
 
-        void DrawProgressBar(ImDrawList &draw, const float width,
-                             const AudioPreviewState &state, AudioPreviewActions &actions)
-        {
-            const ImVec2 origin = ImGui::GetCursorScreenPos();
-            const auto format_time = [](const float seconds, char *buffer,
-                                        const std::size_t buffer_size)
-            {
-                const float time = std::max(0.0f, seconds);
-                const int minutes = static_cast<int>(time / 60.0f);
-                const float remainder = std::fmod(time, 60.0f);
-                std::snprintf(buffer, buffer_size, "%02d:%04.1f", minutes, remainder);
-            };
-            char elapsed[20]{};
-            char total[20]{};
-            format_time(state.current_time, elapsed, sizeof(elapsed));
-            format_time(state.duration, total, sizeof(total));
-            constexpr float row_height = 24.0f;
-            constexpr float bar_height = 8.0f;
-            constexpr float time_font_scale = 1.2f;
-            const float elapsed_width = ImGui::CalcTextSize(elapsed).x;
-            const float separator_width = ImGui::CalcTextSize("/").x;
-            const float total_width = ImGui::CalcTextSize(total).x;
-            const float time_font_size = ImGui::GetFontSize() * time_font_scale;
-            const float time_width =
-                (elapsed_width + separator_width + total_width) * time_font_scale + 12.0f;
-            const float bar_width = std::max(60.0f, width - time_width - 14.0f);
-            ImGui::InvisibleButton("##AudioPreviewProgress", ImVec2(bar_width, row_height));
-            const float center_y = origin.y + row_height * 0.5f;
-            const ImVec2 min{origin.x, center_y - bar_height * 0.5f};
-            const ImVec2 max{origin.x + bar_width, center_y + bar_height * 0.5f};
-            draw.AddRectFilled(min, max, kBackground);
-            draw.AddRect(min, max, kBorder);
-            const float progress = state.has_clip && state.duration > 0.0f
-                ? std::clamp(state.current_time / state.duration, 0.0f, 1.0f) : 0.0f;
-            if (progress > 0.0f)
-            {
-                const float playhead_x = min.x + bar_width * progress;
-                editor::BeginEditorGlowRegion(&draw, kProgressGlowRegion,
-                    min, {playhead_x, max.y}, 8.0f);
-                editor::PushEditorGlowEmission(&draw, kProgressGlowRegion,
-                                               kAmber, 1.0f);
-                draw.AddRectFilled(min, {playhead_x, max.y}, kAmber);
-                draw.AddLine({playhead_x, min.y - 3.0f},
-                             {playhead_x, max.y + 3.0f}, kAmber, 2.0f);
-                editor::PopEditorGlowEmission(&draw, kProgressGlowRegion);
-                editor::EndEditorGlowRegion(&draw, kProgressGlowRegion);
-            }
-            if (state.can_seek && ImGui::IsItemActive() &&
-                ImGui::IsMouseDown(ImGuiMouseButton_Left))
-            {
-                const float fraction = std::clamp(
-                    (ImGui::GetIO().MousePos.x - origin.x) / bar_width, 0.0f, 1.0f);
-                actions.seek_seconds = fraction * state.duration;
-            }
-            const float time_x = origin.x + width - time_width;
-            const float time_y = origin.y + (row_height - time_font_size) * 0.5f;
-            ImFont *font = ImGui::GetFont();
-            draw.AddText(font, time_font_size, {time_x, time_y}, kAmber, elapsed);
-            draw.AddText(font, time_font_size,
-                         {time_x + elapsed_width * time_font_scale + 5.0f, time_y},
-                         kMuted, "/");
-            draw.AddText(font, time_font_size,
-                         {time_x + (elapsed_width + separator_width) * time_font_scale + 8.0f,
-                          time_y}, kCyan, total);
-            ImGui::SetCursorScreenPos(origin);
-            ImGui::Dummy(ImVec2(width, row_height));
-        }
-
         bool DrawControlButton(const char *id, const char *fallback_label,
                                const char *tooltip, const AudioControlIcon &icon,
                                const bool highlighted = false,
@@ -419,8 +352,10 @@ namespace kpengine::audio_player
                 ImGui::PushStyleColor(ImGuiCol_Border,
                     ImGui::ColorConvertU32ToFloat4(kAmber));
             }
+            char stable_label[96]{};
+            std::snprintf(stable_label, sizeof(stable_label), "%s%s", fallback_label, id);
             const bool pressed = ImGui::Button(
-                icon.IsValid() ? id : fallback_label, button_size);
+                icon.IsValid() ? id : stable_label, button_size);
             if (!icon.IsValid())
             {
                 if (highlighted)
@@ -477,29 +412,6 @@ namespace kpengine::audio_player
             if (highlighted)
                 ImGui::PopStyleColor(4);
             return pressed;
-        }
-
-        void DrawPlaybackControls(const AudioPreviewState &state,
-                                  AudioPreviewActions &actions)
-        {
-            constexpr float kTransportButtonWidth = 78.0f;
-            ImGui::BeginDisabled(!state.has_clip);
-            actions.previous = DrawControlButton("##AudioPrevious", "[ PREV ]",
-                                                 "Previous track", state.previous_icon,
-                                                 false, kTransportButtonWidth);
-            ImGui::SameLine(0.0f, 10.0f);
-            actions.toggle_play_pause = DrawControlButton(
-                "##AudioTogglePlayback", state.is_playing ? "[ PAUSE ]" : "[ PLAY ]",
-                state.is_playing ? "Pause playback" : "Play", state.is_playing
-                    ? state.pause_icon : state.play_icon, state.is_playing,
-                kTransportButtonWidth);
-            ImGui::SameLine(0.0f, 10.0f);
-            actions.next = DrawControlButton("##AudioNext", "[ NEXT ]", "Next track",
-                                             state.next_icon, false, kTransportButtonWidth);
-            ImGui::SameLine(0.0f, 10.0f);
-            actions.stop = DrawControlButton("##AudioStop", "[ STOP ]", "Stop playback",
-                                             state.stop_icon, false, kTransportButtonWidth);
-            ImGui::EndDisabled();
         }
 
         void DrawPlaybackRateControl(const AudioPreviewState &state,
@@ -607,10 +519,18 @@ namespace kpengine::audio_player
         void DrawStatus(ImDrawList &draw, const AudioPreviewState &state,
                         const ImVec2 min, const float width)
         {
-            const char *label = state.is_error ? "ERROR" :
-                state.is_playing ? "PLAYING" : state.has_clip ? "READY" : "NO CLIP";
-            const ImU32 color = state.is_error ? kRed :
-                state.is_playing ? kAmber : state.has_clip ? kGreen : kMuted;
+            const char *label = editor::TransportPlaybackStateLabel(
+                state.is_error ? editor::TransportPlaybackState::Failed :
+                                 state.playback_state);
+            const ImU32 color = state.is_error ||
+                state.playback_state == editor::TransportPlaybackState::Failed ? kRed :
+                state.playback_state == editor::TransportPlaybackState::Playing ||
+                state.playback_state == editor::TransportPlaybackState::Buffering ||
+                state.playback_state == editor::TransportPlaybackState::Draining ? kAmber :
+                state.playback_state == editor::TransportPlaybackState::Ready ||
+                state.playback_state == editor::TransportPlaybackState::Finished ? kGreen :
+                state.playback_state == editor::TransportPlaybackState::Generating ? kCyan :
+                kMuted;
             const ImVec2 text_size = ImGui::CalcTextSize(label);
             draw.AddText({min.x + width - text_size.x - 12.0f, min.y + 10.0f}, color, label);
         }
@@ -642,13 +562,15 @@ namespace kpengine::audio_player
         }
     }
 
-    AudioPreviewActions DrawAudioPreview(const AudioPreviewState &state)
+    AudioPreviewActions DrawAudioPreview(const AudioPreviewState &state,
+                                         const std::string_view instance_id)
     {
         AudioPreviewActions actions{};
+        IM_ASSERT(!instance_id.empty());
         const float width = std::max(1.0f, ImGui::GetContentRegionAvail().x);
         const bool narrow = width < 620.0f;
         const float height = std::max(narrow ? 335.0f : 310.0f, state.height);
-        ImGui::PushID("AudioPreview");
+        ImGui::PushID(instance_id.data(), instance_id.data() + instance_id.size());
         if (state.font != nullptr)
             ImGui::PushFont(state.font);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(kBackground));
@@ -736,11 +658,46 @@ namespace kpengine::audio_player
             constexpr float progress_padding_x = 12.0f;
             ImGui::SetCursorScreenPos({visual_top.x + progress_padding_x,
                                        visual_top.y + visual_height + 8.0f});
-            DrawProgressBar(*draw, content_width - progress_padding_x * 2.0f,
-                            state, actions);
-            ImGui::Dummy(ImVec2(0.0f, 8.0f));
-            ImGui::Separator();
-            DrawPlaybackControls(state, actions);
+            editor::TransportStripState transport{};
+            transport.instance_id = "transport";
+            transport.playback_state = state.is_error
+                ? editor::TransportPlaybackState::Failed : state.playback_state;
+            transport.elapsed_seconds = state.current_time;
+            if (state.has_clip && state.duration > 0.0f)
+                transport.duration_seconds = state.duration;
+            transport.controls_enabled = state.has_clip;
+            transport.capabilities = {
+                .previous = true,
+                .toggle_play_pause = true,
+                .next = true,
+                .stop_voice = true,
+                .seek = state.can_seek};
+            transport.icons = {
+                .previous = state.previous_icon,
+                .play = state.play_icon,
+                .pause = state.pause_icon,
+                .next = state.next_icon,
+                .stop = state.stop_icon};
+            editor::TransportStripStyle transport_style{};
+            transport_style.track_background = kBackground;
+            transport_style.track_border = kBorder;
+            transport_style.played = kAmber;
+            transport_style.elapsed_text = kAmber;
+            transport_style.secondary_text = kMuted;
+            transport_style.total_text = kCyan;
+            transport_style.active_button = kAmber;
+            transport_style.bloom_played = true;
+            transport_style.show_state = false;
+            transport_style.button_width = 78.0f;
+            transport_style.button_height = 36.0f;
+            const editor::TransportStripActions transport_actions =
+                editor::DrawTransportStrip(transport, transport_style);
+            actions.previous = transport_actions.previous;
+            actions.toggle_play_pause = transport_actions.toggle_play_pause;
+            actions.next = transport_actions.next;
+            actions.stop_voice = transport_actions.stop_voice;
+            actions.cancel_job = transport_actions.cancel_job;
+            actions.seek_seconds = transport_actions.seek_seconds;
             if (!narrow)
             {
                 ImGui::SameLine(0.0f, 12.0f);

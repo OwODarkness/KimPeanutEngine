@@ -3,6 +3,7 @@ target_sources(EditorUILib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_theme.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_extension_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_panel_command_provider.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/audio_transport_strip.cpp
 )
 
 add_subdirectory(component)
