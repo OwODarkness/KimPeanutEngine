@@ -55,18 +55,20 @@ Progress journal: [2026-10-02](../../.spec/journal/2026-10-02-editor-selective-u
   correct linear presentation, uploads/offsets, and safe resize/teardown.
 - [ ] **ED5.3 — Small bloom slice:** one bounded emission region, half-resolution
   filtering, ordered halo composition, global disable, and both-API captures.
-- [ ] **ED5.4 — Integration and acceptance:** theme presets, loading wire and
-  selected label, budget/failure behavior, retirement stress, and matched
-  RelWithDebInfo performance evidence.
+- [ ] **ED5.4 — Integration and acceptance:** theme presets, Log text, loading
+  wire and selected label, budget/failure behavior, retirement stress, and
+  matched RelWithDebInfo performance evidence.
 
 The common Editor adapter now copies ImGui geometry and marker payloads, uploads
 the font, presents a linear color canvas through Graphics, and records bounded
 emission, half-resolution Gaussian filtering, and ordered halo composition.
-Loading wire/status and the selected World Outliner row provide explicit source
-regions; the Tool menu's **UI Glow** switch disables them. Runtime captures
-show readable Vulkan presentation. OpenGL currently differs in UI color and
-needs correction before cross-backend acceptance. Retirement stress,
-selected-row visual verification, and RelWithDebInfo measurements remain open.
+Loading wire/status, the selected World Outliner row, and visible Log text
+provide explicit source regions; the Tool menu's **UI Glow** switch disables
+them. Log rows keep their configured colors and selection backgrounds stay
+crisp. Runtime captures show the Log text bloom on Vulkan and OpenGL. OpenGL
+currently differs in UI color and needs correction before cross-backend
+acceptance. Retirement stress, selected-row visual verification, and
+RelWithDebInfo measurements remain open.
 
 Acceptance requires readable base UI, explicit emission only, clipped sources,
 later-window occlusion, no accidental scene-image bloom, and loading presentation

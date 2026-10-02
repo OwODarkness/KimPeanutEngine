@@ -13,11 +13,13 @@ namespace kpengine{
         class EditorLogComponent: public EditorWindowComponent{
         public:
             EditorLogComponent(LogSystem* log_system, const LogLevelColorTable& colors,
-                               EditorWindowConfig config = {});
+                               EditorWindowConfig config = {},
+                               const bool *glow_enabled = nullptr);
             void RenderContent() override;
         private:
             LogSystem* log_system_;
             LogLevelColorTable colors_;
+            const bool *glow_enabled_ = nullptr;
             std::array<char, 256> search_buffer_{};
             std::size_t level_filter_index_ = 0;
             bool follow_latest_ = true;

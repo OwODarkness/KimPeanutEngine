@@ -70,3 +70,17 @@ acceptance are still open.
   the required ray-tracing pipeline capability.
 - OpenGL UI color parity, loading-transition visibility, selected-row visual,
   resource-retirement stress, and RelWithDebInfo measurements remain open.
+
+## Follow-up: Log text bloom (2026-10-02)
+
+- Connected the Log panel to the global UI Glow switch and marked visible log
+  text using its configured per-level color. The filters, controls, and panel
+  background are not emission sources; log row selection remains crisp.
+- Split each row's hit target from its text draw so hovering cannot bloom a
+  full-width row highlight.
+- Full Debug build passed. Visible Cornell Box captures confirm the effect on
+  both OpenGL and Vulkan: `save/screenshots/validation/ed5-log-text-bloom-opengl.png`
+  and `save/screenshots/validation/ed5-log-text-bloom-vulkan.png`.
+- The OpenGL scene remains upright. OpenGL's UI color parity, loading and
+  selected-row visual cases, retirement stress, and RelWithDebInfo measurements
+  remain open.

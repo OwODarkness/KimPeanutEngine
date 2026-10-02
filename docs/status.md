@@ -11,8 +11,9 @@
 
 - **Editor UI bloom (2026-10-02; implementation in progress)** — The working
   tree contains a common Editor RHI adapter, copied explicit emission markers,
-  bounded half-resolution filters, ordered halo composition, loading/status and
-  selected-row accents, a global toggle, and frame-boundary shader publication.
+  bounded half-resolution filters, ordered halo composition, loading/status,
+  selected-row, and Log text emitters, a global toggle, and frame-boundary shader
+  publication.
   Debug builds and initial Vulkan/OpenGL captures completed; OpenGL's duplicate
   viewport V inversion is fixed. OpenGL UI color still differs from Vulkan, and
   selected-row visual, retirement, and matched RelWithDebInfo acceptance remain

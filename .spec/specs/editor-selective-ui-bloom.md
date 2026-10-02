@@ -18,16 +18,17 @@ The editor retains official ImGui renderers as a readable fallback. A common
 adapter now converts copied ImGui draw data into Graphics commands, uploads the
 font atlas, tracks borrowed render-target sampling metadata, and records a
 linear color canvas plus bounded emission/filter/composition passes. Loading
-wire/status and selected World Outliner rows emit copied public ImGui markers.
-The Tool-menu disable switch gates both accents. Vulkan has a readable runtime
-capture; OpenGL still shows a UI color mismatch and needs correction before
-cross-backend acceptance.
+wire/status, selected World Outliner rows, and visible Log text emit copied
+public ImGui markers. Log entry hit rows and controls remain crisp. The Tool-menu
+disable switch gates the effect. Vulkan has a readable runtime capture; OpenGL
+still shows a UI color mismatch and needs correction before cross-backend
+acceptance.
 
 ## Scope and non-goals
 
 Implement the ED5.1–ED5.4 contracts and bounded acceptance slice: copied
 emission markers, a common frame-scoped presentation capability, ImGui packet
-conversion, RHI source/filter/composition passes, selected/loading accents,
+conversion, RHI source/filter/composition passes, Log/selected/loading accents,
 global disable and fallback. Do not alter Dear ImGui or vendored backends.
 Scene bloom, multi-viewport rendering, physical UI lighting, and HDR display
 output remain out of scope.
@@ -55,6 +56,8 @@ output remain out of scope.
   offsets, and zero-emission appearance on Vulkan and OpenGL.
 - [ ] Only copied, explicitly marked source geometry emits; clipped source
   does not emit, later UI occludes the halo, and scene images remain excluded.
+- [ ] Log message text can emit bloom while its hit-row background and controls
+  stay crisp.
 - [ ] One bounded region filters and composites in painter order; disable,
   unsupported formats, and budget/filter failure retain readable base UI.
 - [ ] Loading wire and selected accent work before scene readiness.
