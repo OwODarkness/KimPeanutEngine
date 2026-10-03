@@ -4,7 +4,7 @@
   `--mode tts` now has a separate TTS editor target, session dialog, voice
   presets, asynchronous generation, cancellation, and stream/buffer preview
   controls. Local server address, port, reference audio and reference text load
-  from an auto-created, Git-ignored `tts/settings.json`. TE2 adds bounded
+  from an auto-created, Git-ignored `config/tts/settings.json`. TE2 adds bounded
   immutable WAV capture, canonical PCM16 artifacts, restart-persistent dialogs,
   WAV import/export, duplicate/delete, and restored buffer preview. Focused
   Debug Audio/TTS/mode tests pass 81/81. The Debug Vulkan TTS mode loaded the

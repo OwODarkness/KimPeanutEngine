@@ -133,7 +133,7 @@ namespace kpengine::tts_editor
 
     std::filesystem::path TtsSettingsPath()
     {
-        return project_root / "tts" / "settings.json";
+        return project_root / "config" / "tts" / "settings.json";
     }
 
     bool SaveSettings(const std::filesystem::path &path,
@@ -183,11 +183,37 @@ namespace kpengine::tts_editor
                               TtsEditorSettings &settings, std::string &diagnostic)
     {
         std::error_code error;
-        const bool exists = std::filesystem::exists(path, error);
+        bool exists = std::filesystem::exists(path, error);
         if (error)
         {
             diagnostic = "Could not inspect TTS settings: " + error.message();
             return false;
+        }
+        const auto settings_directory = path.parent_path();
+        if (!exists && settings_directory.filename() == "tts" &&
+            settings_directory.parent_path().filename() == "config")
+        {
+            const auto project = settings_directory.parent_path().parent_path();
+            const auto legacy_path = project / "tts" / "settings.json";
+            const bool legacy_exists = std::filesystem::exists(legacy_path, error);
+            if (error)
+            {
+                diagnostic = "Could not inspect legacy TTS settings: " + error.message();
+                return false;
+            }
+            if (legacy_exists)
+            {
+                std::filesystem::create_directories(settings_directory, error);
+                if (!error)
+                    std::filesystem::copy_file(legacy_path, path,
+                        std::filesystem::copy_options::none, error);
+                if (error)
+                {
+                    diagnostic = "Could not migrate legacy TTS settings: " + error.message();
+                    return false;
+                }
+                exists = true;
+            }
         }
         if (!exists && !SaveSettings(path, TtsEditorSettings{}, diagnostic))
             return false;

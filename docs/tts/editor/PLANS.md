@@ -15,7 +15,7 @@ headless and has no ImGui dependency. `ApplicationMode`, parser/name/index,
 launch tests, and module registration gain one mode.
 
 ```text
-settings.json -> TtsEditorSettings -> TtsEditorController -> TTSRequest
+config/tts/settings.json -> TtsEditorSettings -> TtsEditorController -> TTSRequest
                                                  |               |
 ImGui snapshot <- host Tick/event drain <--------+        TTSSystem worker
     |                                                         |
@@ -35,14 +35,15 @@ drain, while network completion is separate.
 
 ## Settings and voice identity
 
-The source of truth is `project_root/tts/settings.json`, resolved from
+The source of truth is `project_root/config/tts/settings.json`, resolved from
 `project_root` rather than the process working directory. If missing, create
 its parent and a schema-versioned template atomically, then load it. The
 template uses empty `address`, `ref_audio_path`, and `ref_text`, and port `0`;
 the user must supply real values before Generate becomes available. These
 four fields must never be compiled into the GUI, a demo preset, or a checked-in
-JSON file. The file is explicitly ignored by `/tts/settings.json` in
-`.gitignore`. A minimal planned schema is:
+JSON file. Existing files at `project_root/tts/settings.json` are copied to
+the new path only when it does not exist, preserving malformed input for repair.
+Both paths are ignored by Git. A minimal planned schema is:
 
 ```json
 {

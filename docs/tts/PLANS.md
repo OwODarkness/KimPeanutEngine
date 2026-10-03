@@ -12,5 +12,7 @@ speech authoring tool; it does not add a conversation source or change Audio's
 device and callback ownership.
 
 Source placement: `engine/module/tts/editor/`. User-local settings placement:
-`<project root>/tts/settings.json`, ignored by Git. Documentation placement:
+`<project root>/config/tts/settings.json`, ignored by Git. Existing
+`<project root>/tts/settings.json` files are copied into the new location on
+first launch when no new settings file exists. Documentation placement:
 `docs/tts/editor/`.

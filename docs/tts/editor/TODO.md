@@ -7,7 +7,7 @@ Architecture: [PLANS.md](PLANS.md). First implementation design:
 
 - [x] Add `--mode tts`, register a `TtsEditorHost`, and build UI source from
   `engine/module/tts/editor/` without linking Editor into the core TTS target.
-- [x] On first start, create `project_root/tts/settings.json`; on every start,
+- [x] On first start, create `project_root/config/tts/settings.json`; on every start,
   load and validate `address`, `port`, `ref_audio_path`, and `ref_text` from it.
   Generate stays disabled with a specific reason until required values are set.
   Invalid JSON is retained, reported, and never overwritten automatically.

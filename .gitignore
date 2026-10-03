@@ -137,6 +137,7 @@ Thumbs.db
 imgui.ini
 
 # Standalone TTS editor's local server and voice settings
+/config/tts/settings.json
 /tts/settings.json
 
 # Checked-in foreign-model characterization fixtures. The general *.obj rule

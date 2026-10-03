@@ -18,7 +18,10 @@ namespace kpengine::tts_editor
         std::filesystem::path LibraryRootFromSettingsPath(const std::filesystem::path &path)
         {
             const auto parent = path.parent_path();
-            const auto project = parent.filename() == "tts" ? parent.parent_path() : parent;
+            const auto project = parent.filename() == "tts" &&
+                parent.parent_path().filename() == "config"
+                ? parent.parent_path().parent_path()
+                : parent.filename() == "tts" ? parent.parent_path() : parent;
             return project / "save" / "tts_editor";
         }
 
