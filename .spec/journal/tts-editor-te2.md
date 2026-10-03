@@ -47,3 +47,15 @@
 ## Documentation and follow-up
 - Updated `docs/status.md`, `docs/tts/PLANS.md`, and the TTS editor roadmap and
   TE2 stage plan.
+
+## 2026-10-03 dialog-list presentation follow-up
+- The dialog list now filters by ID, text, voice, or job state and clips
+  off-screen rows. Compact rows show WAV duration and inline playback or job
+  cancellation; duration is read from the canonical WAV header on library load.
+- Selected row fill, text, and orange outline follow the Audio Player playlist
+  palette. Added a screenshot at
+  `save/screenshots/validation/tts-dialog-list-orange-20261003.png`.
+- Validation: Debug `TtsEditorMode` and `KimPeanutEngine` builds passed. A
+  visible Debug Vulkan TTS run captured the selected row successfully.
+- Architecture/ownership: no boundary change; WAV metadata remains derived
+  from editor-owned artifacts. The screenshot is a local validation artifact.

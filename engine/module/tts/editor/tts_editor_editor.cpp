@@ -1,11 +1,13 @@
 #include "tts_editor_editor.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <exception>
 #include <optional>
+#include <string_view>
 
 #include <imgui.h>
 
@@ -24,7 +26,85 @@ namespace kpengine::tts_editor
     {
         const ImVec4 kCyan{0.18f, 0.83f, 0.94f, 1.0f};
         const ImVec4 kMuted{0.58f, 0.7f, 0.75f, 1.0f};
+        const ImVec4 kText{0.86f, 0.95f, 0.97f, 1.0f};
         const ImVec4 kError{1.0f, 0.42f, 0.36f, 1.0f};
+        constexpr ImU32 kSelectedAmber = IM_COL32(255, 184, 58, 255);
+        constexpr ImU32 kSelectedRow = IM_COL32(51, 39, 17, 255);
+        constexpr ImU32 kSelectedRowHovered = IM_COL32(70, 49, 18, 255);
+
+        bool ContainsCaseInsensitive(const std::string_view text,
+                                     const std::string_view query)
+        {
+            if (query.empty()) return true;
+            if (query.size() > text.size()) return false;
+            for (std::size_t start = 0; start <= text.size() - query.size(); ++start)
+            {
+                bool matches = true;
+                for (std::size_t offset = 0; offset < query.size(); ++offset)
+                {
+                    const auto lhs = static_cast<unsigned char>(text[start + offset]);
+                    const auto rhs = static_cast<unsigned char>(query[offset]);
+                    const auto fold = [](const unsigned char value)
+                    {
+                        return value < 0x80u
+                            ? static_cast<unsigned char>(std::tolower(value)) : value;
+                    };
+                    if (fold(lhs) != fold(rhs))
+                    {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) return true;
+            }
+            return false;
+        }
+
+        std::string CompactDialogText(const std::string_view text,
+                                      const std::size_t max_codepoints = 76)
+        {
+            std::string compact;
+            compact.reserve(std::min(text.size(), max_codepoints * 3));
+            std::size_t codepoints = 0;
+            bool pending_space = false;
+            for (std::size_t offset = 0; offset < text.size();)
+            {
+                const unsigned char lead = static_cast<unsigned char>(text[offset]);
+                if (lead == '\r' || lead == '\n' || lead == '\t' || lead == ' ')
+                {
+                    pending_space = !compact.empty();
+                    ++offset;
+                    continue;
+                }
+                if (codepoints == max_codepoints)
+                {
+                    compact += "...";
+                    break;
+                }
+                if (pending_space)
+                    compact.push_back(' ');
+                pending_space = false;
+                const std::size_t width = lead < 0x80u ? 1 :
+                    (lead & 0xE0u) == 0xC0u ? 2 :
+                    (lead & 0xF0u) == 0xE0u ? 3 :
+                    (lead & 0xF8u) == 0xF0u ? 4 : 1;
+                const std::size_t available = std::min(width, text.size() - offset);
+                compact.append(text.substr(offset, available));
+                offset += available;
+                ++codepoints;
+            }
+            return compact;
+        }
+
+        std::string FormatDuration(const std::optional<float> duration)
+        {
+            if (!duration || *duration < 0.0f) return "—";
+            const int total_seconds = static_cast<int>(*duration);
+            char label[16]{};
+            std::snprintf(label, sizeof(label), "%02d:%02d",
+                          total_seconds / 60, total_seconds % 60);
+            return label;
+        }
 
         template<std::size_t Size>
         void CopyTo(std::array<char, Size> &destination, const std::string &source)
@@ -507,67 +587,253 @@ namespace kpengine::tts_editor
     {
         ImGui::TextColored(kCyan, "// DIALOG LIST");
         ImGui::Separator();
-        ImGui::SetNextItemWidth(-110.0f);
-        ImGui::InputText("##import_wav", import_path_.data(), import_path_.size());
-        ImGui::SameLine();
-        if (ImGui::Button("IMPORT WAV")) controller_->QueueImport(import_path_.data());
         const auto selected = std::find_if(view.entries.begin(), view.entries.end(),
             [&view](const TtsEntryView &entry) { return entry.id == view.selected_id; });
+
+        if (ImGui::Button("NEW SPEECH"))
+            focus_text_input_ = true;
+        ImGui::SameLine();
         ImGui::BeginDisabled(selected == view.entries.end() || !selected->durable);
         if (ImGui::Button("DUPLICATE")) controller_->QueueDuplicate();
         ImGui::SameLine();
         if (ImGui::Button("DELETE")) controller_->QueueDelete();
         ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("IMPORT WAV"))
+            ImGui::OpenPopup("##tts_import_wav_popup");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(selected == view.entries.end() || !selected->durable);
+        if (ImGui::Button("EXPORT WAV"))
+        {
+            std::snprintf(export_basename_.data(), export_basename_.size(),
+                          "speech-%llu", static_cast<unsigned long long>(selected->id));
+            ImGui::OpenPopup("##tts_export_wav_popup");
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        const float search_width = std::clamp(ImGui::GetContentRegionAvail().x * 0.42f,
+                                              150.0f, 300.0f);
+        ImGui::SetNextItemWidth(search_width);
+        ImGui::InputTextWithHint("##tts_dialog_search", "Search dialogs...",
+                                 dialog_search_.data(), dialog_search_.size());
+
+        if (ImGui::BeginPopup("##tts_import_wav_popup"))
+        {
+            ImGui::TextUnformatted("Import a WAV into the dialog library");
+            ImGui::SetNextItemWidth(340.0f);
+            ImGui::InputTextWithHint("##import_wav_path", "WAV file path",
+                                     import_path_.data(), import_path_.size());
+            if (ImGui::Button("IMPORT"))
+            {
+                controller_->QueueImport(import_path_.data());
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("CANCEL")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+        if (ImGui::BeginPopup("##tts_export_wav_popup"))
+        {
+            ImGui::TextUnformatted("Export selected dialog as WAV");
+            ImGui::SetNextItemWidth(240.0f);
+            ImGui::InputText("File name", export_basename_.data(), export_basename_.size());
+            if (ImGui::Button("EXPORT"))
+            {
+                controller_->QueueExport(export_basename_.data());
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("CANCEL")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
+        filtered_dialog_indices_.clear();
+        const std::string_view query{dialog_search_.data()};
+        for (std::size_t index = 0; index < view.entries.size(); ++index)
+        {
+            const TtsEntryView &entry = view.entries[index];
+            const std::string_view state = JobLabel(entry.state);
+            char id_text[24]{};
+            std::snprintf(id_text, sizeof(id_text), "%llu",
+                          static_cast<unsigned long long>(entry.id));
+            if (ContainsCaseInsensitive(id_text, query) ||
+                ContainsCaseInsensitive(entry.text, query) ||
+                ContainsCaseInsensitive(entry.voice_name, query) ||
+                ContainsCaseInsensitive(state, query))
+                filtered_dialog_indices_.push_back(index);
+        }
+        ImGui::TextColored(kMuted, "%zu / %zu dialogs",
+                          filtered_dialog_indices_.size(), view.entries.size());
         if (view.entries.empty())
         {
-            ImGui::TextColored(kMuted, "No saved or generated dialogs.");
+            ImGui::TextColored(kMuted,
+                "No dialogs yet. Enter speech text and choose Generate Speech.");
             return;
         }
-        if (ImGui::BeginTable("##dialogs", 4,
+        if (filtered_dialog_indices_.empty())
+        {
+            ImGui::TextColored(kMuted, "No dialogs match this search.");
+            return;
+        }
+        const float max_table_height = std::clamp(
+            ImGui::GetContentRegionAvail().y * 0.62f, 220.0f, 470.0f);
+        const float table_height = std::min(max_table_height,
+            std::max(150.0f, 43.0f + filtered_dialog_indices_.size() * 30.0f));
+        const ImVec2 table_origin = ImGui::GetCursorScreenPos();
+        const float cell_padding_y = ImGui::GetStyle().CellPadding.y;
+        const float header_height = ImGui::GetTextLineHeight() + cell_padding_y * 2.0f;
+        if (ImGui::BeginTable("##dialogs", 6,
             ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
             ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable,
-            ImVec2(0.0f, 220.0f)))
+            ImVec2(0.0f, table_height)))
         {
+            ImDrawList *const table_draw_list = ImGui::GetWindowDrawList();
+            ImVec2 body_clip_min = table_draw_list->GetClipRectMin();
+            const ImVec2 body_clip_max = table_draw_list->GetClipRectMax();
+            body_clip_min.y = std::max(body_clip_min.y, table_origin.y + header_height);
+            ImVec2 selection_min{};
+            ImVec2 selection_max{};
+            bool selection_visible = false;
             ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 44.0f);
             ImGui::TableSetupColumn("Text", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Voice", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Voice", ImGuiTableColumnFlags_WidthFixed, 88.0f);
+            ImGui::TableSetupColumn("Duration", ImGuiTableColumnFlags_WidthFixed, 74.0f);
             ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 66.0f);
             ImGui::TableHeadersRow();
             ImGuiListClipper clipper;
-            clipper.Begin(static_cast<int>(view.entries.size()));
+            clipper.Begin(static_cast<int>(filtered_dialog_indices_.size()), 30.0f);
             while (clipper.Step())
             {
                 for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
                 {
-                    const auto &entry = view.entries[static_cast<std::size_t>(row)];
-                    ImGui::PushID(static_cast<int>(entry.id));
-                    ImGui::TableNextRow();
+                    const auto &entry = view.entries[
+                        filtered_dialog_indices_[static_cast<std::size_t>(row)]];
+                    const std::string row_id = std::to_string(entry.id);
+                    ImGui::PushID(row_id.c_str());
+                    ImGui::TableNextRow(ImGuiTableRowFlags_None, 30.0f);
+                    const bool is_selected = entry.id == view.selected_id;
+                    if (is_selected)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, kSelectedRow);
                     ImGui::TableSetColumnIndex(0);
-                    if (ImGui::Selectable("##entry", entry.id == view.selected_id,
-                                          ImGuiSelectableFlags_SpanAllColumns))
+                    char row_label[24]{};
+                    std::snprintf(row_label, sizeof(row_label), "%03llu",
+                                  static_cast<unsigned long long>(entry.id));
+                    const float row_top = ImGui::GetCursorScreenPos().y -
+                        ImGui::GetStyle().CellPadding.y;
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        is_selected ? ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kCyan);
+                    ImGui::PushStyleColor(ImGuiCol_Header,
+                        ImGui::ColorConvertU32ToFloat4(kSelectedRow));
+                    ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
+                        ImGui::ColorConvertU32ToFloat4(is_selected ?
+                            kSelectedRowHovered : IM_COL32(7, 32, 42, 255)));
+                    const bool clicked = ImGui::Selectable(row_label, is_selected,
+                        ImGuiSelectableFlags_SpanAllColumns |
+                        ImGuiSelectableFlags_AllowDoubleClick);
+                    if (is_selected)
+                    {
+                        selection_min = ImVec2(ImGui::GetItemRectMin().x + 1.0f, row_top);
+                        selection_max = ImVec2(ImGui::GetItemRectMax().x - 1.0f,
+                                               row_top + 30.0f);
+                        selection_visible = true;
+                    }
+                    ImGui::PopStyleColor(3);
+                    if (clicked)
+                    {
                         controller_->QueueSelect(entry.id);
-                    ImGui::SameLine();
-                    ImGui::Text("%03llu", static_cast<unsigned long long>(entry.id));
+                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                        {
+                            controller_->QueueTogglePlayPause();
+                        }
+                    }
                     ImGui::TableSetColumnIndex(1);
-                    ImGui::TextUnformatted(entry.text.c_str());
+                    const auto text_capacity = std::max(12, static_cast<int>(
+                        (ImGui::GetColumnWidth() - 20.0f) / ImGui::GetFontSize()));
+                    const std::string row_text = CompactDialogText(entry.text,
+                        static_cast<std::size_t>(text_capacity));
+                    ImGui::TextColored(is_selected ?
+                        ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kText,
+                        "%s", row_text.c_str());
                     ImGui::TableSetColumnIndex(2);
-                    ImGui::TextUnformatted(entry.voice_name.c_str());
+                    ImGui::TextColored(is_selected ?
+                        ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kText,
+                        "%s", entry.voice_name.c_str());
                     ImGui::TableSetColumnIndex(3);
-                    ImGui::TextUnformatted(JobLabel(entry.state));
+                    std::optional<float> duration;
+                    if (entry.preview_data)
+                        duration = entry.preview_data->duration_seconds;
+                    else if (entry.duration_seconds)
+                        duration = entry.duration_seconds;
+                    else if (entry.id == view.selected_id)
+                        duration = view.duration_seconds;
+                    ImGui::TextColored(is_selected ?
+                        ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kText,
+                        "%s", FormatDuration(duration).c_str());
+                    ImGui::TableSetColumnIndex(4);
+                    ImGui::TextColored(is_selected ?
+                        ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kText,
+                        "%s", JobLabel(entry.state));
+                    ImGui::TableSetColumnIndex(5);
+                    const bool can_cancel = entry.job.IsValid() &&
+                        entry.state != tts::TTSJobState::Completed &&
+                        entry.state != tts::TTSJobState::Cancelled &&
+                        entry.state != tts::TTSJobState::Failed;
+                    const bool can_play = entry.durable || entry.player.IsValid();
+                    if (can_cancel)
+                    {
+                        if (is_selected)
+                        {
+                            ImGui::PushStyleColor(ImGuiCol_Button,
+                                ImGui::ColorConvertU32ToFloat4(kSelectedRow));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                ImGui::ColorConvertU32ToFloat4(kSelectedRowHovered));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                                ImGui::ColorConvertU32ToFloat4(kSelectedRowHovered));
+                            ImGui::PushStyleColor(ImGuiCol_Text,
+                                ImGui::ColorConvertU32ToFloat4(kSelectedAmber));
+                        }
+                        if (ImGui::SmallButton("CANCEL"))
+                        {
+                            controller_->QueueSelect(entry.id);
+                            controller_->QueueCancel();
+                        }
+                        if (is_selected) ImGui::PopStyleColor(4);
+                    }
+                    else if (can_play)
+                    {
+                        const bool playing = entry.audio_state == audio::AudioState::Playing ||
+                            entry.audio_state == audio::AudioState::Buffering;
+                        if (is_selected)
+                        {
+                            ImGui::PushStyleColor(ImGuiCol_Button,
+                                ImGui::ColorConvertU32ToFloat4(kSelectedRow));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                ImGui::ColorConvertU32ToFloat4(kSelectedRowHovered));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                                ImGui::ColorConvertU32ToFloat4(kSelectedRowHovered));
+                            ImGui::PushStyleColor(ImGuiCol_Text,
+                                ImGui::ColorConvertU32ToFloat4(kSelectedAmber));
+                        }
+                        if (ImGui::SmallButton(playing ? "PAUSE" : "PLAY"))
+                        {
+                            controller_->QueueSelect(entry.id);
+                            controller_->QueueTogglePlayPause();
+                        }
+                        if (is_selected) ImGui::PopStyleColor(4);
+                    }
+                    else
+                        ImGui::TextColored(kMuted, "—");
                     ImGui::PopID();
                 }
             }
             ImGui::EndTable();
-        }
-        if (selected != view.entries.end() && selected->durable)
-        {
-            if (export_basename_[0] == '\0')
-                std::snprintf(export_basename_.data(), export_basename_.size(),
-                              "speech-%llu", static_cast<unsigned long long>(selected->id));
-            ImGui::SetNextItemWidth(-110.0f);
-            ImGui::InputText("##export_basename", export_basename_.data(), export_basename_.size());
-            ImGui::SameLine();
-            if (ImGui::Button("EXPORT WAV")) controller_->QueueExport(export_basename_.data());
+            if (selection_visible && body_clip_max.y > body_clip_min.y)
+            {
+                table_draw_list->PushClipRect(body_clip_min, body_clip_max, true);
+                table_draw_list->AddRect(selection_min, selection_max, kSelectedAmber);
+                table_draw_list->PopClipRect();
+            }
         }
         if (!view.last_export_path.empty())
             ImGui::TextWrapped("Exported: %s", view.last_export_path.c_str());
@@ -672,6 +938,11 @@ namespace kpengine::tts_editor
     {
         ImGui::TextColored(kCyan, "// TEXT INPUT");
         ImGui::Separator();
+        if (focus_text_input_)
+        {
+            ImGui::SetKeyboardFocusHere();
+            focus_text_input_ = false;
+        }
         ImGui::InputTextMultiline("##speech_text", text_.data(), text_.size(),
                                   ImVec2(-1.0f, 130.0f));
         const bool text_focused = ImGui::IsItemFocused();

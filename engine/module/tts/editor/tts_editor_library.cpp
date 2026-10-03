@@ -1,8 +1,10 @@
 #include "tts_editor_library.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <nlohmann/json.hpp>
@@ -72,6 +74,44 @@ namespace kpengine::tts_editor
                 bytes.clear();
                 return false;
             }
+            return true;
+        }
+
+        bool ReadCanonicalWavDuration(const std::filesystem::path &path,
+                                      float &duration_seconds)
+        {
+            std::array<std::uint8_t, 44> header{};
+            std::ifstream stream(path, std::ios::binary);
+            if (!stream || !stream.read(reinterpret_cast<char *>(header.data()),
+                                        static_cast<std::streamsize>(header.size())) ||
+                std::memcmp(header.data(), "RIFF", 4) != 0 ||
+                std::memcmp(header.data() + 8, "WAVEfmt ", 8) != 0 ||
+                std::memcmp(header.data() + 36, "data", 4) != 0)
+                return false;
+            const auto read16 = [&header](const std::size_t offset)
+            {
+                return static_cast<std::uint16_t>(header[offset] |
+                    (static_cast<std::uint16_t>(header[offset + 1]) << 8));
+            };
+            const auto read32 = [&header](const std::size_t offset)
+            {
+                return static_cast<std::uint32_t>(header[offset]) |
+                    (static_cast<std::uint32_t>(header[offset + 1]) << 8) |
+                    (static_cast<std::uint32_t>(header[offset + 2]) << 16) |
+                    (static_cast<std::uint32_t>(header[offset + 3]) << 24);
+            };
+            const std::uint16_t channels = read16(22);
+            const std::uint32_t sample_rate = read32(24);
+            const std::uint32_t data_size = read32(40);
+            std::error_code error;
+            const std::uintmax_t file_size = std::filesystem::file_size(path, error);
+            if (error || read16(20) != 1 || read16(34) != 16 ||
+                (channels != 1 && channels != 2) || sample_rate == 0 ||
+                data_size == 0 || file_size != 44u + data_size ||
+                data_size % (static_cast<std::uint32_t>(channels) * 2u) != 0)
+                return false;
+            duration_seconds = static_cast<float>(data_size) /
+                (static_cast<float>(sample_rate) * channels * 2.0f);
             return true;
         }
 
@@ -209,7 +249,7 @@ namespace kpengine::tts_editor
                                   row.at("artifact").get<std::string>()});
             const auto parsed_next = json.at("next_id").get<std::uint64_t>();
             if (!ValidateDialogs(parsed, parsed_next, diagnostic)) return false;
-            for (const auto &row : parsed)
+            for (auto &row : parsed)
             {
                 const auto audio_directory = root_ / "audio";
                 const auto artifact_path = audio_directory / row.artifact;
@@ -222,6 +262,9 @@ namespace kpengine::tts_editor
                     diagnostic = "TTS library references a missing WAV artifact";
                     return false;
                 }
+                float duration_seconds = 0.0f;
+                if (ReadCanonicalWavDuration(artifact_path, duration_seconds))
+                    row.duration_seconds = duration_seconds;
             }
             dialogs = std::move(parsed);
             next_id = parsed_next;

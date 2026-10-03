@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "editor/ui/audio_transport_icons.h"
 #include "tts_editor_controller.h"
@@ -54,10 +55,13 @@ namespace kpengine::tts_editor
         std::array<char, 512> output_directory_{};
         std::array<char, 1024> import_path_{};
         std::array<char, 128> export_basename_{};
+        std::array<char, 128> dialog_search_{};
+        std::vector<std::size_t> filtered_dialog_indices_;
         int port_ = 0;
         int timeout_seconds_ = 180;
         bool streaming_ = true;
         bool refresh_fields_ = false;
+        bool focus_text_input_ = false;
     };
 }
 

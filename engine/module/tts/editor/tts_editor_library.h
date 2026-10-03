@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -16,6 +17,7 @@ namespace kpengine::tts_editor
         std::string voice_name;
         bool generated_streaming = false;
         std::string artifact;
+        std::optional<float> duration_seconds;
     };
 
     class TtsEditorLibrary final

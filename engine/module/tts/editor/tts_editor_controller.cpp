@@ -71,6 +71,7 @@ namespace kpengine::tts_editor
                 entry.streaming = false;
                 entry.durable = true;
                 entry.artifact = stored.artifact;
+                entry.duration_seconds = stored.duration_seconds;
                 entries_.push_back(std::move(entry));
             }
             if (!entries_.empty()) selected_id_ = entries_.back().id;
@@ -478,6 +479,7 @@ namespace kpengine::tts_editor
             return;
         }
         entry.preview_data = std::move(preview);
+        entry.duration_seconds = entry.preview_data->duration_seconds;
         entry.error.clear();
     }
 
@@ -657,6 +659,11 @@ namespace kpengine::tts_editor
 
     void TtsEditorController::RefreshView()
     {
+        for (auto &entry : entries_)
+        {
+            const auto player = audio_->GetAudioPlayer(entry.player);
+            entry.audio_state = player ? player->GetCurrentState() : audio::AudioState::Stopped;
+        }
         std::lock_guard lock(view_mutex_);
         view_.entries = entries_;
         view_.selected_id = selected_id_;
@@ -669,11 +676,13 @@ namespace kpengine::tts_editor
         {
             if (const auto player = audio_->GetAudioPlayer(entry->player))
             {
-                view_.audio_state = player->GetCurrentState();
+                view_.audio_state = entry->audio_state;
                 view_.elapsed_seconds = player->GetCurrentSecond();
                 view_.playback_rate = player->GetPlaybackRate();
                 if (entry->preview_data)
                     view_.duration_seconds = entry->preview_data->duration_seconds;
+                else if (entry->duration_seconds)
+                    view_.duration_seconds = entry->duration_seconds;
                 else if (!entry->streaming)
                     view_.duration_seconds = player->GetCurrentSecond() +
                                              player->GetRemainSecond();

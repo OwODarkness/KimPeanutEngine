@@ -29,8 +29,10 @@ namespace kpengine::tts_editor
         std::string error;
         tts::JobToken job{};
         audio::AudioHandle player{};
+        audio::AudioState audio_state = audio::AudioState::Stopped;
         bool durable = false;
         std::string artifact;
+        std::optional<float> duration_seconds;
         std::shared_ptr<const WavPreviewData> preview_data;
     };
 

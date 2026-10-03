@@ -11,8 +11,10 @@
   local voice settings, completed a live Japanese stream, handled the missing-
   server failure, and shut down cleanly. Preview now shows the supplied Kurisu
   portrait and an artifact-derived waveform with playback progress and buffered
-  seeking. Wide and compact captures are saved;
-  keyboard focus review remains. Synthesis pitch/emotion remain TE3. →
+  seeking. The dialog list is compact, searchable, virtualized, shows WAV
+  duration, and uses the Audio Player playlist's orange selected-row style.
+  Wide and compact captures are saved; keyboard focus review remains.
+  Synthesis pitch/emotion remain TE3. →
   [architecture](tts/editor/PLANS.md), [TE1](tts/editor/.plan/TE1.md),
   [TE2](tts/editor/.plan/TE2.md), [roadmap](tts/editor/TODO.md),
   [TE1 journal](../.spec/journal/tts-editor-te1.md),

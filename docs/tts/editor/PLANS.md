@@ -78,7 +78,7 @@ Do not print reference text or absolute reference paths to routine logs.
 | Draft region | TE1 behavior | Existing base / missing work |
 |---|---|---|
 | Audio Preview | Switch between stream and buffer control panels from the settings-backed playback mode, then show state, elapsed played time, pause/resume, stop/cancel, and Speech volume | `AudioSystem::GetAudioPlayer`, `AudioPlayer` state/cursor/volume, `TTSSystem::DrainEvents`; host-owned snapshot adapter. Stream cannot seek or change rate; buffer can seek and set preview playback rate. |
-| Dialog List | Session entries with text, voice, job state and selected result; row play/cancel | The TE2 library persists completed rows and supports stable-ID import, duplicate, delete, and restore. |
+| Dialog List | Compact searchable table with stable IDs, text, voice, WAV duration, job state, inline play/cancel, and playlist-style orange selection | The TE2 library persists completed rows and supports stable-ID import, duplicate, delete, and restore. The table clips off-screen rows and reads canonical WAV duration metadata without loading each preview. |
 | TTS Control | Voice preset, target language, connection/settings access | Settings-backed voice model is new; current `TTSRequest` has no Emotion or Pitch fields. |
 | Text Input | Multiline text, length limit, Generate, busy/error state | `TTSSystem::AsyncSynthesize` and `Cancel`; no UI-thread synchronous call. |
 | Output | Destination and filename for canonical WAV export | Core TTS returns bounded immutable provider WAV bytes; the editor canonicalizes and owns artifacts and exports them atomically. |
