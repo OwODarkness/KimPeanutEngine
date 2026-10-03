@@ -41,15 +41,20 @@ depend on the scene and hardware.
   <img src="./resouce/example/main.png" width="49%" alt="Sponza in the KimPeanut Engine editor" />
   <img src="./resouce/example/loading.png" width="49%" alt="Scene asset loading screen" />
 </p>
+### Live2D and  Terrian PCG generator
 
 <p align="center">
-  <img src="./resouce/example/live2d.png" width="39%" alt="Live2D Example" />
-  <img src="./resouce/example/terrian.png" width="59%" alt="Terrain PCG Example" />
+  <img src="./resouce/example/live2d.png" width="29%" alt="Live2D Example" />
+  <img src="./resouce/example/terrian.png" width="69%" alt="Terrain PCG Example" />
 </p>
 
-### Standalone audio player
 
-![KimPeanut Engine standalone audio player](./resouce/example/audio_player.png)
+### Audio Player and  TTS
+
+<p align="center">
+  <img src="./resouce/example/audio_player.png" width="49%" alt="audio player" />
+  <img src="./resouce/example/tts.png" width="49%" alt="TTS" />
+</p>
 
 ## Features
 

@@ -34,15 +34,19 @@ Vulkan 路径追踪支持渐进式采样与自适应 SPP：相机移动时使用
   <img src="./resouce/example/main.png" width="49%" alt="KimPeanut Engine 编辑器中的 Sponza 场景" />
   <img src="./resouce/example/loading.png" width="49%" alt="场景资源加载界面" />
 </p>
+### Live2D和地形PCG生成器
+
 <p align="center">
-  <img src="./resouce/example/live2d.png" width="39%" alt="Live2D 示例" />
-  <img src="./resouce/example/terrian.png" width="59%" alt="Terrian PCG 示例" />
+  <img src="./resouce/example/live2d.png" width="29%" alt="Live2D 示例" />
+  <img src="./resouce/example/terrian.png" width="69%" alt="Terrian PCG 示例" />
 </p>
 
+### 音频播放器与TTS
 
-### 独立音频播放器
-
-![KimPeanut Engine 独立音频播放器](./resouce/example/audio_player.png)
+<p align="center">
+  <img src="./resouce/example/audio_player.png" width="49%" alt="音频播放器" />
+  <img src="./resouce/example/tts.png" width="49%" alt="TTS" />
+</p>
 
 ## 主要特性
 

@@ -4,6 +4,8 @@ The current TTS client and its Audio producer contract are described in
 [tts_module.md](tts_module.md). The cross-module conversational path stays in
 [Audio's architecture](../audio/PLANS.md) and [A2](../audio/.plan/A2.md).
 
+For non-Debug launch instructions, see the
+[standalone TTS Editor README](README.md).
 The standalone `--mode tts` workspace is scoped in the
 [editor architecture](editor/PLANS.md), [TE1](editor/.plan/TE1.md), and
 [TE2](editor/.plan/TE2.md).
