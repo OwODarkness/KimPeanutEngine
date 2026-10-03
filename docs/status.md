@@ -9,7 +9,9 @@
   WAV import/export, duplicate/delete, and restored buffer preview. Focused
   Debug Audio/TTS/mode tests pass 81/81. The Debug Vulkan TTS mode loaded the
   local voice settings, completed a live Japanese stream, handled the missing-
-  server failure, and shut down cleanly. Wide and compact captures are saved;
+  server failure, and shut down cleanly. Preview now shows the supplied Kurisu
+  portrait and an artifact-derived waveform with playback progress and buffered
+  seeking. Wide and compact captures are saved;
   keyboard focus review remains. Synthesis pitch/emotion remain TE3. →
   [architecture](tts/editor/PLANS.md), [TE1](tts/editor/.plan/TE1.md),
   [TE2](tts/editor/.plan/TE2.md), [roadmap](tts/editor/TODO.md),

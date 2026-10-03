@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <limits>
+#include <algorithm>
+#include <cmath>
 
 namespace kpengine::tts_editor
 {
@@ -122,6 +124,56 @@ namespace kpengine::tts_editor
         std::memcpy(output.data() + 36, "data", 4);
         Write32(output.data() + 40, static_cast<std::uint32_t>(data_size));
         std::memcpy(output.data() + 44, input.data() + data_offset, data_size);
+        diagnostic.clear();
+        return true;
+    }
+
+    bool BuildWavPreviewData(const std::span<const std::uint8_t> input,
+                             WavPreviewData &preview,
+                             std::string &diagnostic,
+                             std::size_t sample_count)
+    {
+        preview = {};
+        std::vector<std::uint8_t> canonical;
+        if (!CanonicalizeWav(input, canonical, diagnostic))
+            return false;
+
+        preview.channels = Read16(canonical.data() + 22);
+        preview.sample_rate = Read32(canonical.data() + 24);
+        const std::size_t data_size = Read32(canonical.data() + 40);
+        const std::size_t frame_size = static_cast<std::size_t>(preview.channels) * 2;
+        const std::size_t frame_count = data_size / frame_size;
+        if (frame_count == 0 || sample_count == 0)
+        {
+            preview = {};
+            diagnostic = "WAV has no samples for waveform preview";
+            return false;
+        }
+
+        preview.duration_seconds = static_cast<float>(frame_count) /
+            static_cast<float>(preview.sample_rate);
+        const std::size_t bucket_count = std::min(sample_count, frame_count);
+        preview.waveform_samples.resize(bucket_count);
+        for (std::size_t bucket = 0; bucket < bucket_count; ++bucket)
+        {
+            const std::size_t first_frame = bucket * frame_count / bucket_count;
+            const std::size_t last_frame = std::max(first_frame + 1,
+                (bucket + 1) * frame_count / bucket_count);
+            float peak = 0.0f;
+            for (std::size_t frame = first_frame; frame < last_frame; ++frame)
+            {
+                for (std::size_t channel = 0; channel < preview.channels; ++channel)
+                {
+                    const std::size_t sample_offset = 44 + frame * frame_size + channel * 2;
+                    std::int32_t sample = static_cast<std::int32_t>(
+                        Read16(canonical.data() + sample_offset));
+                    if (sample >= 32768)
+                        sample -= 65536;
+                    peak = std::max(peak, static_cast<float>(std::abs(sample)) / 32768.0f);
+                }
+            }
+            preview.waveform_samples[bucket] = peak;
+        }
         diagnostic.clear();
         return true;
     }

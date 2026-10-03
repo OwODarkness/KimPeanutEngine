@@ -15,6 +15,7 @@
 #include "runtime/audio/audio_system.h"
 #include "tts_editor_settings.h"
 #include "tts_editor_library.h"
+#include "tts_editor_wav.h"
 
 namespace kpengine::tts_editor
 {
@@ -30,6 +31,7 @@ namespace kpengine::tts_editor
         audio::AudioHandle player{};
         bool durable = false;
         std::string artifact;
+        std::shared_ptr<const WavPreviewData> preview_data;
     };
 
     struct TtsEditorView
@@ -102,6 +104,7 @@ namespace kpengine::tts_editor
         TtsEntryView *SelectedEntry();
         void RetirePlayer(TtsEntryView &entry);
         void EnsurePreview(TtsEntryView &entry);
+        void EnsurePreviewData(TtsEntryView &entry);
         void PersistCompleted(TtsEntryView &entry);
         void Import(std::string path);
         void DuplicateSelected();

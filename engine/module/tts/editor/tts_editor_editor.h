@@ -2,6 +2,8 @@
 #define KPENGINE_MODULE_TTS_EDITOR_EDITOR_H
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -15,6 +17,8 @@ namespace kpengine::tts_editor
 {
     class TtsEditorEditor final
     {
+        static constexpr std::size_t kAvatarRasterSize = 64;
+
     public:
         TtsEditorEditor();
         ~TtsEditorEditor();
@@ -34,6 +38,8 @@ namespace kpengine::tts_editor
 
         std::unique_ptr<editor::EditorUI> ui_;
         editor::AudioTransportIconMasks transport_icons_;
+        std::array<std::uint32_t, kAvatarRasterSize * kAvatarRasterSize> avatar_pixels_{};
+        bool avatar_loaded_ = false;
         TtsEditorController *controller_ = nullptr;
         float last_audible_volume_ = 0.8f;
         TtsEditorSettings draft_settings_;

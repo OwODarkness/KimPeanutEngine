@@ -11,7 +11,9 @@
 
 #include "editor/ui/audio_transport_strip.h"
 #include "editor/ui/editor_ui.h"
+#include "runtime/core/config/path.h"
 #include "runtime/engine.h"
+#include "runtime/image_io/image_io.h"
 #include "runtime/render/render_system.h"
 #include "runtime/runtime_global_context.h"
 #include "runtime/window/window_system.h"
@@ -147,6 +149,32 @@ namespace kpengine::tts_editor
         }
         controller_ = &controller;
         transport_icons_ = editor::LoadAudioTransportIconMasks();
+        const auto avatar = image_io::DecodeImageFile(
+            (project_root / "resouce/icon/tts/kurisu-avatar.jpg").string());
+        if (avatar.result.success && avatar.image.IsValid() &&
+            avatar.image.format == image_io::ImagePixelFormat::Rgba8)
+        {
+            constexpr std::uint32_t target_size =
+                static_cast<std::uint32_t>(kAvatarRasterSize);
+            const std::uint32_t side = std::min(avatar.image.width, avatar.image.height);
+            const std::uint32_t crop_x = (avatar.image.width - side) / 2;
+            const std::uint32_t crop_y = (avatar.image.height - side) / 2;
+            for (std::uint32_t y = 0; y < target_size; ++y)
+            {
+                const std::uint32_t source_y = crop_y +
+                    (target_size - 1 - y) * side / target_size;
+                for (std::uint32_t x = 0; x < target_size; ++x)
+                {
+                    const std::uint32_t source_x = crop_x + x * side / target_size;
+                    const std::size_t offset =
+                        (static_cast<std::size_t>(source_y) * avatar.image.width + source_x) * 4;
+                    const auto *rgba = avatar.image.pixels.data() + offset;
+                    avatar_pixels_[y * target_size + x] = IM_COL32(
+                        rgba[0], rgba[1], rgba[2], rgba[3]);
+                }
+            }
+            avatar_loaded_ = true;
+        }
         const TtsEditorView initial_view = controller.GetView();
         last_audible_volume_ = std::clamp(initial_view.volume, 0.05f, 1.0f);
         CopySettingsToFields(initial_view.settings);
@@ -205,9 +233,144 @@ namespace kpengine::tts_editor
             ImGui::TextColored(kMuted, "Generate speech to preview it here.");
             return;
         }
-        ImGui::Text("%s // %s", selected->voice_name.c_str(),
-                    selected->streaming ? "STREAM" : "BUFFER");
-        ImGui::TextWrapped("%s", selected->text.c_str());
+        const float available_width = ImGui::GetContentRegionAvail().x;
+        const float avatar_size = std::clamp(available_width * 0.2f, 112.0f, 176.0f);
+        const float visual_height = std::max(avatar_size, 154.0f);
+        const ImVec2 card_origin = ImGui::GetCursorScreenPos();
+        const float gap = 14.0f;
+        const float card_width = std::max(80.0f, available_width - avatar_size - gap);
+        ImDrawList *draw = ImGui::GetWindowDrawList();
+
+        ImGui::InvisibleButton("##tts_avatar_card", {avatar_size, visual_height});
+        const ImVec2 avatar_min = ImGui::GetItemRectMin();
+        const ImVec2 avatar_max = ImGui::GetItemRectMax();
+        draw->AddRectFilled(avatar_min, avatar_max, IM_COL32(5, 18, 23, 255), 3.0f);
+        if (avatar_loaded_)
+        {
+            const float inset = 4.0f;
+            const float tile = (avatar_size - inset * 2.0f) /
+                static_cast<float>(kAvatarRasterSize);
+            for (std::uint32_t y = 0; y < kAvatarRasterSize; ++y)
+            {
+                for (std::uint32_t x = 0; x < kAvatarRasterSize; ++x)
+                {
+                    const float x0 = avatar_min.x + inset + x * tile;
+                    const float y0 = avatar_min.y + inset + y * tile;
+                    draw->AddRectFilled({x0, y0}, {x0 + tile + 0.4f, y0 + tile + 0.4f},
+                                        avatar_pixels_[y * kAvatarRasterSize + x]);
+                }
+            }
+        }
+        else
+            draw->AddText({avatar_min.x + 12.0f, avatar_min.y + avatar_size * 0.5f},
+                          IM_COL32(48, 211, 239, 255), "TTS VOICE");
+        draw->AddRect(avatar_min, avatar_max, IM_COL32(37, 190, 218, 255), 3.0f, 0, 1.5f);
+        ImGui::SameLine(0.0f, gap);
+        const ImVec2 wave_origin{card_origin.x + avatar_size + gap, card_origin.y};
+        const ImVec2 wave_size{card_width, visual_height};
+        ImGui::SetCursorScreenPos(wave_origin);
+        ImGui::InvisibleButton("##tts_waveform", wave_size);
+        const ImVec2 wave_min = ImGui::GetItemRectMin();
+        const ImVec2 wave_max = ImGui::GetItemRectMax();
+        draw->AddRectFilled(wave_min, wave_max, IM_COL32(3, 14, 19, 255), 3.0f);
+        draw->AddRect(wave_min, wave_max, IM_COL32(17, 97, 115, 255), 3.0f);
+        draw->AddText({wave_min.x + 10.0f, wave_min.y + 8.0f},
+                      IM_COL32(48, 211, 239, 255), selected->voice_name.c_str());
+        const char *mode = selected->streaming ? "STREAM" : "BUFFER";
+        const ImVec2 mode_size = ImGui::CalcTextSize(mode);
+        draw->AddText({wave_max.x - mode_size.x - 10.0f, wave_min.y + 8.0f},
+                      IM_COL32(125, 184, 195, 255), mode);
+        constexpr float text_top = 30.0f;
+        constexpr float text_bottom = 56.0f;
+        const float plot_left = wave_min.x + 10.0f;
+        const float plot_right = wave_max.x - 10.0f;
+        const float plot_top = wave_min.y + text_bottom;
+        const float plot_bottom = wave_max.y - 18.0f;
+        const float plot_center = (plot_top + plot_bottom) * 0.5f;
+        draw->AddLine({plot_left, plot_center}, {plot_right, plot_center},
+                      IM_COL32(17, 97, 115, 255), 1.0f);
+        for (float x = plot_left; x < plot_right; x += 16.0f)
+            draw->AddLine({x, plot_top}, {x, plot_bottom},
+                          IM_COL32(10, 48, 59, 255), 1.0f);
+
+        static const std::vector<float> empty_waveform;
+        const auto &wave = selected->preview_data
+            ? selected->preview_data->waveform_samples : empty_waveform;
+        const float duration = selected->preview_data
+            ? selected->preview_data->duration_seconds
+            : view.duration_seconds.value_or(0.0f);
+        const float played = duration > 0.0f
+            ? std::clamp(view.elapsed_seconds / duration, 0.0f, 1.0f) : 0.0f;
+        if (!wave.empty() && plot_right > plot_left)
+        {
+            const float spacing = std::max(2.0f, (plot_right - plot_left) /
+                static_cast<float>(std::min<std::size_t>(wave.size(), 180)));
+            const std::size_t visible_count = std::min<std::size_t>(wave.size(),
+                static_cast<std::size_t>((plot_right - plot_left) / spacing));
+            for (std::size_t i = 0; i < visible_count; ++i)
+            {
+                const std::size_t sample = i * wave.size() / visible_count;
+                const float x = plot_left + (static_cast<float>(i) + 0.5f) * spacing;
+                const float amplitude = std::clamp(wave[sample], 0.04f, 1.0f) *
+                    (plot_bottom - plot_top) * 0.48f;
+                const bool is_played = duration > 0.0f &&
+                    x <= plot_left + played * (plot_right - plot_left);
+                const ImU32 color = is_played ? IM_COL32(255, 176, 48, 255)
+                                               : IM_COL32(34, 198, 229, 255);
+                draw->AddLine({x, plot_center - amplitude},
+                              {x, plot_center + amplitude}, color, 2.0f);
+            }
+            if (duration > 0.0f)
+            {
+                const float playhead_x = plot_left + played * (plot_right - plot_left);
+                draw->AddLine({playhead_x, plot_top}, {playhead_x, plot_bottom},
+                              IM_COL32(255, 176, 48, 255), 1.5f);
+            }
+            if (ImGui::IsItemHovered() && selected->player.IsValid() && !selected->streaming &&
+                ImGui::IsMouseClicked(ImGuiMouseButton_Left) && duration > 0.0f)
+            {
+                const float fraction = std::clamp((ImGui::GetIO().MousePos.x - plot_left) /
+                    (plot_right - plot_left), 0.0f, 1.0f);
+                controller_->QueueSeek(fraction * duration);
+            }
+        }
+        else
+        {
+            const char *waiting = selected->streaming
+                ? "Waveform available when the server WAV arrives"
+                : "Waveform will appear when WAV audio is ready";
+            draw->AddText({plot_left, plot_center - 7.0f},
+                          IM_COL32(125, 184, 195, 255), waiting);
+        }
+        if (!selected->text.empty())
+        {
+            std::string preview_text = selected->text;
+            if (preview_text.size() > 112)
+            {
+                std::size_t end = 109;
+                while (end > 0 &&
+                    (static_cast<unsigned char>(preview_text[end]) & 0xC0u) == 0x80u)
+                    --end;
+                preview_text.resize(end);
+                preview_text += "...";
+            }
+            const ImVec2 text_pos{wave_min.x + 10.0f, wave_min.y + text_top};
+            draw->AddText(text_pos, IM_COL32(220, 235, 238, 255), preview_text.c_str());
+        }
+        const auto time_text = [duration](const float seconds)
+        {
+            char value[48]{};
+            std::snprintf(value, sizeof(value), "%02d:%02d / %02d:%02d",
+                static_cast<int>(seconds) / 60, static_cast<int>(seconds) % 60,
+                static_cast<int>(duration) / 60, static_cast<int>(duration) % 60);
+            return std::string(value);
+        };
+        const std::string timing = duration > 0.0f
+            ? time_text(view.elapsed_seconds) : std::string("DURATION PENDING");
+        const ImVec2 timing_size = ImGui::CalcTextSize(timing.c_str());
+        draw->AddText({wave_max.x - timing_size.x - 10.0f, wave_max.y - 16.0f},
+                      IM_COL32(125, 184, 195, 255), timing.c_str());
+        ImGui::SetCursorScreenPos({card_origin.x, card_origin.y + visual_height});
         if (!selected->error.empty())
             ImGui::TextColored(kError, "%s", selected->error.c_str());
         ImGui::Spacing();

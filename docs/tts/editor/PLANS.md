@@ -83,9 +83,11 @@ Do not print reference text or absolute reference paths to routine logs.
 | Text Input | Multiline text, length limit, Generate, busy/error state | `TTSSystem::AsyncSynthesize` and `Cancel`; no UI-thread synchronous call. |
 | Output | Destination and filename for canonical WAV export | Core TTS returns bounded immutable provider WAV bytes; the editor canonicalizes and owns artifacts and exports them atomically. |
 
-The mock portrait, exact sample rate/bit depth, fixed six-second duration,
-waveform, synthesis speed, pitch, emotion, date, and file controls are visual placeholders
-until backed by real data and behavior. A stream's elapsed time comes from the
+The bundled portrait is display artwork. Duration, sample format, and waveform
+are derived from the canonical WAV artifact; no waveform is fabricated while a
+stream has not returned audio bytes. Synthesis speed, pitch, emotion, date, and
+file controls remain placeholders until backed by real data and behavior. A
+stream's elapsed time comes from the
 played-frame cursor; its total duration is unknown until trustworthy metadata
 exists. The stream panel exposes state, pause/resume, stop/cancel, and volume;
 its seek and rate controls are absent or disabled. A buffered clip may expose

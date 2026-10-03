@@ -151,3 +151,21 @@ duplicate status and the nine unrelated full-suite failures separately.
 - `capture.glfw_window` exported
   `save/screenshots/validation/tts-controls-row-padding-20261003.png`; visual
   review confirms the padded row and mute button. No tests were run.
+
+## Portrait and artifact waveform preview (2026-10-03)
+
+- Added canonical WAV preview extraction for sample rate, channel count,
+  duration, and 384 peak buckets. Durable dialogs calculate this lazily when
+  selected; completed and imported WAVs cache the result.
+- Added the user-supplied Kurisu portrait as UI artwork, decoded through ImageIO
+  once and cached as a compact CPU-side raster. No GPU texture owner or
+  AudioPlayerMode dependency was introduced.
+- The preview combines the portrait, text, real waveform, playback cursor,
+  elapsed/duration label, and click-to-seek for buffered clips. Streams without
+  returned WAV bytes show a waiting label instead of invented waveform data.
+- `git diff --check`, Debug TtsEditorMode build, and Debug KimPeanutEngine build
+  passed. Visible Debug Vulkan TTS runtime loaded the saved dialog and showed
+  the supplied portrait and audio-derived waveform with elapsed/duration and
+  playhead on the window. Capture:
+  `save/screenshots/validation/tts-avatar-waveform-final-20261003-1.png`. No
+  tests were run.

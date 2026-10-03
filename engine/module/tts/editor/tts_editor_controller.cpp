@@ -75,6 +75,7 @@ namespace kpengine::tts_editor
             }
             if (!entries_.empty()) selected_id_ = entries_.back().id;
         }
+        if (auto *entry = SelectedEntry()) EnsurePreviewData(*entry);
         std::lock_guard lock(view_mutex_);
         view_.settings = std::move(settings);
         view_.settings_loaded = loaded;
@@ -322,7 +323,11 @@ namespace kpengine::tts_editor
         case ActionKind::Cancel: CancelSelected(); break;
         case ActionKind::Select:
             selected_id_ = action.id;
-            if (auto *entry = SelectedEntry(); entry && entry->durable) EnsurePreview(*entry);
+            if (auto *entry = SelectedEntry(); entry && entry->durable)
+            {
+                EnsurePreviewData(*entry);
+                EnsurePreview(*entry);
+            }
             break;
         case ActionKind::Reload:
         {
@@ -456,6 +461,26 @@ namespace kpengine::tts_editor
         entry.error.clear();
     }
 
+    void TtsEditorController::EnsurePreviewData(TtsEntryView &entry)
+    {
+        if (entry.preview_data || entry.artifact.empty()) return;
+        std::vector<std::uint8_t> wav;
+        std::string diagnostic;
+        if (!library_.Read(entry.artifact, wav, diagnostic))
+        {
+            entry.error = std::move(diagnostic);
+            return;
+        }
+        auto preview = std::make_shared<WavPreviewData>();
+        if (!BuildWavPreviewData(wav, *preview, diagnostic))
+        {
+            entry.error = std::move(diagnostic);
+            return;
+        }
+        entry.preview_data = std::move(preview);
+        entry.error.clear();
+    }
+
     void TtsEditorController::PersistCompleted(TtsEntryView &entry)
     {
         if (entry.durable) return;
@@ -487,6 +512,7 @@ namespace kpengine::tts_editor
         entry.durable = true;
         entry.error.clear();
         pending_artifacts_.erase(artifact);
+        EnsurePreviewData(entry);
         std::lock_guard lock(view_mutex_);
         view_.library_loaded = true;
         view_.error.clear();
@@ -520,6 +546,7 @@ namespace kpengine::tts_editor
         TtsEntryView entry;
         entry.id = stored.id; entry.text = stored.text; entry.voice_name = stored.voice_name;
         entry.state = tts::TTSJobState::Completed; entry.durable = true; entry.artifact = artifact;
+        EnsurePreviewData(entry);
         entries_.push_back(std::move(entry)); selected_id_ = stored.id;
         std::lock_guard lock(view_mutex_); view_.error.clear(); view_.status = "WAV imported"; view_.library_loaded = true;
     }
@@ -645,10 +672,14 @@ namespace kpengine::tts_editor
                 view_.audio_state = player->GetCurrentState();
                 view_.elapsed_seconds = player->GetCurrentSecond();
                 view_.playback_rate = player->GetPlaybackRate();
-                if (!entry->streaming)
+                if (entry->preview_data)
+                    view_.duration_seconds = entry->preview_data->duration_seconds;
+                else if (!entry->streaming)
                     view_.duration_seconds = player->GetCurrentSecond() +
                                              player->GetRemainSecond();
             }
+            else if (entry->preview_data)
+                view_.duration_seconds = entry->preview_data->duration_seconds;
         }
         ValidateForGeneration(view_.settings, view_.generation_blocker);
         view_.can_generate = view_.settings_loaded && view_.generation_blocker.empty();

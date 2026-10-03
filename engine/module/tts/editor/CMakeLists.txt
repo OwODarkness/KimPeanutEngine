@@ -8,4 +8,4 @@ add_library(TtsEditorMode STATIC
 target_include_directories(TtsEditorMode PUBLIC "${CMAKE_SOURCE_DIR}/engine")
 target_link_libraries(TtsEditorMode
     PUBLIC TTS RuntimeLib
-    PRIVATE EditorUILib KP::ImGui KP::NlohmannJson)
+    PRIVATE EditorUILib ImageIO KP::ImGui KP::NlohmannJson)
