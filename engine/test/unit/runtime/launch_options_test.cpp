@@ -578,6 +578,18 @@ TEST(RuntimeLaunchOptionsTest, NamesAndParsesTheStandaloneAudioPlayerMode)
     EXPECT_NE(level.diagnostic.find("--startup-level"), std::string::npos);
 }
 
+TEST(RuntimeLaunchOptionsTest, NamesAndParsesTheStandaloneTtsMode)
+{
+    namespace rt = kpengine::runtime;
+    EXPECT_STREQ(rt::ApplicationModeName(rt::ApplicationMode::TtsEditor), "tts");
+    EXPECT_EQ(rt::ParseApplicationMode("tts"), rt::ApplicationMode::TtsEditor);
+    EXPECT_EQ(Parse({"--mode", "tts"}).options.application_mode,
+              rt::ApplicationMode::TtsEditor);
+    const auto level = Parse({"--mode", "tts", "--startup-level", "level/a.level"});
+    EXPECT_FALSE(level);
+    EXPECT_NE(level.diagnostic.find("--startup-level"), std::string::npos);
+}
+
 TEST(RuntimeLaunchOptionsTest, RejectsUnknownOptions)
 {
     const auto result = Parse({"--startup-leevl", "level/pbr_showcase.level"});

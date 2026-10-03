@@ -19,6 +19,7 @@ namespace kpengine::tts
     {
         constexpr uint32_t kStreamBufferSeconds = 20;
         constexpr size_t kMaxQueuedTtsTasks = 16;
+        constexpr size_t kMaxOwnedWavBytes = 32u * 1024u * 1024u;
         constexpr auto kMonitorPeriod = std::chrono::milliseconds(10);
 
         template <typename Callback>
@@ -329,6 +330,7 @@ namespace kpengine::tts
     {
         TTSResult result;
         result.turn_id = request.turn_id;
+        std::vector<std::uint8_t> owned_wav;
         if (job)
             result.job = job->token;
         const auto is_cancelled = [job] {
@@ -375,9 +377,16 @@ namespace kpengine::tts
             const auto on_data = [&](const uint8_t* bytes, size_t size) {
                 if (is_cancelled())
                     return false;
+                if (size > kMaxOwnedWavBytes - owned_wav.size())
+                {
+                    result.error_code = -10;
+                    result.error_message = "TTS WAV exceeds the 32 MiB artifact limit";
+                    return false;
+                }
                 const auto decode = decoder.Feed(bytes, size);
                 if (decode == audio::AudioDecodeResult::InvalidData)
                     return false;
+                owned_wav.insert(owned_wav.end(), bytes, bytes + size);
                 if (job && decode == audio::AudioDecodeResult::DataDecoded &&
                     job->first_audio_at == std::chrono::steady_clock::time_point{})
                 {
@@ -400,6 +409,8 @@ namespace kpengine::tts
                 }
             };
             const auto on_error = [&](const std::string& message) {
+                if (result.error_code == -10)
+                    return;
                 result.error_code = -4;
                 result.error_message = message.substr(0, 512);
             };
@@ -414,6 +425,8 @@ namespace kpengine::tts
             if (result.success)
             {
                 result.player_handle = handle;
+                result.wav_bytes =
+                    std::make_shared<const std::vector<std::uint8_t>>(std::move(owned_wav));
                 release_player.Release();
             }
             else
@@ -446,6 +459,12 @@ namespace kpengine::tts
             const auto on_data = [&](const uint8_t* bytes, size_t size) {
                 if (is_cancelled())
                     return false;
+                if (size > kMaxOwnedWavBytes)
+                {
+                    result.error_code = -10;
+                    result.error_message = "TTS WAV exceeds the 32 MiB artifact limit";
+                    return false;
+                }
                 auto clip = audio_loader_->LoadFromMemory(reinterpret_cast<const char*>(bytes), size).data;
                 if (!clip || clip->frame_count == 0 || clip->format.channels == 0 ||
                     clip->format.sample_rate == 0 || clip->pcm.empty())
@@ -463,9 +482,12 @@ namespace kpengine::tts
                 }
                 player->SetClip(std::move(clip));
                 player->Play();
+                owned_wav.assign(bytes, bytes + size);
                 return true;
             };
             const auto on_error = [&](const std::string& message) {
+                if (result.error_code == -10)
+                    return;
                 result.error_code = -4;
                 result.error_message = message.substr(0, 512);
             };
@@ -480,6 +502,8 @@ namespace kpengine::tts
             if (result.success)
             {
                 result.player_handle = handle;
+                result.wav_bytes =
+                    std::make_shared<const std::vector<std::uint8_t>>(std::move(owned_wav));
                 release_player.Release();
             }
             else

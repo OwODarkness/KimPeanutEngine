@@ -80,7 +80,8 @@ namespace kpengine
             bool UsesHostPresentation() const noexcept
             {
                 return application_mode_ == ApplicationMode::TerrainViewer ||
-                       application_mode_ == ApplicationMode::AudioPlayer;
+                       application_mode_ == ApplicationMode::AudioPlayer ||
+                       application_mode_ == ApplicationMode::TtsEditor;
             }
             bool RegisterApplicationHostProvider(ApplicationMode mode,
                                                  ApplicationHostFactory factory,

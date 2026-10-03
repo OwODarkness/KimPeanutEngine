@@ -535,8 +535,7 @@ namespace kpengine
             const auto asset_loading_started = std::chrono::steady_clock::now();
             try
             {
-                if (application_mode_ != ApplicationMode::TerrainViewer &&
-                    application_mode_ != ApplicationMode::AudioPlayer)
+                if (!UsesHostPresentation())
                 {
                     LoadStartupLevel(*startup_asset_session_);
                 }

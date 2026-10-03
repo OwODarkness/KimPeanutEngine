@@ -19,6 +19,14 @@ target_link_libraries(AudioPlayerRegistration PRIVATE AudioPlayerMode ModuleBoot
 target_link_libraries(Module INTERFACE AudioPlayerMode)
 target_sources(Module INTERFACE $<TARGET_OBJECTS:AudioPlayerRegistration>)
 
+target_link_libraries(Module INTERFACE TtsEditorMode)
+add_library(TtsEditorRegistration OBJECT
+    "${CMAKE_SOURCE_DIR}/engine/module/tts/editor/tts_editor_registration.cpp")
+target_include_directories(TtsEditorRegistration PRIVATE
+    "${CMAKE_SOURCE_DIR}/engine")
+target_link_libraries(TtsEditorRegistration PRIVATE TtsEditorMode ModuleBootstrap)
+target_sources(Module INTERFACE $<TARGET_OBJECTS:TtsEditorRegistration>)
+
 if(KPENGINE_ENABLE_TERRAIN)
     add_subdirectory(terrain)
     target_link_libraries(Module INTERFACE Terrain)

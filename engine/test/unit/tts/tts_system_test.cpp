@@ -118,7 +118,35 @@ namespace
             return !is_cancelled() && on_data(wav.data(), wav.size());
         }
         bool SynthesizeStream(kpengine::tts::JobToken, const kpengine::tts::TTSRequest&,
-                              kpengine::tts::AudioDataCallback, kpengine::tts::FinishCallback,
+                              kpengine::tts::AudioDataCallback on_data, kpengine::tts::FinishCallback on_finish,
+                              kpengine::tts::ErrorCallback,
+                              kpengine::tts::CancellationCheck is_cancelled) override
+        {
+            const auto wav = MakeWav();
+            if (is_cancelled() || !on_data(wav.data(), wav.size())) return false;
+            on_finish();
+            return true;
+        }
+    };
+
+    class OversizedProvider final : public kpengine::tts::ITTSProvider
+    {
+    public:
+        bool Initialize(const kpengine::tts::ServerConfig&) override { return true; }
+        void ShutDown() override {}
+        void Cancel(kpengine::tts::JobToken) override {}
+        bool SynthesizeBuffer(kpengine::tts::JobToken, const kpengine::tts::TTSRequest&,
+                              kpengine::tts::AudioDataCallback on_data,
+                              kpengine::tts::ErrorCallback,
+                              kpengine::tts::CancellationCheck) override
+        {
+            std::vector<uint8_t> bytes(32u * 1024u * 1024u + 1u, 0);
+            return on_data(bytes.data(), bytes.size());
+        }
+        bool SynthesizeStream(kpengine::tts::JobToken,
+                              const kpengine::tts::TTSRequest&,
+                              kpengine::tts::AudioDataCallback,
+                              kpengine::tts::FinishCallback,
                               kpengine::tts::ErrorCallback,
                               kpengine::tts::CancellationCheck) override
         {
@@ -410,6 +438,85 @@ TEST(TTSSystemTest, ReportsCompletionOnlyAfterAudibleDrain)
     ASSERT_NE(completed_event, observed_events.end());
     EXPECT_LT(network_event->timestamp, completed_event->timestamp);
     system.ShutDown();
+    audio.ShutDown();
+}
+
+TEST(TTSSystemTest, CapturesImmutableWavForStreamAndBufferAndRejectsOversize)
+{
+    using namespace kpengine::tts;
+    TestAudioSystem audio;
+    ASSERT_TRUE(audio.Initialize());
+    TTSSystem system;
+    system.audio_system = &audio;
+    ASSERT_TRUE(system.InitializeWithProvider(std::make_unique<ImmediateAudioProvider>(), {}));
+    const auto expected = MakeWav();
+    std::array<float, kpengine::audio::AudioSystem::kMaxCallbackFrames * 2> output{};
+
+    for (const bool streaming : {false, true})
+    {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool received = false;
+        TTSResult result;
+        TTSRequest request;
+        request.turn_id = streaming ? 2102 : 2101;
+        request.streaming = streaming;
+        const auto job = system.AsyncSynthesize(request, [&](const TTSResult &value) {
+            std::lock_guard lock(mutex);
+            result = value;
+            received = true;
+            cv.notify_all();
+        });
+        ASSERT_TRUE(job.IsValid());
+        {
+            std::unique_lock lock(mutex);
+            ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&] { return received; }));
+        }
+        ASSERT_TRUE(result.success) << result.error_message;
+        ASSERT_NE(result.wav_bytes, nullptr);
+        EXPECT_EQ(*result.wav_bytes, expected);
+        EXPECT_EQ(result.wav_bytes.use_count(), 1);
+
+        bool completed = false;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!completed && std::chrono::steady_clock::now() < deadline)
+        {
+            audio.Mix(output.data(), kpengine::audio::AudioSystem::kMaxCallbackFrames);
+            for (const auto &event : system.DrainEvents())
+                completed |= event.job == job && event.type == TTSJobEventType::StateChanged &&
+                    event.state == TTSJobState::Completed;
+            if (!completed) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        EXPECT_TRUE(completed);
+        audio.DestroyAudioPlayer(result.player_handle);
+    }
+    system.ShutDown();
+
+    TTSSystem oversized;
+    oversized.audio_system = &audio;
+    ASSERT_TRUE(oversized.InitializeWithProvider(std::make_unique<OversizedProvider>(), {}));
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool received = false;
+    TTSResult result;
+    TTSRequest request;
+    request.turn_id = 2103;
+    const auto job = oversized.AsyncSynthesize(request, [&](const TTSResult &value) {
+        std::lock_guard lock(mutex);
+        result = value;
+        received = true;
+        cv.notify_all();
+    });
+    ASSERT_TRUE(job.IsValid());
+    {
+        std::unique_lock lock(mutex);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&] { return received; }));
+    }
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error_code, -10);
+    EXPECT_EQ(result.wav_bytes, nullptr);
+    EXPECT_FALSE(result.player_handle.IsValid());
+    oversized.ShutDown();
     audio.ShutDown();
 }
 

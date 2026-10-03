@@ -6,3 +6,5 @@ ${CMAKE_CURRENT_SOURCE_DIR}/../..
 
 )
 target_link_libraries(TTS PUBLIC Core Audio PRIVATE Data Log KP::HttpLib Asset KP::NlohmannJson KP::Miniaudio)
+
+add_subdirectory(editor)

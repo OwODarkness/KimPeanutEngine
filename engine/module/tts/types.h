@@ -86,6 +86,7 @@ namespace kpengine::tts
         bool success = false;
         int32_t error_code = 0;
         audio::AudioHandle player_handle;
+        std::shared_ptr<const std::vector<std::uint8_t>> wav_bytes;
         std::string error_message;
         JobToken job{};
         uint64_t turn_id = 0;

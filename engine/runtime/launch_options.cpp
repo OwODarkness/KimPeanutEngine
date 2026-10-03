@@ -637,6 +637,7 @@ namespace kpengine::runtime
             const bool panel_viewer = mode == ApplicationMode::PanelViewer;
             const bool terrain_viewer = mode == ApplicationMode::TerrainViewer;
             const bool audio_player = mode == ApplicationMode::AudioPlayer;
+            const bool tts_editor = mode == ApplicationMode::TtsEditor;
 
             if (terrain_viewer && result.options.startup_level_override.has_value())
             {
@@ -645,6 +646,10 @@ namespace kpengine::runtime
             if (audio_player && result.options.startup_level_override.has_value())
             {
                 return Failure("--startup-level is not valid in audio-player mode");
+            }
+            if (tts_editor && result.options.startup_level_override.has_value())
+            {
+                return Failure("--startup-level is not valid in tts mode");
             }
 
             // The capture, resize, and exit options are owned by whichever
