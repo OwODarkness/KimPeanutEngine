@@ -1,6 +1,7 @@
 #include "tts_editor_editor.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <exception>
@@ -145,6 +146,7 @@ namespace kpengine::tts_editor
             return false;
         }
         controller_ = &controller;
+        transport_icons_ = editor::LoadAudioTransportIconMasks();
         CopySettingsToFields(controller.GetView().settings);
         editor::EditorUIInitInfo init{};
         init.window = context.window_system_->GetNativeHandle();
@@ -212,7 +214,13 @@ namespace kpengine::tts_editor
             if (selected->durable)
             {
                 ImGui::TextColored(kMuted, "Saved WAV ready for buffer preview.");
-                if (ImGui::Button("PLAY SAVED AUDIO"))
+                editor::TransportStripState saved_transport{};
+                saved_transport.instance_id = "tts_saved_preview";
+                saved_transport.playback_state = editor::TransportPlaybackState::Finished;
+                saved_transport.capabilities.toggle_play_pause = true;
+                saved_transport.icons = transport_icons_.GetTransportIcons();
+                const auto action = editor::DrawTransportStrip(saved_transport);
+                if (action.toggle_play_pause)
                     controller_->QueueTogglePlayPause();
                 if (!selected->error.empty()) ImGui::TextColored(kError, "%s", selected->error.c_str());
                 return;
@@ -245,19 +253,49 @@ namespace kpengine::tts_editor
             selected->state != tts::TTSJobState::Cancelled &&
             selected->state != tts::TTSJobState::Failed;
         transport.capabilities.seek = selected->player.IsValid() && !selected->streaming;
+        transport.icons = transport_icons_.GetTransportIcons();
         const auto action = editor::DrawTransportStrip(transport);
         if (action.toggle_play_pause) controller_->QueueTogglePlayPause();
         if (action.stop_voice) controller_->QueueStop();
         if (action.cancel_job) controller_->QueueCancel();
         if (action.seek_seconds) controller_->QueueSeek(*action.seek_seconds);
+        const editor::EditorControlIcon voice_icon = transport_icons_.Get(
+            view.volume > 0.001f ? editor::AudioTransportIcon::VoiceOpen :
+                                   editor::AudioTransportIcon::VoiceClosed);
+        const float volume_icon_size = 18.0f;
+        const ImVec2 volume_origin = ImGui::GetCursorScreenPos();
+        editor::DrawEditorControlIcon(voice_icon,
+            {volume_origin.x, volume_origin.y + 2.0f}, volume_icon_size,
+            IM_COL32(48, 211, 239, 255));
+        ImGui::Dummy({volume_icon_size + 8.0f, ImGui::GetFrameHeight()});
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(std::max(100.0f,
+            ImGui::GetContentRegionAvail().x - 92.0f));
         float volume = view.volume;
-        if (ImGui::SliderFloat("Speech volume", &volume, 0.0f, 1.0f, "%.2f"))
+        if (ImGui::SliderFloat("Speech volume##tts", &volume, 0.0f, 1.0f, "%.2f"))
             controller_->QueueVolume(volume);
+        ImGui::SameLine();
+        ImGui::Text("%d%%", static_cast<int>(std::round(volume * 100.0f)));
         if (!selected->streaming && selected->player.IsValid())
         {
-            float preview_rate = view.playback_rate;
-            if (ImGui::SliderFloat("Preview rate", &preview_rate, 0.5f, 2.0f, "%.2fx"))
-                controller_->QueuePlaybackRate(preview_rate);
+            ImGui::TextUnformatted("SPEECH SPEED");
+            ImGui::SameLine();
+            const float rates[] = {0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f};
+            const char *rate_labels[] = {
+                "0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"};
+            int selected_rate = 2;
+            for (int i = 0; i < 6; ++i)
+            {
+                if (std::abs(view.playback_rate - rates[i]) < 0.001f)
+                {
+                    selected_rate = i;
+                    break;
+                }
+            }
+            ImGui::SetNextItemWidth(110.0f);
+            if (ImGui::Combo("##tts_preview_rate", &selected_rate, rate_labels,
+                             6))
+                controller_->QueuePlaybackRate(rates[selected_rate]);
         }
         if (selected->streaming)
             ImGui::TextColored(kMuted, "Stream preview: seek and rate unavailable.");

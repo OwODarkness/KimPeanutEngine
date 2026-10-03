@@ -102,6 +102,8 @@ namespace kpengine::editor
     };
 
     const char *TransportPlaybackStateLabel(TransportPlaybackState state) noexcept;
+    void DrawEditorControlIcon(const EditorControlIcon &icon, ImVec2 origin,
+                               float size, ImU32 tint);
     TransportStripActions DrawTransportStrip(
         const TransportStripState &state,
         const TransportStripStyle &style = {});

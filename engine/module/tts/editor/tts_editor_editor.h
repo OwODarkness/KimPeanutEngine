@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include "editor/ui/audio_transport_icons.h"
 #include "tts_editor_controller.h"
 
 namespace kpengine::editor { class EditorUI; }
@@ -32,6 +33,7 @@ namespace kpengine::tts_editor
         TtsEditorSettings FieldsToSettings() const;
 
         std::unique_ptr<editor::EditorUI> ui_;
+        editor::AudioTransportIconMasks transport_icons_;
         TtsEditorController *controller_ = nullptr;
         TtsEditorSettings draft_settings_;
         std::array<char, 4097> text_{};

@@ -104,3 +104,19 @@ duplicate status and the nine unrelated full-suite failures separately.
 - `cmake --build build --config Debug --target KimPeanutEngine` — PASS.
 - The rebuilt TTS editor launched and loaded its saved settings. No test suite
   or playback replay was run in this correction pass.
+
+## Audio editor preview controls (2026-10-03)
+
+- TTS preview transport now uses the Audio editor's play, pause, and stop icon
+  masks through `EditorUILib`; the TTS target does not depend on
+  `AudioPlayerMode`.
+- Speech volume is presented with the Audio editor voice icon, a slider, and a
+  percentage readout. Buffered previews use the same discrete playback-rate
+  choices as Audio editor; streams still do not expose seek or rate controls.
+- `cmake --build build --config Debug --target TtsEditorMode` — PASS.
+- `cmake --build build --config Debug --target KimPeanutEngine` rebuilt its
+  libraries but could not relink the executable: LNK1168 reported the existing
+  TTS editor process (PID 8932) has `KimPeanutEngine.exe` open. The live process
+  was preserved; the updated UI will appear after that process closes and the
+  executable is rebuilt/restarted.
+- No tests were run.

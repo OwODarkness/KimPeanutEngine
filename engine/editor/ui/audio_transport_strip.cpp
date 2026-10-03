@@ -262,6 +262,48 @@ namespace kpengine::editor
         return "UNKNOWN";
     }
 
+    void DrawEditorControlIcon(const EditorControlIcon &icon, const ImVec2 origin,
+                               const float size, const ImU32 tint)
+    {
+        if (!icon.IsValid() || size <= 0.0f)
+            return;
+        const float pixel_width = size / static_cast<float>(icon.width);
+        const float pixel_height = size / static_cast<float>(icon.height);
+        ImDrawList *const draw = ImGui::GetWindowDrawList();
+        for (std::uint32_t y = 0; y < icon.height; ++y)
+        {
+            std::uint32_t x = 0;
+            while (x < icon.width)
+            {
+                while (x < icon.width && icon.alpha[
+                    static_cast<std::size_t>(y) * icon.width + x] < 12)
+                    ++x;
+                const std::uint32_t run_start = x;
+                std::uint32_t alpha_sum = 0;
+                std::uint32_t run_count = 0;
+                while (x < icon.width && icon.alpha[
+                    static_cast<std::size_t>(y) * icon.width + x] >= 12)
+                {
+                    alpha_sum += icon.alpha[
+                        static_cast<std::size_t>(y) * icon.width + x];
+                    ++run_count;
+                    ++x;
+                }
+                if (run_count == 0)
+                    continue;
+                const std::uint32_t source_alpha = alpha_sum / run_count;
+                const std::uint32_t tint_alpha = tint >> IM_COL32_A_SHIFT;
+                const ImU32 color = (tint & 0x00ffffffu) |
+                    (((source_alpha * tint_alpha) / 255u) << IM_COL32_A_SHIFT);
+                draw->AddRectFilled(
+                    {origin.x + static_cast<float>(run_start) * pixel_width,
+                     origin.y + static_cast<float>(y) * pixel_height},
+                    {origin.x + static_cast<float>(x) * pixel_width,
+                     origin.y + static_cast<float>(y + 1) * pixel_height}, color);
+            }
+        }
+    }
+
     TransportStripActions DrawTransportStrip(const TransportStripState &state,
                                              const TransportStripStyle &style)
     {
