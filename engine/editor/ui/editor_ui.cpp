@@ -584,8 +584,7 @@ namespace kpengine::editor
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildWorldOutlinerPanel()
     {
-        return std::make_unique<EditorWorldOutlinerComponent>(*actor_model_,
-                                                              &glow_enabled_);
+        return std::make_unique<EditorWorldOutlinerComponent>(*actor_model_);
     }
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildActorInspectorPanel()
@@ -640,8 +639,7 @@ namespace kpengine::editor
     }
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildLogPanel(
-        LogSystem *log_system, const LogLevelColorTable &log_colors,
-        const bool *glow_enabled)
+        LogSystem *log_system, const LogLevelColorTable &log_colors)
     {
         // Geometry belongs to the tool row while the log is docked; this config only
         // describes the panel if it is ever given its own window.
@@ -650,8 +648,7 @@ namespace kpengine::editor
         log_config.height_ratio = 0.26f;
         log_config.pos_y_ratio = 0.7f;
         log_config.extra_flags = ImGuiWindowFlags_HorizontalScrollbar;
-        return std::make_unique<EditorLogComponent>(log_system, log_colors, log_config,
-                                                    glow_enabled);
+        return std::make_unique<EditorLogComponent>(log_system, log_colors, log_config);
     }
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildConsolePanel(
@@ -774,7 +771,7 @@ namespace kpengine::editor
                       /*open=*/false);
 
         row->AddPanel(kToolRowLogId, "Log",
-                      BuildLogPanel(log_system, log_colors, &glow_enabled_),
+                      BuildLogPanel(log_system, log_colors),
                       /*open=*/true);
 
         // The console keeps its historical "closed until asked for" state.

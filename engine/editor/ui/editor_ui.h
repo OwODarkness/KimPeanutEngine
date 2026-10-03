@@ -167,8 +167,7 @@ namespace kpengine::editor
         std::unique_ptr<EditorWindowComponent> BuildWorldOutlinerPanel();
         std::unique_ptr<EditorWindowComponent> BuildActorInspectorPanel();
         std::unique_ptr<EditorWindowComponent> BuildLogPanel(
-            LogSystem *log_system, const LogLevelColorTable &log_colors,
-            const bool *glow_enabled);
+            LogSystem *log_system, const LogLevelColorTable &log_colors);
         std::unique_ptr<EditorWindowComponent> BuildConsolePanel(
             runtime::command::CommandRegistry *command_registry,
             input::InputSystem *input_system, ImFont *code_font);

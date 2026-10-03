@@ -1,5 +1,4 @@
 #include "editor/log/editor_log_component.h"
-#include "editor/ui/editor_ui_glow.h"
 
 #include <algorithm>
 #include <cctype>
@@ -72,10 +71,9 @@ namespace kpengine::editor
     }
 
     EditorLogComponent::EditorLogComponent(LogSystem *log_system, const LogLevelColorTable &colors,
-                                           EditorWindowConfig config,
-                                           const bool *glow_enabled)
+                                           EditorWindowConfig config)
         : EditorWindowComponent("OutputLog", config),
-          log_system_(log_system), colors_(colors), glow_enabled_(glow_enabled) {}
+          log_system_(log_system), colors_(colors) {}
 
     void EditorLogComponent::RenderContent()
     {
@@ -175,18 +173,7 @@ namespace kpengine::editor
         // each frame would re-run the timestamp/level formatting below on all of them.
         ImGui::BeginChild("##log_entries", ImVec2(0.0f, 0.0f), false,
                           ImGuiWindowFlags_HorizontalScrollbar);
-        const bool glow_logs = glow_enabled_ == nullptr || *glow_enabled_;
-        constexpr uint32_t kLogGlowRegion = 0xed050003U;
         ImDrawList *const log_draw_list = ImGui::GetWindowDrawList();
-        if (glow_logs)
-        {
-            const ImVec2 window_min = ImGui::GetWindowPos();
-            const ImVec2 window_size = ImGui::GetWindowSize();
-            BeginEditorGlowRegion(log_draw_list, kLogGlowRegion, window_min,
-                                  ImVec2(window_min.x + window_size.x,
-                                         window_min.y + window_size.y),
-                                  7.0f);
-        }
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(filtered_logs.size()));
         while (clipper.Step())
@@ -212,24 +199,15 @@ namespace kpengine::editor
                     ImGui::GetTextLineHeight() + style.FramePadding.y * 2.0f);
                 const ImU32 text_color = ImGui::ColorConvertFloat4ToU32(
                     ImVec4(color.r, color.g, color.b, color.a));
-                // Keep the selectable hit row crisp; only its text emits bloom.
                 const bool clicked = ImGui::Selectable(
                     "##log-row", selected,
                     ImGuiSelectableFlags_AllowDoubleClick |
                         ImGuiSelectableFlags_SpanAllColumns,
                     row_size);
-                if (glow_logs)
-                {
-                    PushEditorGlowEmission(log_draw_list, kLogGlowRegion, text_color, 0.6f);
-                }
                 log_draw_list->AddText(
                     ImVec2(text_position.x + style.FramePadding.x,
                            text_position.y + style.FramePadding.y),
                     text_color, formatted_log.c_str());
-                if (glow_logs)
-                {
-                    PopEditorGlowEmission(log_draw_list, kLogGlowRegion);
-                }
                 const bool hovered = ImGui::IsItemHovered(
                     ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
                 if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
@@ -287,10 +265,6 @@ namespace kpengine::editor
             // The clipper has submitted the visible rows, so ImGui can resolve
             // the final scroll range after this request.
             ImGui::SetScrollHereY(1.0f);
-        }
-        if (glow_logs)
-        {
-            EndEditorGlowRegion(log_draw_list, kLogGlowRegion);
         }
         ImGui::EndChild();
         jump_to_latest_ = false;

@@ -56,7 +56,6 @@ namespace kpengine::audio_player
         const ImVec4 kMuted = AudioPlayerTheme::Vec(AudioPlayerTheme::muted);
         const ImVec4 kText = AudioPlayerTheme::Vec(AudioPlayerTheme::text);
         const ImVec4 kDanger = AudioPlayerTheme::Vec(AudioPlayerTheme::error);
-        constexpr bool kAudioPlayerLogGlowEnabled = false;
         constexpr std::uint32_t kTransportIconSize = 24;
 
         std::vector<std::uint8_t> LoadTransportIconMask(const std::string_view filename)
@@ -1286,8 +1285,7 @@ namespace kpengine::audio_player
                 }, content_font), true, editor::EditorLayoutSlot::ToolRow);
             const auto log_panel = std::make_shared<editor::EditorLogComponent>(
                 context.log_system_.get(), editor::DefaultLogColors(),
-                editor::EditorWindowConfig{},
-                &kAudioPlayerLogGlowEnabled);
+                editor::EditorWindowConfig{});
             dock_host_->AddPanel(
                 "audio_log", "Output Log",
                 std::make_unique<AudioPlayerDockPanel>("Output Log", [log_panel] {
