@@ -472,48 +472,14 @@ namespace kpengine::audio_player
                                                    state.voice_open_icon))
                 actions.muted = !state.is_muted;
             ImGui::SameLine(0.0f, 8.0f);
-            const ImVec2 origin = ImGui::GetCursorScreenPos();
-            ImGui::InvisibleButton("##AudioPreviewGain", ImVec2(width, 36.0f));
-            const bool hovered = ImGui::IsItemHovered();
-            const bool active = ImGui::IsItemActive();
-            const float current_volume = std::clamp(state.volume, 0.0f, 1.0f);
-            float adjusted_volume = current_volume;
-            if (active && ImGui::IsMouseDown(ImGuiMouseButton_Left))
-            {
-                adjusted_volume = std::clamp(
-                    (ImGui::GetIO().MousePos.x - origin.x) / width, 0.0f, 1.0f);
-            }
-            else if (ImGui::IsItemFocused())
-            {
-                if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
-                    adjusted_volume = std::max(0.0f, current_volume - 0.05f);
-                if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
-                    adjusted_volume = std::min(1.0f, current_volume + 0.05f);
-            }
-            if (adjusted_volume != current_volume)
-                actions.volume = adjusted_volume;
-
-            ImDrawList *draw = ImGui::GetWindowDrawList();
-            const ImVec2 track_min{origin.x, origin.y + 14.0f};
-            const ImVec2 track_max{origin.x + width, origin.y + 22.0f};
-            draw->AddRectFilled(track_min, track_max, kBackground);
-            const float fill_x = track_min.x + width * adjusted_volume;
-            if (fill_x > track_min.x)
-                draw->AddRectFilled(track_min, {fill_x, track_max.y}, kCyan);
-            draw->AddRect(track_min, track_max, hovered ? kCyan : kBorder);
-
-            char percent_text[8]{};
-            std::snprintf(percent_text, sizeof(percent_text), "%d%%",
-                          static_cast<int>(std::round(adjusted_volume * 100.0f)));
-            const float percent_width = ImGui::CalcTextSize(percent_text).x;
-            draw->AddText({origin.x + width + 10.0f,
-                           origin.y + (36.0f - ImGui::GetFontSize()) * 0.5f},
-                          kCyan, percent_text);
-            if (hovered)
-                ImGui::SetTooltip("Volume: %s  (click, drag, or use arrow keys)",
-                                  percent_text);
-            ImGui::SetCursorScreenPos(origin);
-            ImGui::Dummy(ImVec2(width + 10.0f + percent_width, 36.0f));
+            const editor::AudioVolumeProgressStyle style{
+                .track_background = kBackground,
+                .track_border = kBorder,
+                .fill = kCyan,
+                .value_text = kCyan};
+            if (const auto volume = editor::DrawAudioVolumeProgressControl(
+                    "##AudioPreviewGain", state.volume, width, style))
+                actions.volume = *volume;
         }
 
         void DrawStatus(ImDrawList &draw, const AudioPreviewState &state,

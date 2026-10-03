@@ -147,7 +147,9 @@ namespace kpengine::tts_editor
         }
         controller_ = &controller;
         transport_icons_ = editor::LoadAudioTransportIconMasks();
-        CopySettingsToFields(controller.GetView().settings);
+        const TtsEditorView initial_view = controller.GetView();
+        last_audible_volume_ = std::clamp(initial_view.volume, 0.05f, 1.0f);
+        CopySettingsToFields(initial_view.settings);
         editor::EditorUIInitInfo init{};
         init.window = context.window_system_->GetNativeHandle();
         init.editor_presentation_bridge =
@@ -209,6 +211,66 @@ namespace kpengine::tts_editor
         if (!selected->error.empty())
             ImGui::TextColored(kError, "%s", selected->error.c_str());
         ImGui::Spacing();
+        const auto draw_preview_controls = [&]()
+        {
+            const bool can_change_rate = !selected->streaming && selected->durable;
+            if (can_change_rate)
+            {
+                ImGui::SameLine(0.0f, 12.0f);
+                const float rates[] = {0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f};
+                const char *rate_labels[] = {
+                    "0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"};
+                int selected_rate = 2;
+                for (int i = 0; i < 6; ++i)
+                {
+                    if (std::abs(view.playback_rate - rates[i]) < 0.001f)
+                    {
+                        selected_rate = i;
+                        break;
+                    }
+                }
+                ImGui::TextUnformatted("SPEED");
+                ImGui::SameLine(0.0f, 8.0f);
+                ImGui::SetNextItemWidth(132.0f);
+                if (ImGui::Combo("##tts_preview_rate", &selected_rate,
+                                 rate_labels, 6))
+                    controller_->QueuePlaybackRate(rates[selected_rate]);
+            }
+
+            ImGui::SameLine(0.0f, 12.0f);
+            const bool muted = view.volume <= 0.001f;
+            if (!muted)
+                last_audible_volume_ = view.volume;
+            const editor::EditorControlIcon voice_icon = transport_icons_.Get(
+                muted ? editor::AudioTransportIcon::VoiceClosed :
+                        editor::AudioTransportIcon::VoiceOpen);
+            const ImVec2 mute_button_size{60.0f, 36.0f};
+            const bool toggle_mute = ImGui::Button(
+                muted ? "##tts_unmute" : "##tts_mute", mute_button_size);
+            const ImVec2 button_min = ImGui::GetItemRectMin();
+            const ImVec2 button_max = ImGui::GetItemRectMax();
+            constexpr float icon_size = 18.0f;
+            const ImVec2 icon_origin{
+                button_min.x + (mute_button_size.x - icon_size) * 0.5f,
+                button_min.y + (mute_button_size.y - icon_size) * 0.5f};
+            editor::DrawEditorControlIcon(voice_icon,
+                icon_origin, icon_size,
+                IM_COL32(48, 211, 239, 255));
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", muted ? "Unmute voice" : "Mute voice");
+            if (toggle_mute)
+                controller_->QueueVolume(muted ? last_audible_volume_ : 0.0f);
+            ImGui::SameLine(0.0f, 12.0f);
+            const float percent_width = ImGui::CalcTextSize("100%").x;
+            const float volume_width = std::max(36.0f,
+                ImGui::GetContentRegionAvail().x - 10.0f - percent_width);
+            const editor::AudioVolumeProgressStyle volume_style{};
+            if (const auto volume = editor::DrawAudioVolumeProgressControl(
+                    "##tts_volume_progress", view.volume, volume_width, volume_style))
+                controller_->QueueVolume(*volume);
+            ImGui::Unindent(10.0f);
+            ImGui::Dummy({0.0f, 8.0f});
+        };
         if (!selected->player.IsValid())
         {
             if (selected->durable)
@@ -219,9 +281,17 @@ namespace kpengine::tts_editor
                 saved_transport.playback_state = editor::TransportPlaybackState::Finished;
                 saved_transport.capabilities.toggle_play_pause = true;
                 saved_transport.icons = transport_icons_.GetTransportIcons();
-                const auto action = editor::DrawTransportStrip(saved_transport);
+                editor::TransportStripStyle transport_style{};
+                transport_style.button_width = 78.0f;
+                transport_style.button_height = 36.0f;
+                transport_style.stop_before_play = true;
+                ImGui::Indent(10.0f);
+                ImGui::Dummy({0.0f, 8.0f});
+                const auto action = editor::DrawTransportStrip(saved_transport,
+                                                                transport_style);
                 if (action.toggle_play_pause)
                     controller_->QueueTogglePlayPause();
+                draw_preview_controls();
                 if (!selected->error.empty()) ImGui::TextColored(kError, "%s", selected->error.c_str());
                 return;
             }
@@ -254,51 +324,20 @@ namespace kpengine::tts_editor
             selected->state != tts::TTSJobState::Failed;
         transport.capabilities.seek = selected->player.IsValid() && !selected->streaming;
         transport.icons = transport_icons_.GetTransportIcons();
-        const auto action = editor::DrawTransportStrip(transport);
+        editor::TransportStripStyle transport_style{};
+        transport_style.button_width = 78.0f;
+        transport_style.button_height = 36.0f;
+        transport_style.stop_before_play = true;
+        ImGui::Indent(10.0f);
+        ImGui::Dummy({0.0f, 8.0f});
+        const auto action = editor::DrawTransportStrip(transport, transport_style);
         if (action.toggle_play_pause) controller_->QueueTogglePlayPause();
         if (action.stop_voice) controller_->QueueStop();
         if (action.cancel_job) controller_->QueueCancel();
         if (action.seek_seconds) controller_->QueueSeek(*action.seek_seconds);
-        const editor::EditorControlIcon voice_icon = transport_icons_.Get(
-            view.volume > 0.001f ? editor::AudioTransportIcon::VoiceOpen :
-                                   editor::AudioTransportIcon::VoiceClosed);
-        const float volume_icon_size = 18.0f;
-        const ImVec2 volume_origin = ImGui::GetCursorScreenPos();
-        editor::DrawEditorControlIcon(voice_icon,
-            {volume_origin.x, volume_origin.y + 2.0f}, volume_icon_size,
-            IM_COL32(48, 211, 239, 255));
-        ImGui::Dummy({volume_icon_size + 8.0f, ImGui::GetFrameHeight()});
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(std::max(100.0f,
-            ImGui::GetContentRegionAvail().x - 92.0f));
-        float volume = view.volume;
-        if (ImGui::SliderFloat("Speech volume##tts", &volume, 0.0f, 1.0f, "%.2f"))
-            controller_->QueueVolume(volume);
-        ImGui::SameLine();
-        ImGui::Text("%d%%", static_cast<int>(std::round(volume * 100.0f)));
-        if (!selected->streaming && selected->player.IsValid())
-        {
-            ImGui::TextUnformatted("SPEECH SPEED");
-            ImGui::SameLine();
-            const float rates[] = {0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f};
-            const char *rate_labels[] = {
-                "0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"};
-            int selected_rate = 2;
-            for (int i = 0; i < 6; ++i)
-            {
-                if (std::abs(view.playback_rate - rates[i]) < 0.001f)
-                {
-                    selected_rate = i;
-                    break;
-                }
-            }
-            ImGui::SetNextItemWidth(110.0f);
-            if (ImGui::Combo("##tts_preview_rate", &selected_rate, rate_labels,
-                             6))
-                controller_->QueuePlaybackRate(rates[selected_rate]);
-        }
+        draw_preview_controls();
         if (selected->streaming)
-            ImGui::TextColored(kMuted, "Stream preview: seek and rate unavailable.");
+            ImGui::TextColored(kMuted, "Stream preview: seek and speed unavailable.");
     }
 
     void TtsEditorEditor::RenderDialogList(const TtsEditorView &view)

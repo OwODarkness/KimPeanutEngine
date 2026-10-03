@@ -86,6 +86,7 @@ namespace kpengine::editor
         ImU32 button_icon = IM_COL32(48, 211, 239, 255);
         bool bloom_played = false;
         bool show_state = true;
+        bool stop_before_play = false;
         float button_width = 60.0f;
         float button_height = 34.0f;
     };
@@ -101,9 +102,20 @@ namespace kpengine::editor
         std::optional<float> seek_seconds;
     };
 
+    struct AudioVolumeProgressStyle
+    {
+        ImU32 track_background = IM_COL32(2, 9, 14, 255);
+        ImU32 track_border = IM_COL32(16, 82, 101, 255);
+        ImU32 fill = IM_COL32(48, 211, 239, 255);
+        ImU32 value_text = IM_COL32(48, 211, 239, 255);
+    };
+
     const char *TransportPlaybackStateLabel(TransportPlaybackState state) noexcept;
     void DrawEditorControlIcon(const EditorControlIcon &icon, ImVec2 origin,
                                float size, ImU32 tint);
+    std::optional<float> DrawAudioVolumeProgressControl(
+        const char *id, float volume, float width,
+        const AudioVolumeProgressStyle &style = {});
     TransportStripActions DrawTransportStrip(
         const TransportStripState &state,
         const TransportStripStyle &style = {});

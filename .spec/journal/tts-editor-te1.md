@@ -120,3 +120,34 @@ duplicate status and the nine unrelated full-suite failures separately.
   was preserved; the updated UI will appear after that process closes and the
   executable is rebuilt/restarted.
 - No tests were run.
+
+## Compact audio preview controls (2026-10-03)
+
+- Moved TTS Play/Stop, buffered speech speed, and voice volume into one row.
+  The voice control now uses Audio editor's filled progress interaction and
+  percentage display; the shared `EditorUILib` widget also replaced the
+  duplicate implementation in Audio editor.
+- `cmake --build build --config Debug --target TtsEditorMode` — PASS.
+- `cmake --build build --config Debug --target AudioPlayerMode` — PASS.
+- `cmake --build build --config Debug --target KimPeanutEngine` — PASS. The
+  TTS editor restarted, settings loaded, and its GLFW window was verified on
+  the Default desktop in the foreground.
+- `capture.glfw_window` exported
+  `save/screenshots/validation/tts-controls-row-20261003.png`; visual review
+  confirmed the transport, speed selector, and filled voice control share one
+  row. No tests were run.
+
+## Preview control spacing and mute button (2026-10-03)
+
+- Added horizontal/vertical padding, widened Play/Stop to Audio editor's
+  78×36 buttons, reversed their order, and widened the speed selector to match
+  Audio editor. The voice icon is now a 60×36 mute/unmute button; unmuting
+  restores the last audible volume. TTS and Audio editor share the filled
+  volume progress control.
+- `cmake --build build --config Debug --target TtsEditorMode` — PASS.
+- `cmake --build build --config Debug --target AudioPlayerMode` — PASS.
+- `cmake --build build --config Debug --target KimPeanutEngine` — PASS. The
+  rebuilt TTS editor is visible on the Default desktop.
+- `capture.glfw_window` exported
+  `save/screenshots/validation/tts-controls-row-padding-20261003.png`; visual
+  review confirms the padded row and mute button. No tests were run.

@@ -304,6 +304,59 @@ namespace kpengine::editor
         }
     }
 
+    std::optional<float> DrawAudioVolumeProgressControl(
+        const char *const id, const float volume, const float width,
+        const AudioVolumeProgressStyle &style)
+    {
+        if (id == nullptr || width <= 0.0f)
+            return std::nullopt;
+        constexpr float height = 36.0f;
+        constexpr float percent_gap = 10.0f;
+        const float current = std::clamp(
+            std::isfinite(volume) ? volume : 0.0f, 0.0f, 1.0f);
+        float adjusted = current;
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton(id, {width, height});
+        const bool hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        {
+            adjusted = std::clamp(
+                (ImGui::GetIO().MousePos.x - origin.x) / width, 0.0f, 1.0f);
+        }
+        else if (ImGui::IsItemFocused())
+        {
+            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+                adjusted = std::max(0.0f, current - 0.05f);
+            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+                adjusted = std::min(1.0f, current + 0.05f);
+        }
+
+        ImDrawList *const draw = ImGui::GetWindowDrawList();
+        const ImVec2 track_min{origin.x, origin.y + 14.0f};
+        const ImVec2 track_max{origin.x + width, origin.y + 22.0f};
+        draw->AddRectFilled(track_min, track_max, style.track_background);
+        const float fill_x = track_min.x + width * adjusted;
+        if (fill_x > track_min.x)
+            draw->AddRectFilled(track_min, {fill_x, track_max.y}, style.fill);
+        draw->AddRect(track_min, track_max, hovered ? style.fill : style.track_border);
+
+        char percent_text[8]{};
+        std::snprintf(percent_text, sizeof(percent_text), "%d%%",
+                      static_cast<int>(std::round(adjusted * 100.0f)));
+        const float percent_width = ImGui::CalcTextSize(percent_text).x;
+        draw->AddText({origin.x + width + percent_gap,
+                       origin.y + (height - ImGui::GetFontSize()) * 0.5f},
+                      style.value_text, percent_text);
+        if (hovered)
+            ImGui::SetTooltip("Voice volume: %s (click, drag, or use arrow keys)",
+                              percent_text);
+        ImGui::SetCursorScreenPos(origin);
+        ImGui::Dummy({width + percent_gap + percent_width, height});
+        if (adjusted != current)
+            return adjusted;
+        return std::nullopt;
+    }
+
     TransportStripActions DrawTransportStrip(const TransportStripState &state,
                                              const TransportStripStyle &style)
     {
@@ -351,16 +404,33 @@ namespace kpengine::editor
                 state.capabilities.previous, "##Previous", "[ PREV ]", "Previous track",
                 state.icons.previous, false);
             const bool playing = IsPlaying(state.playback_state);
-            actions.toggle_play_pause = draw_capability_button(
-                state.capabilities.toggle_play_pause, "##Toggle", playing ? "[ PAUSE ]" : "[ PLAY ]",
-                playing ? "Pause playback" : "Play", playing ? state.icons.pause : state.icons.play,
-                playing);
+            const auto draw_play_pause = [&]()
+            {
+                actions.toggle_play_pause = draw_capability_button(
+                    state.capabilities.toggle_play_pause, "##Toggle",
+                    playing ? "[ PAUSE ]" : "[ PLAY ]",
+                    playing ? "Pause playback" : "Play",
+                    playing ? state.icons.pause : state.icons.play, playing);
+            };
+            const auto draw_stop = [&]()
+            {
+                actions.stop_voice = draw_capability_button(
+                    state.capabilities.stop_voice, "##StopVoice", "[ STOP ]",
+                    "Stop voice", state.icons.stop, false);
+            };
+            if (style.stop_before_play)
+            {
+                draw_stop();
+                draw_play_pause();
+            }
+            else
+            {
+                draw_play_pause();
+                draw_stop();
+            }
             actions.next = draw_capability_button(
                 state.capabilities.next, "##Next", "[ NEXT ]", "Next track",
                 state.icons.next, false);
-            actions.stop_voice = draw_capability_button(
-                state.capabilities.stop_voice, "##StopVoice", "[ STOP ]", "Stop voice",
-                state.icons.stop, false);
             actions.cancel_job = draw_capability_button(
                 state.capabilities.cancel_job, "##CancelJob", "[ CANCEL ]", "Cancel job",
                 state.icons.cancel, false);

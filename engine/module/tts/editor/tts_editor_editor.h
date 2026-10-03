@@ -35,6 +35,7 @@ namespace kpengine::tts_editor
         std::unique_ptr<editor::EditorUI> ui_;
         editor::AudioTransportIconMasks transport_icons_;
         TtsEditorController *controller_ = nullptr;
+        float last_audible_volume_ = 0.8f;
         TtsEditorSettings draft_settings_;
         std::array<char, 4097> text_{};
         std::array<char, 256> address_{};
