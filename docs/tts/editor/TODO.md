@@ -30,11 +30,12 @@ Architecture: [PLANS.md](PLANS.md). First implementation design:
 - [x] Add host commands for status, generate, cancel, and settings inspection
   without exposing reference text in ordinary status output, so visible
   runtime validation can inspect the mode through the command registry.
-- [ ] Debug TTS/Audio and mode tests pass. Launch matching Debug Vulkan with
-  validation outside the sandbox on the Default desktop, verify the `GLFW30`
-  foreground window, exercise the real service and a failure state, capture
-  under `save/screenshots/validation/`, and verify clean shutdown. Repeat
-  layout review at wide/compact widths and keyboard focus.
+- [x] Debug Audio/TTS and mode tests pass (81/81). Launch Debug Vulkan with
+  validation outside the sandbox on the Default desktop; verify the `GLFW30`
+  foreground window; exercise the unconfigured failure guard and a successful
+  local service request; capture wide and compact layouts under
+  `save/screenshots/validation/`; and verify clean shutdown.
+- [ ] Review keyboard focus inside the text input in the visible editor.
 
 ## TE2 — durable dialog library and WAV export (implementation complete)
 

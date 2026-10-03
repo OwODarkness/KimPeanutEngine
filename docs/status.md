@@ -1,16 +1,19 @@
 # Project Status
 
-- **Standalone TTS editor (2026-10-03; TE1/TE2 implementation, runtime check pending)** —
+- **Standalone TTS editor (2026-10-03; TE1/TE2 implemented, runtime checked)** —
   `--mode tts` now has a separate TTS editor target, session dialog, voice
   presets, asynchronous generation, cancellation, and stream/buffer preview
   controls. Local server address, port, reference audio and reference text load
   from an auto-created, Git-ignored `tts/settings.json`. TE2 adds bounded
   immutable WAV capture, canonical PCM16 artifacts, restart-persistent dialogs,
   WAV import/export, duplicate/delete, and restored buffer preview. Focused
-  Debug TTS tests pass 19/19. Visible window and real-service checks remain
-  pending; synthesis pitch/emotion remain TE3. →
+  Debug Audio/TTS/mode tests pass 81/81. The Debug Vulkan TTS mode loaded the
+  local voice settings, completed a live Japanese stream, handled the missing-
+  server failure, and shut down cleanly. Wide and compact captures are saved;
+  keyboard focus review remains. Synthesis pitch/emotion remain TE3. →
   [architecture](tts/editor/PLANS.md), [TE1](tts/editor/.plan/TE1.md),
   [TE2](tts/editor/.plan/TE2.md), [roadmap](tts/editor/TODO.md),
+  [TE1 journal](../.spec/journal/tts-editor-te1.md),
   [TE2 journal](../.spec/journal/tts-editor-te2.md)
 
 - **Audio Player P1 presentation (2026-10-02; partial)** — Player panels share

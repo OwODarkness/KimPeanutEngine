@@ -58,5 +58,34 @@ no Render or RHI resource contract changed.
 
 ## Remaining work
 
-Run visible Vulkan validation when the user resumes TE1 acceptance. Investigate
-the nine unrelated full-suite failures separately from TTS work.
+Run keyboard-focus review in the visible editor. Investigate the unexpected
+duplicate status and the nine unrelated full-suite failures separately.
+
+## Runtime validation (2026-10-03)
+
+- Built the focused Debug targets and ran
+  `ctest --test-dir build -C Debug -R "Audio|RuntimeLaunchOptionsTest|TTS|TtsEditor" --output-on-failure` — 81/81 passed.
+- Launched `build/Debug/KimPeanutEngine.exe --mode tts --graphics-api vulkan --agent-port 37373`
+  outside the sandbox. Verified the visible `GLFW30` window was foreground on
+  the Default desktop at launch. The Debug build enables the Khronos validation
+  layer when available; that layer was listed locally and the run log had no
+  validation errors.
+- With blank settings, `tts.generate` failed locally with
+  `Set the TTS server address`; no provider request was made. After the user
+  supplied a local GPT-SoVITS endpoint and Japanese reference voice pair, the
+  ignored `tts/settings.json` was updated without adding those private values
+  to the repository.
+- The configured runtime reported no generation blocker. A short Japanese
+  request completed with job state `Completed`, audio state `Finished`, and
+  no error. The endpoint returned 405 to a non-synthesis `OPTIONS` probe, then
+  accepted synthesis through its expected POST path.
+- Captures: `save/screenshots/validation/tts-te1-debug-wide-20261003.png`
+  (1920x1080) and
+  `save/screenshots/validation/tts-te1-debug-compact-live-20261003.png`
+  (800x650). Both were reviewed. The process exited after a close request to
+  its GLFW window.
+- Keyboard focus inside an ImGui text field remains unverified because native
+  desktop input automation was unavailable. The final runtime status also
+  reported `Dialog duplicated` and two entries; no duplicate command was sent
+  by this validation pass, and the session library was left untouched for user
+  review.

@@ -4,7 +4,7 @@ Architecture: [PLANS.md](PLANS.md). Existing service work:
 [Audio A2](../audio/.plan/A2.md). The standalone workspace has its own
 [TE1 acceptance ledger](editor/TODO.md).
 
-- [ ] **TE1 — standalone speech editor:** build `--mode tts` around the current
+- [x] **TE1 — standalone speech editor:** build `--mode tts` around the current
   asynchronous TTS and Audio paths, load and create local settings, and offer
   text entry, generation, voice selection, job state, cancel, and truthful
   stream/buffer playback panels selected from settings. See
