@@ -89,3 +89,18 @@ duplicate status and the nine unrelated full-suite failures separately.
   reported `Dialog duplicated` and two entries; no duplicate command was sent
   by this validation pass, and the session library was left untouched for user
   review.
+
+## Finished stream replay correction (2026-10-03)
+
+- The user reported that completed streaming speech could not play again until
+  the editor restarted. The UI disabled Play for a finished stream, and the
+  controller rejected that action because the consumed stream ring cannot be
+  rewound.
+- Finished, saved streams now enable Play. The controller retires the consumed
+  stream player, loads its already-persisted canonical WAV into a buffer
+  preview, and starts that preview. This makes replay local and does not submit
+  another synthesis request.
+- `cmake --build build --config Debug --target TtsEditorMode` — PASS.
+- `cmake --build build --config Debug --target KimPeanutEngine` — PASS.
+- The rebuilt TTS editor launched and loaded its saved settings. No test suite
+  or playback replay was run in this correction pass.

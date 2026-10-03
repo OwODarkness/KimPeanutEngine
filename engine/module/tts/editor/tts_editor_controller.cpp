@@ -383,7 +383,17 @@ namespace kpengine::tts_editor
                 else if (state == audio::AudioState::Finished && !entry->streaming)
                     player->Restart();
                 else if (state == audio::AudioState::Finished && entry->streaming)
-                    break;
+                {
+                    if (!entry->durable || entry->artifact.empty())
+                    {
+                        entry->error = "Completed stream has no saved WAV for replay";
+                        break;
+                    }
+                    RetirePlayer(*entry);
+                    EnsurePreview(*entry);
+                    if (const auto replay = audio_->GetAudioPlayer(entry->player))
+                        replay->Play();
+                }
                 else player->Play();
             }
             else if (action.kind == ActionKind::Stop)

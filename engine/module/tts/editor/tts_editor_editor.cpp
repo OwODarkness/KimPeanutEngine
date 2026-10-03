@@ -236,7 +236,8 @@ namespace kpengine::tts_editor
         transport.elapsed_seconds = view.elapsed_seconds;
         transport.duration_seconds = view.duration_seconds;
         transport.capabilities.toggle_play_pause = selected->player.IsValid() &&
-            !(selected->streaming && view.audio_state == audio::AudioState::Finished);
+            (!selected->streaming || view.audio_state != audio::AudioState::Finished ||
+             selected->durable);
         transport.capabilities.stop_voice = selected->player.IsValid() &&
             selected->state == tts::TTSJobState::Completed;
         transport.capabilities.cancel_job = selected->job.IsValid() &&
