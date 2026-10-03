@@ -5,8 +5,16 @@
 [implementation spec](../../../.spec/specs/render-deferred-pbr.md). Detailed
 implementation history, validation evidence, corrections, and remaining risks
 belong in the [execution journal](../../../.spec/journal/render-deferred-pbr.md).
-The renderer uses a fixed ordered-pass schedule; this is not a render-graph
-proposal.
+The original D-stage baseline used a fixed ordered-pass schedule. Current
+execution uses the [compiled render graph](../render_graph/PLANS.md);
+the R7 follow-up below extends that graph.
+
+## Planned image-quality follow-up
+
+[Render R7](../.plan/R7.md) defines the new compiled-graph work after the
+original D-stage baseline: SSAO, motion/history, native-resolution TAA, and
+height fog. Track its acceptance in the [Render roadmap](../TODO.md#r7--raster-image-quality-r70-in-progress);
+the historical D0–D7 completion does not imply R7 implementation or acceptance.
 
 ## D0 — completed prerequisites
 

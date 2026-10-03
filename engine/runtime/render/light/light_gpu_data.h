@@ -90,7 +90,7 @@ namespace kpengine::render
         Matrix4f spot_shadow_view_projection;
         // Minimum bias, slope-scaled bias, texel size, enabled.
         Vector4f spot_shadow_params{};
-        // IBL enabled, prefilter atlas level count, intensity, reserved.
+        // IBL enabled, prefilter atlas level count, intensity, screen AO enabled.
         Vector4f environment_ibl_params{};
     };
 

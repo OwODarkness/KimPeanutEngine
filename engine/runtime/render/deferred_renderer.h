@@ -22,6 +22,7 @@
 #include "render/passes/scene_draw_recorder.h"
 #include "render/passes/fullscreen_pass_resources.h"
 #include "render/passes/deferred_lighting_pass.h"
+#include "render/passes/screen_space_ao_pass.h"
 #include "render/passes/tone_map_pass.h"
 #include "render/passes/capture_view_pass.h"
 #include "render/passes/path_tracing_pass.h"
@@ -80,6 +81,7 @@ namespace kpengine::render
 
         void RequestExtent(uint32_t width, uint32_t height);
         void SetPathTraceSettings(const PathTraceSettings &settings);
+        void SetScreenSpaceAoSettings(ScreenSpaceAoSettings settings);
         void InjectNextPathTraceDispatchFailure();
         void InvalidateRayTracingTextureBindings();
         void ApplyPendingExtent();
@@ -125,6 +127,8 @@ namespace kpengine::render
         bool RecordSpotShadowPass();
         bool RecordPointShadowPass();
         bool RecordGBufferPass();
+        bool RecordScreenSpaceAoEstimatePass();
+        bool RecordScreenSpaceAoFilterPass();
         bool RecordDeferredLightingPass();
         bool RecordToneMapPass();
         bool RecordRayTracingPathTracePass();
@@ -142,7 +146,7 @@ namespace kpengine::render
         RendererFrameTargets frame_targets_;
         // One compiled plan per frame-start condition set, each compiled once.
         // The compiled plan is now the only authority for pass order.
-        std::array<std::optional<CompiledRenderFramePlan>, 64> frame_plans_;
+        std::array<std::optional<CompiledRenderFramePlan>, 256> frame_plans_;
         RenderGraphExecutor graph_executor_;
         // The frame's pooled transient, wrapped around a pool-owned handle.
         // RenderTarget is not movable, so the wrapper is held by pointer.
@@ -164,6 +168,8 @@ namespace kpengine::render
         SceneDrawRecorder scene_draw_recorder_;
         FullscreenPassResources fullscreen_pass_resources_;
         DeferredLightingPass deferred_lighting_pass_;
+        ScreenSpaceAoPass screen_space_ao_pass_;
+        ScreenSpaceAoSettings screen_space_ao_settings_{};
         ShadowPass shadow_pass_;
         ToneMapPass tone_map_pass_;
         CaptureViewPass capture_view_pass_;

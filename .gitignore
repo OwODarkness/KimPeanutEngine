@@ -77,6 +77,10 @@ deprecated/
 !/asset/shader/gbuffer_debug_view.vert
 !/asset/shader/gbuffer_debug_view.frag
 !/asset/shader/gbuffer_debug_view.shader
+!/asset/shader/screen_space_ao_estimate.shader
+!/asset/shader/screen_space_ao_estimate.frag
+!/asset/shader/screen_space_ao_filter.shader
+!/asset/shader/screen_space_ao_filter.frag
 !/asset/level/
 !/asset/level/*.level
 !/asset/shader/capture_view.frag
@@ -92,6 +96,9 @@ deprecated/
 !/asset/material/
 /asset/material/*
 !/asset/material/error.material
+!/asset/material/r7_fixture_*.material
+!/asset/material/r7_pbr_*.material
+!/asset/material/sponza_raster_baseline.material
 
 # Build output
 build/

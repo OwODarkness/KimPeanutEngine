@@ -10,6 +10,8 @@ const uint CAPTURE_SPOT_SHADOW_VISIBILITY = 7u;
 const uint CAPTURE_POINT_SHADOW_DEPTH = 8u;
 const uint CAPTURE_POINT_SHADOW_VISIBILITY = 9u;
 const uint CAPTURE_SELECTION_MASK = 10u;
+const uint CAPTURE_SCREEN_SPACE_AO_RAW = 11u;
+const uint CAPTURE_SCREEN_SPACE_AO_FILTERED = 12u;
 
 layout(binding = 2) uniform sampler2D gbuffer_albedo;
 layout(binding = 3) uniform sampler2D gbuffer_normal;
@@ -19,6 +21,7 @@ layout(binding = 6) uniform sampler2D directional_shadow_depth;
 layout(binding = 8) uniform sampler2D spot_shadow_depth;
 layout(binding = 9) uniform sampler2D point_shadow_depth;
 layout(binding = 11) uniform sampler2D selection_mask;
+layout(binding = 12) uniform sampler2D screen_space_ao;
 
 layout(std140, binding = 7) uniform CaptureViewConstants
 {
@@ -31,6 +34,7 @@ layout(std140, binding = 7) uniform CaptureViewConstants
     vec4 light_direction_and_view;
     vec4 depth_params;
     vec4 punctual_depth_params;
+    vec4 screen_space_ao_params;
 } capture_constants;
 
 layout(std140, binding = 10) uniform PointShadowConstants
@@ -215,6 +219,15 @@ void main()
     if (view == CAPTURE_SELECTION_MASK)
     {
         out_color = vec4(vec3(texture(selection_mask, source_uv).r), 1.0);
+        return;
+    }
+    if (view == CAPTURE_SCREEN_SPACE_AO_RAW ||
+        view == CAPTURE_SCREEN_SPACE_AO_FILTERED)
+    {
+        float ao = capture_constants.screen_space_ao_params.x > 0.5
+                       ? texture(screen_space_ao, source_uv).r
+                       : 1.0;
+        out_color = vec4(vec3(ao), 1.0);
         return;
     }
     float depth = texture(gbuffer_depth, source_uv).r;

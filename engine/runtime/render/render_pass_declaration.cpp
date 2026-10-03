@@ -18,6 +18,7 @@ namespace kpengine::render
             "SceneColor", "SceneHdr", "GBuffer", "DirectionalShadow", "SpotShadow",
             "PointShadow", "CaptureOutput", "DebugViewOutput", "PathTraceHistory",
             "PathTraceGuide",
+            "ScreenSpaceAoRaw", "ScreenSpaceAoFiltered",
         };
 
         constexpr std::array<RenderFrameResourceRole, kResourceCount> kTextureRoles{
@@ -31,6 +32,8 @@ namespace kpengine::render
             RenderFrameResourceRole::DebugViewOutput,
             RenderFrameResourceRole::PathTraceHistory,
             RenderFrameResourceRole::PathTraceGuide,
+            RenderFrameResourceRole::ScreenSpaceAoRaw,
+            RenderFrameResourceRole::ScreenSpaceAoFiltered,
         };
 
         template <typename Handle>
@@ -74,6 +77,11 @@ namespace kpengine::render
                        conditions.debug_view;
             case RenderPassCondition::RasterFrame:
                 return !conditions.ray_tracing_path_trace;
+            case RenderPassCondition::ScreenSpaceAoEnabled:
+                return conditions.screen_space_ao && !conditions.ray_tracing_path_trace;
+            case RenderPassCondition::ScreenSpaceAoDiagnosticRequested:
+                return conditions.screen_space_ao_diagnostic && conditions.screen_space_ao &&
+                       !conditions.ray_tracing_path_trace;
             }
             return false;
         }
@@ -98,6 +106,22 @@ namespace kpengine::render
                  {{RenderPassResource::GBuffer, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment, RenderGraphAttachmentScope::Whole()}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
+                {FixedRenderPassId::ScreenSpaceAoEstimate, "ScreenSpaceAoEstimatePass",
+                 {{RenderPassResource::GBuffer, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b0010U, true)},
+                  {RenderPassResource::ScreenSpaceAoRaw, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
+                 RenderPassExecutionOwner::Renderer,
+                 RenderPassCondition::ScreenSpaceAoEnabled, false},
+                {FixedRenderPassId::ScreenSpaceAoFilter, "ScreenSpaceAoFilterPass",
+                 {{RenderPassResource::ScreenSpaceAoRaw, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::GBuffer, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b0010U, true)},
+                  {RenderPassResource::ScreenSpaceAoFiltered, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
+                 RenderPassExecutionOwner::Renderer,
+                 RenderPassCondition::ScreenSpaceAoEnabled, false},
                 {FixedRenderPassId::DeferredLighting, "DeferredLightingPass",
                  // Colours 0-2 and the sampled depth. This pass does not read
                  // the selection mask in attachment 3, and saying otherwise
@@ -110,6 +134,9 @@ namespace kpengine::render
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::PointShadow, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
+                  {RenderPassResource::ScreenSpaceAoFiltered, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {},
+                   RenderPassCondition::ScreenSpaceAoEnabled},
                   {RenderPassResource::SceneHdr, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterFrame, false},
@@ -155,12 +182,18 @@ namespace kpengine::render
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::PointShadow, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
+                  {RenderPassResource::ScreenSpaceAoRaw, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {},
+                   RenderPassCondition::ScreenSpaceAoDiagnosticRequested},
+                  {RenderPassResource::ScreenSpaceAoFiltered, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {},
+                   RenderPassCondition::ScreenSpaceAoDiagnosticRequested},
                   {RenderPassResource::CaptureOutput, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer,
                  RenderPassCondition::DiagnosticCaptureRequested, false},
                 {FixedRenderPassId::DebugView, "DebugViewPass",
-                 {{RenderPassResource::GBuffer, RenderPassAccess::Read,
+                {{RenderPassResource::GBuffer, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b1111U, true)},
                   {RenderPassResource::DirectionalShadow, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
@@ -168,6 +201,12 @@ namespace kpengine::render
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::PointShadow, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
+                  {RenderPassResource::ScreenSpaceAoRaw, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {},
+                   RenderPassCondition::ScreenSpaceAoDiagnosticRequested},
+                  {RenderPassResource::ScreenSpaceAoFiltered, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {},
+                   RenderPassCondition::ScreenSpaceAoDiagnosticRequested},
                   {RenderPassResource::DebugViewOutput, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::DebugViewRequested,
@@ -250,11 +289,26 @@ namespace kpengine::render
             add_acceleration_structure_role(*scene_tlas, RenderFrameResourceRole::SceneTlas);
         for (std::size_t resource_index = 0; resource_index < kResourceCount; ++resource_index)
         {
+            const bool screen_space_ao_resource =
+                resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoRaw) ||
+                resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoFiltered);
+            if (screen_space_ao_resource &&
+                (!conditions.screen_space_ao || conditions.ray_tracing_path_trace))
+            {
+                continue;
+            }
             // SceneHdr is the one resource the graph plans but does not own: its
             // contents never survive the frame, so the renderer takes it from the
             // Graphics-owned pool for the window the plan computes.
             const bool pooled =
-                resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr);
+                resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr) ||
+                resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoRaw) ||
+                resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoFiltered);
+            uint64_t transient_key = static_cast<uint64_t>(RenderFrameTransient::SceneHdr);
+            if (resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoRaw))
+                transient_key = static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoRaw);
+            else if (resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoFiltered))
+                transient_key = static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoFiltered);
             if (conditions.ray_tracing_path_trace &&
                 (resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr) ||
                  resource_index == static_cast<std::size_t>(RenderPassResource::PathTraceHistory) ||
@@ -263,8 +317,7 @@ namespace kpengine::render
             else
                 resources[resource_index] = graph.CreateTexture(
                     kResourceNames[resource_index],
-                    pooled ? std::optional<uint64_t>(
-                                 static_cast<uint64_t>(RenderFrameTransient::SceneHdr))
+                    pooled ? std::optional<uint64_t>(transient_key)
                            : std::nullopt);
         }
 
@@ -302,6 +355,17 @@ namespace kpengine::render
             }
             for (const RenderPassResourceUse &use : entry.resources)
             {
+                if (use.condition == RenderPassCondition::ScreenSpaceAoEnabled &&
+                    (!conditions.screen_space_ao || conditions.ray_tracing_path_trace))
+                {
+                    continue;
+                }
+                if (use.condition == RenderPassCondition::ScreenSpaceAoDiagnosticRequested &&
+                    (!conditions.screen_space_ao_diagnostic || !conditions.screen_space_ao ||
+                     conditions.ray_tracing_path_trace))
+                {
+                    continue;
+                }
                 const GraphTextureHandle &resource =
                     resources[static_cast<std::size_t>(use.resource)];
                 if (use.access == RenderPassAccess::Read)

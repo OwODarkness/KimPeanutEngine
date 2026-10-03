@@ -30,6 +30,8 @@ namespace kpengine::render
         PointShadowDepth,
         PointShadowVisibility,
         SelectionMask,
+        ScreenSpaceAoRaw,
+        ScreenSpaceAoFiltered,
         // The standalone host's own output target, supplied by that host.
         HostOutput,
         // The engine window's presented contents, resolved by the window
@@ -59,6 +61,8 @@ namespace kpengine::render
         case CaptureView::PointShadowDepth:
         case CaptureView::PointShadowVisibility:
         case CaptureView::SelectionMask:
+        case CaptureView::ScreenSpaceAoRaw:
+        case CaptureView::ScreenSpaceAoFiltered:
             return true;
         case CaptureView::SceneColor:
         case CaptureView::HostOutput:

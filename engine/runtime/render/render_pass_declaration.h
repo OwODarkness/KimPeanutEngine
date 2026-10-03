@@ -23,6 +23,8 @@ namespace kpengine::render
         DebugViewOutput,
         PathTraceHistory,
         PathTraceGuide,
+        ScreenSpaceAoRaw,
+        ScreenSpaceAoFiltered,
         Count,
     };
 
@@ -41,6 +43,8 @@ namespace kpengine::render
         DebugViewOutput,
         PathTraceHistory,
         PathTraceGuide,
+        ScreenSpaceAoRaw,
+        ScreenSpaceAoFiltered,
         SceneGeometry,
         SceneInstances,
         SceneScratch,
@@ -80,6 +84,8 @@ namespace kpengine::render
         SpotShadow,
         PointShadow,
         GBuffer,
+        ScreenSpaceAoEstimate,
+        ScreenSpaceAoFilter,
         DeferredLighting,
         RayTracingPathTrace,
         ToneMap,
@@ -108,6 +114,8 @@ namespace kpengine::render
         RayTracingPathTrace,
         RasterDiagnostic,
         RasterFrame,
+        ScreenSpaceAoEnabled,
+        ScreenSpaceAoDiagnosticRequested,
     };
 
     struct RenderPassResourceUse
@@ -123,6 +131,7 @@ namespace kpengine::render
         // subset, so a whole-target claim would both schedule transitions that
         // are not needed and describe reads that do not happen.
         RenderGraphAttachmentScope scope{};
+        RenderPassCondition condition = RenderPassCondition::Always;
     };
 
     struct FixedRenderPassEntry
@@ -145,6 +154,8 @@ namespace kpengine::render
         bool ray_tracing_tlas_build = false;
         bool ray_tracing_path_trace = false;
         bool debug_view = false;
+        bool screen_space_ao = true;
+        bool screen_space_ao_diagnostic = false;
 
         friend bool operator==(const RenderFrameConditions &,
                                const RenderFrameConditions &) = default;
@@ -156,6 +167,8 @@ namespace kpengine::render
     enum class RenderFrameTransient : uint64_t
     {
         SceneHdr = 1,
+        ScreenSpaceAoRaw = 2,
+        ScreenSpaceAoFiltered = 3,
     };
 
     // The one authored raster declaration. The compiled plan is derived from it

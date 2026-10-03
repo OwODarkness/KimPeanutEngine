@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "environment": {
+    "texture": "texture/hdr/qwantani_dusk_2_puresky_4k.hdr",
+    "ibl_intensity": 0.35
+  },
+  "objects": [
+    {
+      "id": "sponza_main_raster_source",
+      "name": "Sponza Main",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/sponza/main_sponza/NewSponza_Main_glTF_003.gltf",
+      "material": "material/sponza_raster_baseline.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "sponza_curtains_raster_source",
+      "name": "Sponza Curtains",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/sponza/pkg_a_curtains/NewSponza_Curtains_glTF.gltf",
+      "material": "material/sponza_raster_baseline.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "sponza_ivy_raster_source",
+      "name": "Sponza Ivy",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/sponza/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf",
+      "material": "material/sponza_raster_baseline.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "main_camera",
+      "name": "Sponza Camera",
+      "kind": "camera",
+      "transform": {
+        "position": [10.80743, 1.59222, 0.0],
+        "rotation_degrees": [0.0, 180.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": "perspective",
+      "near_plane": 0.05,
+      "far_plane": 1000.0,
+      "field_of_view_degrees": 58.5,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "sun",
+      "name": "Sponza Sun",
+      "kind": "directional_light",
+      "direction": [0.4, -1.0, 0.25],
+      "color": [1.0, 0.95, 0.85],
+      "intensity": 200.0,
+      "enabled": true,
+      "casts_shadow": true
+    },
+    {
+      "id": "nave_fill",
+      "name": "Sponza Nave Fill",
+      "kind": "point_light",
+      "position": [-14.0, 4.0, 0.05],
+      "color": [1.0, 0.82, 0.65],
+      "intensity": 50.0,
+      "range": 18.0,
+      "enabled": true,
+      "casts_shadow": true
+    },
+    {
+      "id": "nave_fill_2",
+      "name": "Sponza Nave Fill 2",
+      "kind": "point_light",
+      "position": [15.0, 2.8, -1.0],
+      "color": [1.0, 0.82, 0.65],
+      "intensity": 50.0,
+      "range": 18.0,
+      "enabled": true,
+      "casts_shadow": true
+    }
+  ]
+}

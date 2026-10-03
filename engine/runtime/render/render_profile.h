@@ -21,6 +21,8 @@ namespace kpengine::render
         SpotShadow,
         PointShadow,
         GBuffer,
+        ScreenSpaceAoEstimate,
+        ScreenSpaceAoFilter,
         DeferredLighting,
         RayTracingPathTrace,
         ToneMap,
@@ -42,6 +44,8 @@ namespace kpengine::render
         case RenderProfilePass::SpotShadow: name = "render.spot_shadow"; break;
         case RenderProfilePass::PointShadow: name = "render.point_shadow"; break;
         case RenderProfilePass::GBuffer: name = "render.gbuffer"; break;
+        case RenderProfilePass::ScreenSpaceAoEstimate: name = "render.ssao_estimate"; break;
+        case RenderProfilePass::ScreenSpaceAoFilter: name = "render.ssao_filter"; break;
         case RenderProfilePass::DeferredLighting: name = "render.deferred_lighting"; break;
         case RenderProfilePass::RayTracingPathTrace: name = "render.ray_tracing_path_trace"; break;
         case RenderProfilePass::ToneMap: name = "render.tone_map"; break;
@@ -222,6 +226,12 @@ namespace kpengine::render
         bool path_trace_active = false;
         bool ray_query_shadows_available = false;
         bool ray_query_shadows_active = false;
+        bool screen_space_ao_requested = false;
+        bool screen_space_ao_effective = false;
+        float screen_space_ao_radius = 0.0f;
+        float screen_space_ao_bias = 0.0f;
+        float screen_space_ao_strength = 0.0f;
+        uint32_t screen_space_ao_sample_count = 0;
         GraphicsAPIType graphics_api = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         uint32_t viewport_width = 0;
         uint32_t viewport_height = 0;

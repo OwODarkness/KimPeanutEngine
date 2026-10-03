@@ -383,6 +383,89 @@ namespace kpengine
                            settings_registration.diagnostic.c_str());
                 }
 
+                command::CommandRegistrationResult screen_space_ao_registration =
+                    command_registry_->Register(
+                        {"render.screen_space_ao_settings",
+                         "RenderSettings",
+                         "Set screen-space ambient-occlusion enable, radius, bias, strength, and quality",
+                         command::CommandCategory::Render,
+                         command::CommandFlags::AgentAllowed |
+                             command::CommandFlags::MutatesState,
+                         {{command::CommandArgumentDesc{
+                               "enabled", command::CommandValueType::Boolean, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "radius", command::CommandValueType::Float, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "bias", command::CommandValueType::Float, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "strength", command::CommandValueType::Float, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "quality", command::CommandValueType::Enum, true, {},
+                               {"low", "medium", "high"}}}},
+                         [this](const command::CommandCall &call,
+                                const command::CommandContext &context)
+                         {
+                             if (!render_system_)
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::Failed,
+                                     "RenderSystem is unavailable",
+                                     context.request_id,
+                                     {}};
+                             }
+                             const std::string &quality =
+                                 std::get<std::string>(call.arguments.at("quality"));
+                             render::ScreenSpaceAoQuality parsed_quality{};
+                             if (quality == "low")
+                                 parsed_quality = render::ScreenSpaceAoQuality::Low;
+                             else if (quality == "medium")
+                                 parsed_quality = render::ScreenSpaceAoQuality::Medium;
+                             else if (quality == "high")
+                                 parsed_quality = render::ScreenSpaceAoQuality::High;
+                             else
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::InvalidArguments,
+                                     "SSAO quality must be low, medium, or high",
+                                     context.request_id,
+                                     {}};
+                             }
+                             const render::ScreenSpaceAoSettings settings{
+                                 std::get<bool>(call.arguments.at("enabled")),
+                                 static_cast<float>(std::get<double>(
+                                     call.arguments.at("radius"))),
+                                 static_cast<float>(std::get<double>(
+                                     call.arguments.at("bias"))),
+                                 static_cast<float>(std::get<double>(
+                                     call.arguments.at("strength"))),
+                                 parsed_quality};
+                             if (!render_system_->RequestScreenSpaceAoSettings(settings))
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::InvalidArguments,
+                                     "SSAO settings are outside the supported range",
+                                     context.request_id,
+                                     {}};
+                             }
+                             return command::CommandResult{
+                                 command::CommandStatus::Success,
+                                 "SSAO settings scheduled",
+                                 context.request_id,
+                                 {}};
+                         },
+                         command::CommandThread::Game});
+                if (screen_space_ao_registration.IsSuccess())
+                {
+                    screen_space_ao_settings_command_registration_ =
+                        std::move(screen_space_ao_registration.registration);
+                }
+                else
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register render.screen_space_ao_settings: %s",
+                           screen_space_ao_registration.diagnostic.c_str());
+                }
+
                 command::CommandRegistrationResult failure_registration =
                     command_registry_->Register(
                         {"render.path_trace_fail_next",
@@ -1060,6 +1143,7 @@ namespace kpengine
             level_reload_command_registration_ = {};
             path_trace_probe_command_registration_ = {};
             path_trace_settings_command_registration_ = {};
+            screen_space_ao_settings_command_registration_ = {};
             path_trace_failure_command_registration_ = {};
             screenshot_service_.reset();
             report_progress(3, "Releasing renderer");

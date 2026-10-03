@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "objects": [
+    {
+      "id": "cornell_box_raster_source",
+      "name": "Cornell Box",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/cornell-box/cornell-box.obj",
+      "material": "material/cornell_light.material",
+      "materials": [
+        "material/cornell_light.material",
+        "material/cornell_light.material",
+        "material/cornell_green.material",
+        "material/cornell_wall.material",
+        "material/cornell_red.material"
+      ],
+      "casts_shadow": true
+    },
+    {
+      "id": "main_camera",
+      "kind": "camera",
+      "transform": {
+        "position": [0.0, 2.65, 5.5],
+        "rotation_degrees": [0.0, -90.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": "perspective",
+      "near_plane": 0.05,
+      "far_plane": 100.0,
+      "field_of_view_degrees": 52.0,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "ceiling_light",
+      "kind": "area_light",
+      "position": [-0.234011, 5.315, -3.042968],
+      "color": [1.0, 1.0, 1.0],
+      "intensity": 10.0,
+      "range": 20.0,
+      "half_axis_u": [0.65, 0.0, 0.0],
+      "half_axis_v": [0.0, 0.0, 0.525],
+      "enabled": true,
+      "casts_shadow": true
+    }
+  ]
+}

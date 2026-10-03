@@ -96,6 +96,8 @@ namespace kpengine::render
                  ShaderStage::SHADER_STAGE_FRAGMENT},
                 {10, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                  ShaderStage::SHADER_STAGE_FRAGMENT},
+                {15, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                 ShaderStage::SHADER_STAGE_FRAGMENT},
             }};
             if (ray_query)
             {
@@ -218,6 +220,7 @@ namespace kpengine::render
     {
         DeferredLightingRecordResult result{};
         if (!inputs.scene_hdr.IsValid() || !inputs.gbuffer.IsValid() ||
+            !inputs.screen_space_ao.IsValid() ||
             !inputs.directional_shadow_target.IsValid() ||
             !inputs.spot_shadow_target.IsValid() || !inputs.point_shadow_target.IsValid())
             return result;
@@ -245,7 +248,8 @@ namespace kpengine::render
         lighting_data.environment_ibl_params = Vector4f{
             inputs.environment.ibl_enabled ? 1.0f : 0.0f,
             static_cast<float>(inputs.environment.prefilter_level_count),
-            inputs.environment.ibl_intensity, 0.0f};
+            inputs.environment.ibl_intensity,
+            inputs.screen_space_ao_enabled ? 1.0f : 0.0f};
         if (inputs.directional_shadow != nullptr)
         {
             const auto &shadow = *inputs.directional_shadow;
@@ -289,6 +293,9 @@ namespace kpengine::render
                 fullscreen_resources.LinearSampler()},
             graphics::SampledTextureBinding{0, 3,
                 inputs.gbuffer.GetSampledDepthTexture(), fullscreen_resources.LinearSampler()},
+            graphics::SampledTextureBinding{0, 15,
+                inputs.screen_space_ao,
+                fullscreen_resources.LinearSampler()},
             inputs.frame_lighting.GetResourceBinding(),
             graphics::UniformBufferBinding{0, 5, lighting_constants.buffer,
                 lighting_constants.offset, lighting_constants.range},

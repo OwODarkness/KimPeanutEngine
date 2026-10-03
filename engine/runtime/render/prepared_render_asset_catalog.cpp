@@ -17,6 +17,10 @@ namespace kpengine::render
             kBuiltInRequirements{{
                 {BuiltInRenderAsset::DeferredLightingProgram, "shader/deferred_lighting.shader",
                  asset::AssetType::KPAT_ShaderProgram},
+                {BuiltInRenderAsset::ScreenSpaceAoEstimateProgram,
+                 "shader/screen_space_ao_estimate.shader", asset::AssetType::KPAT_ShaderProgram},
+                {BuiltInRenderAsset::ScreenSpaceAoFilterProgram,
+                 "shader/screen_space_ao_filter.shader", asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::GBufferDebugProgram, "shader/gbuffer_debug_view.shader",
                  asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::ToneMapProgram, "shader/tone_map.shader",

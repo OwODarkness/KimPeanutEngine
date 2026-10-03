@@ -358,6 +358,34 @@ details and stage checklists belong in the linked submodule documents.
       [concrete plan](.plan/R6.md) ·
   [journal](../../.spec/journal/2026-09-29-r6-implementation.md)
 
+## R7 — Raster image quality (R7.1 implementation complete; acceptance open)
+
+R7.0 baseline scenes, captures, and budgets are marked complete at the user’s direction. Expanded R5 correctness validation remains open and is not represented as passed. Canonical [stage plan](.plan/R7.md),
+[execution spec](../../.spec/specs/render-r7-raster-image-quality.md), and
+[planning journal](../../.spec/journal/2026-10-03-render-r7-raster-image-quality.md).
+R5/R6 acceptance remains independent. Every effect/filter/resolve executes
+through the compiled render graph with explicit typed resources and history
+imports; no separate post-process schedule is introduced.
+
+R7.1 implementation is complete: graph-driven full-resolution estimate/filter
+passes, ambient-diffuse integration, settings, and raw/filtered capture views.
+RelWithDebInfo Vulkan Sponza evidence confirms enabled/disabled graph behavior
+and measures the High AO passes within budget. OpenGL, AO-material overlap, and
+focused silhouette/planar-darkening acceptance remain open.
+
+- [x] **R7.0:** record raster fixtures, deterministic replay, disabled baseline, and quality/GPU/memory budgets.
+- [ ] **R7.1:** spatial SSAO plus edge-aware filtering and ambient-diffuse
+  integration; accept AO-material overlap, silhouettes, both APIs, and off parity.
+- [ ] **R7.2:** validated jitter/motion and previous-submitted-frame contract;
+  cover camera/rigid-object motion, invalid surfaces, cuts, and rejected frames.
+- [ ] **R7.3:** native-resolution TAA; accept shimmer/detail/ghosting tolerances,
+  history lifecycle, unchanged PT, and measured cost.
+- [ ] **R7.4:** integrated exponential height fog; accept numerical limits,
+  sky policy, HDR/TAA ordering, zero-density identity, and terrain/indoor fixtures.
+- [ ] **R7.5:** combined core acceptance and explicit subsequent decisions for
+  reflection probes, SSR, and volumetric fog. These follow-ups do not block
+  core completion and require separate concrete designs before implementation.
+
 ## Document ownership
 
 This file tracks only Render-wide work. Use each submodule's `TODO.md` for

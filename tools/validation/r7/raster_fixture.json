@@ -1,0 +1,46 @@
+{
+  "schema": "kimpeanut.r7.raster_fixture.v1",
+  "level": "level/r7_raster_fixture.level",
+  "graphics_api": "vulkan",
+  "viewport": { "width": 1094, "height": 631 },
+  "render_mode": {
+    "path_tracing": false,
+    "ray_query_shadows": true,
+    "screen_space_effects": false
+  },
+  "exposure": 1.0,
+  "camera_actor": "R7 Fixture Camera",
+  "moving_actor": "R7 Moving Rigid Sphere",
+  "camera_path": [
+    { "frame_offset": 0, "position": [0.0, 2.3, 5.6], "rotation_degrees": [0.0, -90.0, 0.0], "label": "baseline" },
+    { "frame_offset": 60, "position": [0.18, 2.3, 5.6], "rotation_degrees": [0.0, -90.0, 0.0], "label": "camera_translation" },
+    { "frame_offset": 120, "position": [0.0, 2.3, 5.6], "rotation_degrees": [0.0, -90.0, 0.0], "label": "camera_return" },
+    { "frame_offset": 180, "position": [0.0, 2.3, 5.6], "rotation_degrees": [0.0, -84.0, 0.0], "label": "camera_pan" },
+    { "frame_offset": 240, "position": [0.0, 2.3, 5.6], "rotation_degrees": [0.0, -90.0, 0.0], "label": "camera_settle" }
+  ],
+  "moving_actor_path": [
+    { "frame_offset": 0, "position": [0.0, 0.72, -1.65], "rotation_degrees": [0.0, 0.0, 0.0], "label": "object_start" },
+    { "frame_offset": 120, "position": [0.65, 0.72, -1.65], "rotation_degrees": [0.0, 45.0, 0.0], "label": "object_translation_rotation" },
+    { "frame_offset": 240, "position": [0.0, 0.72, -1.65], "rotation_degrees": [0.0, 0.0, 0.0], "label": "object_return" }
+  ],
+  "authored_lighting": {
+    "directional_light": {
+      "direction": [-0.35, -1.0, -0.4],
+      "color": [1.0, 0.94, 0.82],
+      "intensity": 40.0,
+      "casts_shadow": true
+    },
+    "point_fill": {
+      "position": [0.0, 3.0, 1.0],
+      "color": [1.0, 0.9, 0.78],
+      "intensity": 120.0,
+      "range": 12.0,
+      "casts_shadow": false
+    },
+    "environment": "renderer default fallback"
+  },
+  "features_off_capture": {
+    "path": "save/screenshots/validation/r7-raster-fixture-off-vulkan-baseline.png",
+    "view": "scene_color"
+  }
+}

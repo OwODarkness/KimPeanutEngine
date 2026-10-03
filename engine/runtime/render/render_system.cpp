@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <stdexcept>
 #include <chrono>
 #include <utility>
@@ -327,6 +328,7 @@ namespace kpengine::render
             std::optional<CaptureView> editor_debug_view;
             std::optional<CaptureView> tooling_debug_view;
             std::optional<PathTraceSettings> path_trace_settings;
+            std::optional<ScreenSpaceAoSettings> screen_space_ao_settings;
             {
                 std::lock_guard lock(request_mutex_);
                 editor_debug_view = debug_view_demands_[static_cast<std::size_t>(
@@ -334,12 +336,18 @@ namespace kpengine::render
                 tooling_debug_view = debug_view_demands_[static_cast<std::size_t>(
                     DebugViewConsumer::RuntimeTooling)];
                 path_trace_settings = std::exchange(pending_path_trace_settings_, std::nullopt);
+                screen_space_ao_settings = std::exchange(
+                    pending_screen_space_ao_settings_, std::nullopt);
             }
             debug_view_ = editor_debug_view.value_or(
                 tooling_debug_view.value_or(CaptureView::SceneColor));
             if (path_trace_settings.has_value())
             {
                 deferred_renderer_->SetPathTraceSettings(*path_trace_settings);
+            }
+            if (screen_space_ao_settings.has_value())
+            {
+                deferred_renderer_->SetScreenSpaceAoSettings(*screen_space_ao_settings);
             }
             if (requested_profile_window_reset_.exchange(false, std::memory_order_acq_rel))
             {
@@ -732,6 +740,21 @@ namespace kpengine::render
         return true;
     }
 
+    bool RenderSystem::RequestScreenSpaceAoSettings(ScreenSpaceAoSettings settings)
+    {
+        if (!std::isfinite(settings.radius) || !std::isfinite(settings.bias) ||
+            !std::isfinite(settings.strength) || settings.radius <= 0.0f ||
+            settings.bias < 0.0f || settings.strength < 0.0f)
+            return false;
+        settings.radius = std::clamp(settings.radius, 0.05f, 2.0f);
+        settings.bias = std::clamp(settings.bias, 0.0f, settings.radius * 0.5f);
+        settings.strength = std::clamp(settings.strength, 0.0f, 4.0f);
+        std::lock_guard lock(request_mutex_);
+        pending_screen_space_ao_settings_ = settings;
+        requested_profile_window_reset_.store(true, std::memory_order_release);
+        return true;
+    }
+
     void RenderSystem::RequestPathTraceProbeMode(PathTraceProbeMode mode)
     {
         {
@@ -891,6 +914,7 @@ namespace kpengine::render
             std::lock_guard lock(request_mutex_);
             debug_view_demands_.fill(std::nullopt);
             pending_path_trace_settings_.reset();
+            pending_screen_space_ao_settings_.reset();
             editor_presentation_assets_.reset();
             pending_editor_presentation_assets_.reset();
         }

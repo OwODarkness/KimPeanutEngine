@@ -21,6 +21,7 @@ layout(binding = 0) uniform sampler2D gbuffer_albedo;
 layout(binding = 1) uniform sampler2D gbuffer_normal;
 layout(binding = 2) uniform sampler2D gbuffer_material;
 layout(binding = 3) uniform sampler2D gbuffer_depth;
+layout(binding = 15) uniform sampler2D screen_space_ao;
 layout(binding = 6) uniform sampler2D directional_shadow_depth;
 layout(binding = 11) uniform sampler2D spot_shadow_depth;
 layout(binding = 12) uniform sampler2D point_shadow_depth;
@@ -501,12 +502,17 @@ void main()
                             vec2(n_dot_v, roughness)).rg;
         vec3 diffuse = irradiance * albedo / PI;
         vec3 specular = prefiltered * (fresnel * brdf.x + brdf.y);
-        ambient = (diffuse_weight * diffuse + specular) * occlusion *
+        float screen_occlusion = lighting_constants.environment_ibl_params.w > 0.5
+            ? texture(screen_space_ao, frag_texcoord).r : 1.0;
+        float diffuse_occlusion = min(occlusion, screen_occlusion);
+        ambient = (diffuse_weight * diffuse * diffuse_occlusion + specular * occlusion) *
                   lighting_constants.environment_ibl_params.z;
     }
     else
     {
-        ambient = 0.02 * albedo * occlusion;
+        float screen_occlusion = lighting_constants.environment_ibl_params.w > 0.5
+            ? texture(screen_space_ao, frag_texcoord).r : 1.0;
+        ambient = 0.02 * albedo * min(occlusion, screen_occlusion);
     }
     out_color = vec4(ambient + direct, 1.0);
 }

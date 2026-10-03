@@ -115,6 +115,7 @@ namespace kpengine::render
         if (backend_ != nullptr)
         {
             deferred_lighting_pass_.Cleanup(*backend_);
+            screen_space_ao_pass_.Cleanup(*backend_);
             tone_map_pass_.Cleanup(*backend_);
             capture_view_pass_.Cleanup(*backend_);
             fullscreen_pass_resources_.Cleanup(*backend_);
@@ -216,6 +217,25 @@ namespace kpengine::render
         requested_path_trace_settings_ = settings;
         path_tracing_enabled_ = settings.path_tracing_enabled &&
                                 path_tracing_pass_.Available();
+    }
+
+    void DeferredRenderer::SetScreenSpaceAoSettings(ScreenSpaceAoSettings settings)
+    {
+        settings.radius = std::clamp(settings.radius, 0.05f, 2.0f);
+        settings.bias = std::clamp(settings.bias, 0.0f, settings.radius * 0.5f);
+        settings.strength = std::clamp(settings.strength, 0.0f, 4.0f);
+        switch (settings.quality)
+        {
+        case ScreenSpaceAoQuality::Low:
+        case ScreenSpaceAoQuality::Medium:
+        case ScreenSpaceAoQuality::High:
+            break;
+        default:
+            settings.quality = ScreenSpaceAoQuality::Medium;
+            break;
+        }
+        screen_space_ao_settings_ = settings;
+        screen_space_ao_pass_.SetSettings(settings);
     }
 
     void DeferredRenderer::InjectNextPathTraceDispatchFailure()
@@ -361,6 +381,13 @@ namespace kpengine::render
                                  ? input.debug_view
                                  : std::nullopt;
         const bool is_deferred_capture = active_pending_capture_.has_value();
+        const auto is_screen_space_ao_view = [](const std::optional<CaptureView> &view) {
+            return view == CaptureView::ScreenSpaceAoRaw ||
+                   view == CaptureView::ScreenSpaceAoFiltered;
+        };
+        const bool screen_space_ao_diagnostic =
+            is_screen_space_ao_view(active_pending_capture_) ||
+            is_screen_space_ao_view(active_debug_view_);
         if (resource_resolver_ != nullptr && prepared_assets_ != nullptr)
             deferred_lighting_pass_.UpdateEnvironment(
                 input.environment, input.environment_handle,
@@ -479,6 +506,14 @@ namespace kpengine::render
                                             path_trace_scene_within_capacity;
         path_tracing_pass_.SetActive(ray_tracing_path_trace);
         profile_.path_trace_active = ray_tracing_path_trace;
+        profile_.screen_space_ao_requested = screen_space_ao_settings_.enabled;
+        profile_.screen_space_ao_effective =
+            screen_space_ao_settings_.enabled && !ray_tracing_path_trace;
+        profile_.screen_space_ao_radius = screen_space_ao_settings_.radius;
+        profile_.screen_space_ao_bias = screen_space_ao_settings_.bias;
+        profile_.screen_space_ao_strength = screen_space_ao_settings_.strength;
+        profile_.screen_space_ao_sample_count = profile_.screen_space_ao_effective
+            ? ScreenSpaceAoSampleCount(screen_space_ao_settings_.quality) : 0u;
         if (ray_tracing_path_trace)
         {
             if (backend_ == nullptr || prepared_assets_ == nullptr ||
@@ -513,7 +548,8 @@ namespace kpengine::render
         const RenderFrameConditions frame_conditions{
             is_deferred_capture, ray_query_shadow, rt_scene.blas_build_required,
             rt_scene.tlas_build_required, ray_tracing_path_trace,
-            active_debug_view_.has_value()};
+            active_debug_view_.has_value(), profile_.screen_space_ao_effective,
+            screen_space_ao_diagnostic};
         const CompiledRenderFramePlan *const compiled_frame_plan =
             GetCompiledFramePlan(frame_conditions);
         const CompiledRenderGraph *const frame_plan =
@@ -707,6 +743,12 @@ namespace kpengine::render
             break;
         case FixedRenderPassId::GBuffer:
             succeeded = RecordGBufferPass();
+            break;
+        case FixedRenderPassId::ScreenSpaceAoEstimate:
+            succeeded = RecordScreenSpaceAoEstimatePass();
+            break;
+        case FixedRenderPassId::ScreenSpaceAoFilter:
+            succeeded = RecordScreenSpaceAoFilterPass();
             break;
         case FixedRenderPassId::DeferredLighting:
         {
@@ -958,6 +1000,14 @@ namespace kpengine::render
                                  : graph_executor_.ResolveTransient(
                                        static_cast<uint64_t>(RenderFrameTransient::SceneHdr));
                     break;
+                case RenderFrameResourceRole::ScreenSpaceAoRaw:
+                    target = graph_executor_.ResolveTransient(
+                        static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoRaw));
+                    break;
+                case RenderFrameResourceRole::ScreenSpaceAoFiltered:
+                    target = graph_executor_.ResolveTransient(
+                        static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoFiltered));
+                    break;
                 case RenderFrameResourceRole::PathTraceHistory:
                     target = path_tracing_pass_.HistoryTarget(
                         1u - path_tracing_pass_.WriteIndex());
@@ -1111,6 +1161,19 @@ namespace kpengine::render
         {
             return RendererFrameTargets::DescribeSceneHdr(extent.width, extent.height);
         }
+        if (key == static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoRaw) ||
+            key == static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoFiltered))
+        {
+            graphics::RenderTargetDesc desc{};
+            desc.width = extent.width;
+            desc.height = extent.height;
+            desc.color_attachments = {graphics::RenderTargetColorAttachment{
+                TextureFormat::TEXTURE_FORMAT_R8_UNORM,
+                graphics::RenderTargetLoadOp::Clear,
+                graphics::RenderTargetStoreOp::Store,
+                {1.f, 1.f, 1.f, 1.f}}};
+            return desc;
+        }
         return std::nullopt;
     }
 
@@ -1129,14 +1192,18 @@ namespace kpengine::render
                 (condition_bits & 4U) != 0,
                 (condition_bits & 8U) != 0,
                 (condition_bits & 16U) != 0,
-                (condition_bits & 32U) != 0};
+                (condition_bits & 32U) != 0,
+                (condition_bits & 64U) != 0,
+                (condition_bits & 128U) != 0};
             const std::size_t slot =
                 (conditions.diagnostic_capture ? 1U : 0U) |
                 (conditions.ray_query_shadow ? 2U : 0U) |
                 (conditions.ray_tracing_blas_build ? 4U : 0U) |
                 (conditions.ray_tracing_tlas_build ? 8U : 0U) |
                 (conditions.ray_tracing_path_trace ? 16U : 0U) |
-                (conditions.debug_view ? 32U : 0U);
+                (conditions.debug_view ? 32U : 0U) |
+                (conditions.screen_space_ao ? 64U : 0U) |
+                (conditions.screen_space_ao_diagnostic ? 128U : 0U);
             const auto started = std::chrono::steady_clock::now();
             frame_plans_[slot] = CompileRenderFramePlan(conditions);
             frame_plan_compile_ms_ += std::chrono::duration<double, std::milli>(
@@ -1165,7 +1232,9 @@ namespace kpengine::render
                         (conditions.ray_tracing_blas_build ? 4U : 0U) |
                         (conditions.ray_tracing_tlas_build ? 8U : 0U) |
                         (conditions.ray_tracing_path_trace ? 16U : 0U) |
-                        (conditions.debug_view ? 32U : 0U)];
+                        (conditions.debug_view ? 32U : 0U) |
+                        (conditions.screen_space_ao ? 64U : 0U) |
+                        (conditions.screen_space_ao_diagnostic ? 128U : 0U)];
         if (!plan.has_value() || !plan->compilation.graph.has_value())
         {
             return nullptr;
@@ -1242,6 +1311,51 @@ namespace kpengine::render
         triangle_count_ += result.triangles;
         return result.succeeded;
     }
+
+    bool DeferredRenderer::RecordScreenSpaceAoEstimatePass()
+    {
+        if (!active_frame_context_ || !active_pass_context_ || backend_ == nullptr ||
+            prepared_assets_ == nullptr)
+            return false;
+        RenderTarget *const gbuffer = active_pass_context_->ResolveTexture(
+            RenderFrameResourceRole::GBuffer);
+        RenderTarget *const output = active_pass_context_->ResolveTexture(
+            RenderFrameResourceRole::ScreenSpaceAoRaw, RenderGraphAccess::Write);
+        if (gbuffer == nullptr || output == nullptr ||
+            !fullscreen_pass_resources_.Initialize(*backend_) ||
+            !screen_space_ao_pass_.PrepareResources(*backend_, *prepared_assets_))
+            return false;
+        const bool recorded = screen_space_ao_pass_.RecordEstimate(
+            *active_frame_context_, scene_camera_, *gbuffer, fullscreen_pass_resources_,
+            active_pass_context_->GetRecorder());
+        if (recorded)
+            AddProfileDraws(1, 1);
+        return recorded;
+    }
+
+    bool DeferredRenderer::RecordScreenSpaceAoFilterPass()
+    {
+        if (!active_frame_context_ || !active_pass_context_ || backend_ == nullptr ||
+            prepared_assets_ == nullptr)
+            return false;
+        RenderTarget *const gbuffer = active_pass_context_->ResolveTexture(
+            RenderFrameResourceRole::GBuffer);
+        RenderTarget *const raw = active_pass_context_->ResolveTexture(
+            RenderFrameResourceRole::ScreenSpaceAoRaw);
+        RenderTarget *const output = active_pass_context_->ResolveTexture(
+            RenderFrameResourceRole::ScreenSpaceAoFiltered, RenderGraphAccess::Write);
+        if (gbuffer == nullptr || raw == nullptr || output == nullptr ||
+            !fullscreen_pass_resources_.Initialize(*backend_) ||
+            !screen_space_ao_pass_.PrepareResources(*backend_, *prepared_assets_))
+            return false;
+        const bool recorded = screen_space_ao_pass_.RecordFilter(
+            *active_frame_context_, *gbuffer, *raw, fullscreen_pass_resources_,
+            active_pass_context_->GetRecorder());
+        if (recorded)
+            AddProfileDraws(1, 1);
+        return recorded;
+    }
+
     bool DeferredRenderer::RecordDeferredLightingPass()
     {
         if (!active_frame_context_ || !active_pass_context_ ||
@@ -1250,11 +1364,16 @@ namespace kpengine::render
         RenderTarget *const hdr_target = ResolveFrameTexture(
             RenderFrameResourceRole::SceneHdr, RenderGraphAccess::Write);
         RenderTarget *const gbuffer_target = ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
+        const bool screen_space_ao_enabled = profile_.screen_space_ao_effective;
+        RenderTarget *const screen_space_ao = screen_space_ao_enabled
+            ? ResolveFrameTexture(RenderFrameResourceRole::ScreenSpaceAoFiltered)
+            : gbuffer_target;
         RenderTarget *const directional_target = ResolveFrameTexture(
             RenderFrameResourceRole::DirectionalShadow);
         RenderTarget *const spot_target = ResolveFrameTexture(RenderFrameResourceRole::SpotShadow);
         RenderTarget *const point_target = ResolveFrameTexture(RenderFrameResourceRole::PointShadow);
-        if (!hdr_target || !gbuffer_target || !directional_target || !spot_target || !point_target)
+        if (!hdr_target || !gbuffer_target || !screen_space_ao || !directional_target ||
+            !spot_target || !point_target)
             return false;
         if (!PrepareDeferredLightingPassResources())
             return false;
@@ -1270,7 +1389,12 @@ namespace kpengine::render
                 scene_tlas = handles.front();
         }
         const DeferredLightingFrameInputs inputs{
-            deferred_lighting_pass_.FrameLighting(), deferred_lighting_pass_.Environment(), *gbuffer_target, *hdr_target,
+            deferred_lighting_pass_.FrameLighting(), deferred_lighting_pass_.Environment(),
+            *gbuffer_target,
+            screen_space_ao_enabled
+                ? screen_space_ao->GetColorAttachmentTexture(0)
+                : gbuffer_target->GetColorAttachmentTexture(2),
+            screen_space_ao_enabled, *hdr_target,
             *directional_target, *spot_target, *point_target,
             shadow_pass_.DirectionalFrame() ? &*shadow_pass_.DirectionalFrame() : nullptr,
             shadow_pass_.SpotFrame() ? &*shadow_pass_.SpotFrame() : nullptr,
@@ -1369,6 +1493,15 @@ namespace kpengine::render
             RenderFrameResourceRole::DirectionalShadow);
         RenderTarget *const spot = ResolveFrameTexture(RenderFrameResourceRole::SpotShadow);
         RenderTarget *const point = ResolveFrameTexture(RenderFrameResourceRole::PointShadow);
+        const bool is_raw_ao_view = view == CaptureView::ScreenSpaceAoRaw;
+        const bool is_filtered_ao_view = view == CaptureView::ScreenSpaceAoFiltered;
+        RenderTarget *const screen_space_ao = !profile_.screen_space_ao_effective
+            ? nullptr
+            : is_raw_ao_view
+                ? ResolveFrameTexture(RenderFrameResourceRole::ScreenSpaceAoRaw)
+                : is_filtered_ao_view
+                    ? ResolveFrameTexture(RenderFrameResourceRole::ScreenSpaceAoFiltered)
+                    : nullptr;
         if (output == nullptr || gbuffer == nullptr || directional == nullptr ||
             spot == nullptr || point == nullptr ||
             !fullscreen_pass_resources_.Initialize(*backend_) ||
@@ -1383,7 +1516,10 @@ namespace kpengine::render
             shadow_pass_.PointFrame() ? &*shadow_pass_.PointFrame() : nullptr,
             shadow_pass_.SpotRecorded(), shadow_pass_.PointRecorded(),
             fullscreen_pass_resources_.LinearSampler(), shadow_pass_.DirectionalSampler(),
-            shadow_pass_.SpotSampler(), shadow_pass_.PointSampler()};
+            shadow_pass_.SpotSampler(), shadow_pass_.PointSampler(),
+            screen_space_ao != nullptr ? screen_space_ao->GetColorAttachmentTexture(0)
+                                       : gbuffer->GetColorAttachmentTexture(2),
+            screen_space_ao != nullptr};
         const bool recorded = capture_view_pass_.Record(
             *active_frame_context_, scene_camera_, view, inputs, fullscreen_pass_resources_,
             active_pass_context_->GetRecorder());

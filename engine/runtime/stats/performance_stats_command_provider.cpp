@@ -38,6 +38,10 @@ namespace kpengine::runtime
                 return "point_shadow";
             case render::RenderProfilePass::GBuffer:
                 return "g_buffer";
+            case render::RenderProfilePass::ScreenSpaceAoEstimate:
+                return "ssao_estimate";
+            case render::RenderProfilePass::ScreenSpaceAoFilter:
+                return "ssao_filter";
             case render::RenderProfilePass::DeferredLighting:
                 return "deferred_lighting";
             case render::RenderProfilePass::ToneMap:
@@ -364,6 +368,12 @@ namespace kpengine::runtime
             data["path_trace_active"] = profile.path_trace_active;
             data["ray_query_shadows_available"] = profile.ray_query_shadows_available;
             data["ray_query_shadows_active"] = profile.ray_query_shadows_active;
+            data["screen_space_ao_requested"] = profile.screen_space_ao_requested;
+            data["screen_space_ao_effective"] = profile.screen_space_ao_effective;
+            data["screen_space_ao_radius"] = profile.screen_space_ao_radius;
+            data["screen_space_ao_bias"] = profile.screen_space_ao_bias;
+            data["screen_space_ao_strength"] = profile.screen_space_ao_strength;
+            data["screen_space_ao_sample_count"] = static_cast<uint64_t>(profile.screen_space_ao_sample_count);
             AddOptional(data, "gpu_frame_number", profile.gpu_frame_number);
             data["graphics_api"] = std::string{GraphicsApiName(profile.graphics_api)};
             data["viewport_width"] = static_cast<uint64_t>(profile.viewport_width);
@@ -428,6 +438,9 @@ namespace kpengine::runtime
             AddOptional(data, "g_buffer_ms",
                         profile.passes[static_cast<size_t>(render::RenderProfilePass::GBuffer)]
                             .gpu_time_ms);
+            AddOptional(data, "screen_space_ao_ms",
+                        SumPasses(profile, {render::RenderProfilePass::ScreenSpaceAoEstimate,
+                                            render::RenderProfilePass::ScreenSpaceAoFilter}));
             AddOptional(data, "shadow_ms",
                         SumPasses(profile, {render::RenderProfilePass::DirectionalShadow,
                                             render::RenderProfilePass::SpotShadow,
@@ -451,6 +464,8 @@ namespace kpengine::runtime
                                             render::RenderProfilePass::SpotShadow,
                                             render::RenderProfilePass::PointShadow,
                                             render::RenderProfilePass::GBuffer,
+                                            render::RenderProfilePass::ScreenSpaceAoEstimate,
+                                            render::RenderProfilePass::ScreenSpaceAoFilter,
                                             render::RenderProfilePass::DeferredLighting,
                                             render::RenderProfilePass::RayTracingBlasBuild,
                                             render::RenderProfilePass::RayTracingTlasBuild,

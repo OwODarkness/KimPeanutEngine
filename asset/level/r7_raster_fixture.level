@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "objects": [
+    {
+      "id": "fixture_floor",
+      "name": "R7 AO Floor",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [0.8, 1.0, 0.8]
+      },
+      "model": "model/brickwall/floor.obj",
+      "material": "material/r7_fixture_floor.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "fixture_back_wall",
+      "name": "R7 Concave Back Wall",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 2.0, -2.8],
+        "rotation_degrees": [90.0, 0.0, 0.0],
+        "scale": [0.8, 0.8, 0.8]
+      },
+      "model": "model/brickwall/floor.obj",
+      "material": "material/r7_fixture_floor.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "fixture_left_wall",
+      "name": "R7 Concave Side Wall",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [-2.8, 2.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, -90.0],
+        "scale": [0.8, 0.8, 0.8]
+      },
+      "model": "model/brickwall/floor.obj",
+      "material": "material/r7_fixture_floor.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "fixture_sphere",
+      "name": "R7 Convex Sphere",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [-1.15, 0.75, -0.75],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [0.72, 0.72, 0.72]
+      },
+      "model": "model/sphere/sphere.obj",
+      "material": "material/r7_fixture_gold.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "fixture_ao_stone",
+      "name": "R7 Material AO Stone",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [1.05, 0.2, -0.85],
+        "rotation_degrees": [0.0, 18.0, 0.0],
+        "scale": [0.22, 0.22, 0.22]
+      },
+      "model": "model/rock1-bl/rock2.obj",
+      "material": "material/r7_fixture_ao.material",
+      "materials": ["material/r7_fixture_ao.material", "material/r7_fixture_ao.material"],
+      "casts_shadow": true
+    },
+    {
+      "id": "fixture_occluder",
+      "name": "R7 Thin Occluder",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 2.1, 0.25],
+        "rotation_degrees": [-90.0, 0.0, 0.0],
+        "scale": [0.04, 0.3, 1.0]
+      },
+      "model": "model/brickwall/floor.obj",
+      "material": "material/r7_fixture_floor.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "fixture_moving_sphere",
+      "name": "R7 Moving Rigid Sphere",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.72, -1.65],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [0.48, 0.48, 0.48]
+      },
+      "model": "model/sphere/sphere.obj",
+      "material": "material/r7_fixture_gold.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "r7_camera",
+      "name": "R7 Fixture Camera",
+      "kind": "camera",
+      "transform": {
+        "position": [0.0, 2.3, 5.6],
+        "rotation_degrees": [0.0, -90.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": "perspective",
+      "near_plane": 0.05,
+      "far_plane": 100.0,
+      "field_of_view_degrees": 52.0,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "r7_key_light",
+      "name": "R7 Fixture Key",
+      "kind": "directional_light",
+      "direction": [-0.35, -1.0, -0.4],
+      "color": [1.0, 0.94, 0.82],
+      "intensity": 40.0,
+      "enabled": true,
+      "casts_shadow": true
+    },
+    {
+      "id": "r7_fill_light",
+      "name": "R7 Fixture Fill",
+      "kind": "point_light",
+      "position": [0.0, 3.0, 1.0],
+      "color": [1.0, 0.9, 0.78],
+      "intensity": 120.0,
+      "range": 12.0,
+      "enabled": true,
+      "casts_shadow": false
+    }
+  ]
+}

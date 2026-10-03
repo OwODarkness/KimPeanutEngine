@@ -37,6 +37,8 @@ namespace kpengine::render
         const FrameLightingBinding &frame_lighting;
         const EnvironmentFrameBindings &environment;
         RenderTarget &gbuffer;
+        graphics::TextureHandle screen_space_ao;
+        bool screen_space_ao_enabled = false;
         RenderTarget &scene_hdr;
         RenderTarget &directional_shadow_target;
         RenderTarget &spot_shadow_target;

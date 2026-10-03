@@ -45,6 +45,11 @@ public policy while the coordinator owns scene preparation.
 
 ## Render-wide stage plans
 
+- [R7 — Raster image quality](.plan/R7.md) — planned spatial SSAO,
+  motion/history contracts, native-resolution TAA, and exponential height fog;
+  closes affected R5 gates first and keeps R6 PT reconstruction separate.
+  Reflection probes, SSR, and volumetric fog remain follow-up decision gates.
+
 - [R6 — Interactive path tracing and temporal reconstruction](.plan/R6.md) —
   active low-SPP moving-camera denoising, multi-light GPU attribution and
   evidence-gated optimization; retains progressive Beauty and R5 correctness

@@ -11,6 +11,7 @@ below are stable built-ins today.
 | `capture.screenshot` | Capture a live final or diagnostic render view and export a PNG. | [`capture.screenshot`](#capturescreenshot) |
 | `capture.glfw_window` | Capture the full composited GLFW client area and export a PNG. | [`capture.glfw_window`](#captureglfw_window) |
 | `window.resize` | Resize the active window's client area. | [`window.resize`](#windowresize) |
+| `render.screen_space_ao_settings` | Set raster screen-space AO enable, radius, bias, strength, and quality. | [`render.screen_space_ao_settings`](#renderscreen_space_ao_settings) |
 | `actor.list` | List and filter live Gameplay Actors by authored name and generational handle. | [`actor.list`](#actorlist) |
 | `actor.query` | Read one Actor's state and root transform by handle. | [`actor.query`](#actorquery) |
 | `actor.control` | Set an Actor root's local position and rotation. | [`actor.control`](#actorcontrol) |
@@ -168,6 +169,27 @@ plane, normals are remapped from `[-1,1]` to `[0,1]`, shadow visibility is
 white for visible and black for occluded, and `spot_shadow_depth` visualizes
 the sampled D32 spotlight map; `point_shadow_depth` visualizes the fixed
 3×2 point-shadow depth atlas.
+
+## `render.screen_space_ao_settings`
+
+Schedules SSAO settings on the Game lane. Disabling the effect removes the AO
+estimate/filter passes and transients from the raster frame graph. During
+path-tracing frames, SSAO remains ineffective regardless of this setting.
+
+| Property | Value |
+|---|---|
+| Provider | `RenderSettings` |
+| Execution lane | Game |
+| `enabled` | Required boolean. |
+| `radius` | Required finite float in world units; clamped to `[0.05, 2.0]`. |
+| `bias` | Required finite float; clamped to `[0, radius × 0.5]`. |
+| `strength` | Required finite float; clamped to `[0, 4]`. |
+| `quality` | Required enum: `low`, `medium`, or `high` (6, 12, or 24 estimate taps). |
+| Result | `success` when settings are scheduled; `stats` reports effective state and sample count. |
+
+```json
+{"op":"execute","command":"render.screen_space_ao_settings","arguments":{"enabled":true,"radius":0.65,"bias":0.025,"strength":1.0,"quality":"medium"}}
+```
 
 ## `capture.glfw_window`
 

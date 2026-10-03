@@ -4,6 +4,7 @@ render_scene_coordinator.cpp
 prepared_render_asset_catalog.cpp
 deferred_renderer.cpp
 passes/deferred_lighting_pass.cpp
+passes/screen_space_ao_pass.cpp
 passes/environment_bindings_owner.cpp
 passes/tone_map_pass.cpp
 passes/capture_view_pass.cpp

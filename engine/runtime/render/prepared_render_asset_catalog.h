@@ -32,6 +32,8 @@ namespace kpengine::render
     enum class BuiltInRenderAsset : uint8_t
     {
         DeferredLightingProgram,
+        ScreenSpaceAoEstimateProgram,
+        ScreenSpaceAoFilterProgram,
         GBufferDebugProgram,
         ToneMapProgram,
         CaptureViewProgram,

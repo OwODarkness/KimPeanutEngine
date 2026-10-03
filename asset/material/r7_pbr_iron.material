@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "shader": "../shader/pbr_gbuffer.shader",
+  "surface": {
+    "shading_model": "standard_pbr",
+    "blend_mode": "opaque",
+    "cull_mode": "back",
+    "double_sided": false
+  },
+  "parameters": {
+    "base_color": [0.34, 0.24, 0.18, 1.0],
+    "metallic": 0.56,
+    "roughness": 0.68,
+    "occlusion": 1.0,
+    "emissive": [0.0, 0.0, 0.0, 1.0]
+  }
+}

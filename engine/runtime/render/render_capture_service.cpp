@@ -26,6 +26,8 @@ namespace kpengine::render
             case CaptureView::PointShadowDepth:
             case CaptureView::PointShadowVisibility:
             case CaptureView::SelectionMask:
+            case CaptureView::ScreenSpaceAoRaw:
+            case CaptureView::ScreenSpaceAoFiltered:
             case CaptureView::HostOutput:
                 return true;
             case CaptureView::EngineWindow:

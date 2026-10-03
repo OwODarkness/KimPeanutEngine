@@ -1,5 +1,24 @@
 # Project Status
 
+- **R7 raster image quality (2026-10-03; R7.1 implementation complete, acceptance open)** — Ordered plan for
+  spatial SSAO, motion/history contracts, native-resolution TAA, and exponential
+  height fog. The compact fixture has a Vulkan raster capture and three matched
+  RelWithDebInfo timing windows; Sponza has shadow-map and hybrid ray-query
+  captures with PT disabled. Cornell and PBR showcase now have both raster
+  modes captured; their source variants still depend on checkout-local model
+  assets. R7.0 is marked complete at the user’s direction; expanded R5
+  correctness gates remain open. R7.1 adds graph-driven SSAO estimate/filter,
+  ambient-diffuse integration, Low/Medium/High sample-count settings, and
+  settings-off producer pruning, and raw/filtered semantic AO captures.
+  RelWithDebInfo Vulkan Sponza captures verify AO-on/off behavior and High AO is
+  within the recorded GPU budget. OpenGL, AO-material overlap, and focused
+  artifact checks remain open. R6 PT
+  reconstruction stays independent; reflection probes, SSR, and volumetric fog
+  remain separately designed follow-ups. →
+  [stage plan](render/.plan/R7.md), [roadmap](render/TODO.md#r7--raster-image-quality-r71-implementation-complete-acceptance-open),
+  [spec](../.spec/specs/render-r7-raster-image-quality.md),
+  [planning journal](../.spec/journal/2026-10-03-render-r7-raster-image-quality.md)
+
 - **Standalone TTS editor (2026-10-03; TE1/TE2 implemented, runtime checked)** —
   `--mode tts` now has a separate TTS editor target, session dialog, voice
   presets, asynchronous generation, cancellation, and stream/buffer preview

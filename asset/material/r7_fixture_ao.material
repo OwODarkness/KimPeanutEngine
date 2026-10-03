@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "shader": "../shader/pbr_gbuffer.shader",
+  "surface": {
+    "shading_model": "standard_pbr",
+    "blend_mode": "opaque",
+    "cull_mode": "back",
+    "double_sided": false
+  },
+  "parameters": {
+    "base_color": [1.0, 1.0, 1.0, 1.0],
+    "base_color_texture": "../model/rock1-bl/rock1-albedo.png",
+    "normal_texture": "../model/rock1-bl/rock1-normal_ogl.png",
+    "metallic": 0.0,
+    "roughness": 1.0,
+    "roughness_texture": "../model/rock1-bl/rock1-roughness.png",
+    "occlusion": 1.0,
+    "occlusion_texture": "../model/rock1-bl/rock1-ao.png",
+    "emissive": [0.0, 0.0, 0.0, 1.0]
+  }
+}

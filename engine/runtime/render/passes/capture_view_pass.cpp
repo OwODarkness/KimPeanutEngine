@@ -23,6 +23,7 @@ namespace kpengine::render
             Vector4f light_direction_and_view;
             Vector4f depth_params;
             Vector4f punctual_depth_params;
+            Vector4f screen_space_ao_params;
         };
     }
 
@@ -79,6 +80,8 @@ namespace kpengine::render
              ShaderStage::SHADER_STAGE_FRAGMENT},
             {11, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
+            {12, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+             ShaderStage::SHADER_STAGE_FRAGMENT},
         }};
         pipeline_ = backend.CreatePipelineResource(desc);
         return pipeline_.IsValid();
@@ -97,11 +100,15 @@ namespace kpengine::render
         const FullscreenPassResources &fullscreen_resources,
         graphics::CommandRecorder &recorder)
     {
+        const bool is_screen_space_ao_view =
+            view == CaptureView::ScreenSpaceAoRaw ||
+            view == CaptureView::ScreenSpaceAoFiltered;
         if (view == CaptureView::SceneColor || !pipeline_.IsValid() ||
             !inputs.output.IsValid() || !inputs.gbuffer.IsValid() ||
             !inputs.directional_shadow_target.IsValid() ||
             !inputs.spot_shadow_target.IsValid() || !inputs.point_shadow_target.IsValid() ||
-            !fullscreen_resources.Mesh().IsValid() || !inputs.linear_sampler.IsValid())
+            !fullscreen_resources.Mesh().IsValid() || !inputs.linear_sampler.IsValid() ||
+            (is_screen_space_ao_view && !inputs.screen_space_ao.IsValid()))
             return false;
 
         CaptureViewGpuData data{};
@@ -150,6 +157,8 @@ namespace kpengine::render
             has_spot_shadow ? inputs.spot_shadow->far_plane : 1.0f,
             has_point_shadow ? inputs.point_shadow->near_plane : 0.01f,
             has_point_shadow ? inputs.point_shadow->far_plane : 1.0f};
+        data.screen_space_ao_params = Vector4f{
+            inputs.screen_space_ao_available ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
 
         const UniformAllocation constants = frame_context.AllocateUniform(data);
         const UniformAllocation point_constants = frame_context.AllocateUniform(point_shadow);
@@ -180,6 +189,8 @@ namespace kpengine::render
                     point_constants.offset, point_constants.range},
                 graphics::SampledTextureBinding{0, 11,
                     inputs.gbuffer.GetColorAttachmentTexture(3), inputs.linear_sampler},
+                graphics::SampledTextureBinding{0, 12, inputs.screen_space_ao,
+                    inputs.linear_sampler},
             }});
         if (!bindings.IsValid())
             return false;
