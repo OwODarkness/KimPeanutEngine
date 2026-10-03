@@ -1,0 +1,18 @@
+{
+  "asset_type": 3,
+  "content_path": "audio/music/aimer - 花の唄.flac",
+  "id": "cid-148158e26538c78e57e1719941a0a91b",
+  "name": "aimer - 花の唄",
+  "products": [
+    {
+      "hash": "7f9de0f69914a0f47e60917d60a0f690007dee71324607837975fab5aea63df1",
+      "type": 4
+    }
+  ],
+  "references": [],
+  "schema_version": 1,
+  "source_path": "music/aimer - 花の唄.flac",
+  "status": "ready",
+  "type": "audio",
+  "visibility": "visible"
+}

@@ -1,0 +1,18 @@
+{
+  "asset_type": 3,
+  "content_path": "audio/music/aimer - 春はゆく.flac",
+  "id": "cid-5fa36ba6adbbbcc2c6f0a0a5dfa96f81",
+  "name": "aimer - 春はゆく",
+  "products": [
+    {
+      "hash": "8b3d6ca2127a3534fb466bcd7c18e003670174b21d18feb85fa70ba1afa95b58",
+      "type": 4
+    }
+  ],
+  "references": [],
+  "schema_version": 1,
+  "source_path": "music/aimer - 春はゆく.flac",
+  "status": "ready",
+  "type": "audio",
+  "visibility": "visible"
+}

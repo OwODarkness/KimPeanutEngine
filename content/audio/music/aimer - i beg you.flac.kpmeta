@@ -1,0 +1,18 @@
+{
+  "asset_type": 3,
+  "content_path": "audio/music/aimer - i beg you.flac",
+  "id": "cid-3c4a0e35677177580e3f91d954656031",
+  "name": "aimer - i beg you",
+  "products": [
+    {
+      "hash": "94f8f269820fcde9b1b8f51fe1d3a6934aaa3b8cc2909c76ea20b29f2f594b51",
+      "type": 4
+    }
+  ],
+  "references": [],
+  "schema_version": 1,
+  "source_path": "music/aimer - i beg you.flac",
+  "status": "ready",
+  "type": "audio",
+  "visibility": "visible"
+}

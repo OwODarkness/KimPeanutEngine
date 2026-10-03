@@ -1,0 +1,18 @@
+{
+  "asset_type": 3,
+  "content_path": "audio/music/澤野弘之,r!ngemie - call of silence.flac",
+  "id": "cid-07132f85a23c77abb05ddaee52663c36",
+  "name": "澤野弘之,r!ngemie - call of silence",
+  "products": [
+    {
+      "hash": "45210efd16f244c33bf23717661e6880b04078ae4660b6997716cd8a0c0094b3",
+      "type": 4
+    }
+  ],
+  "references": [],
+  "schema_version": 1,
+  "source_path": "music/澤野弘之,r!ngemie - call of silence.flac",
+  "status": "ready",
+  "type": "audio",
+  "visibility": "visible"
+}

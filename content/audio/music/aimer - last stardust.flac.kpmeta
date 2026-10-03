@@ -1,0 +1,18 @@
+{
+  "asset_type": 3,
+  "content_path": "audio/music/aimer - last stardust.flac",
+  "id": "cid-e7fd2d0ffc7765ee3fd51896b2f15883",
+  "name": "aimer - last stardust",
+  "products": [
+    {
+      "hash": "c899f0ce458f87fb37fe47f230e5771cf83b2d1cf77ccfb84935f4b19b55f713",
+      "type": 4
+    }
+  ],
+  "references": [],
+  "schema_version": 1,
+  "source_path": "music/aimer - last stardust.flac",
+  "status": "ready",
+  "type": "audio",
+  "visibility": "visible"
+}

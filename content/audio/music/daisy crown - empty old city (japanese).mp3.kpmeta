@@ -1,0 +1,18 @@
+{
+  "asset_type": 3,
+  "content_path": "audio/music/daisy crown - empty old city (japanese).mp3",
+  "id": "cid-5c4815df7fa7c9c2d2fe2092fc7d8c75",
+  "name": "daisy crown - empty old city (japanese)",
+  "products": [
+    {
+      "hash": "de89ebeb7262fb3222af81d98ad61a973f19f118b319d9654a73b7c52681ca42",
+      "type": 4
+    }
+  ],
+  "references": [],
+  "schema_version": 1,
+  "source_path": "music/daisy crown - empty old city (japanese).mp3",
+  "status": "ready",
+  "type": "audio",
+  "visibility": "visible"
+}
