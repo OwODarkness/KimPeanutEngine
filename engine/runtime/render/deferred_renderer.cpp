@@ -14,6 +14,7 @@
 #include "render/material/material_system.h"
 #include "render/material/material_asset_resolver.h"
 #include "render/render_capture_service_internal.h"
+#include "render/temporal_reprojection.h"
 #include "render/render_world/scene_visibility.h"
 #include "render_resource_resolver.h"
 #include "render_scene_coordinator.h"
@@ -91,6 +92,10 @@ namespace kpengine::render
 
     void DeferredRenderer::Cleanup()
     {
+        previous_submitted_camera_.reset();
+        previous_submitted_extent_ = {};
+        pending_temporal_commit_ = false;
+        pending_submitted_extent_ = {};
         const uint32_t allocated_history_targets =
             path_tracing_pass_.GetHistoryTargetCount();
         // Release graph-owned leases before the backend tears its pool down.
@@ -879,6 +884,17 @@ namespace kpengine::render
         }
         const bool required_pass_failed = graph_result.required_pass_failed;
         const bool succeeded = graph_result.Succeeded() && !frame_execution_failed_;
+        const bool raster_frame = !effective_path_trace_settings_.path_tracing_enabled;
+        pending_temporal_commit_ = succeeded && raster_frame;
+        pending_submitted_camera_ = scene_camera_.GetCameraData();
+        pending_submitted_extent_ = active_frame_context_ != nullptr
+            ? active_frame_context_->GetRenderExtent() : graphics::Extent2D{};
+        if (!raster_frame)
+        {
+            scene_draw_recorder_.ResetTemporalHistory();
+            previous_submitted_camera_.reset();
+            previous_submitted_extent_ = {};
+        }
         path_tracing_pass_.CommitFrame(
             finalized, frame_execution_failed_, required_pass_failed,
             effective_path_trace_settings_.samples_per_dispatch);
@@ -918,6 +934,19 @@ namespace kpengine::render
             ClearActiveFrameInputs();
         }
         return succeeded;
+    }
+
+    void DeferredRenderer::CommitSubmittedFrame(bool submitted)
+    {
+        const bool accepted = submitted && pending_temporal_commit_;
+        scene_draw_recorder_.CommitSubmittedFrame(accepted);
+        if (accepted)
+        {
+            previous_submitted_camera_ = pending_submitted_camera_;
+            previous_submitted_extent_ = pending_submitted_extent_;
+        }
+        pending_temporal_commit_ = false;
+        pending_submitted_extent_ = {};
     }
 
     RenderTarget *DeferredRenderer::ResolveFrameTexture(
@@ -1303,7 +1332,13 @@ namespace kpengine::render
         if (active_frame_context_ == nullptr || active_pass_context_ == nullptr)
             return false;
         const DeferredLightingRecordResult result = deferred_lighting_pass_.RecordGBuffer(
-            *active_frame_context_, scene_camera_, scene_draw_recorder_,
+            *active_frame_context_, scene_camera_,
+            previous_submitted_camera_.value_or(scene_camera_.GetCameraData()),
+            previous_submitted_camera_.has_value() &&
+                previous_submitted_extent_.width == active_frame_context_->GetRenderExtent().width &&
+                previous_submitted_extent_.height == active_frame_context_->GetRenderExtent().height &&
+                !IsRasterCameraCut(*previous_submitted_camera_, scene_camera_.GetCameraData()),
+            scene_draw_recorder_,
             *material_system_, *resource_resolver_, active_pass_context_->GetRecorder(),
             ResolveFrameTexture(RenderFrameResourceRole::GBuffer,
                                 RenderGraphAccess::Write));

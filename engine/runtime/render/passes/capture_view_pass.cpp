@@ -82,6 +82,8 @@ namespace kpengine::render
              ShaderStage::SHADER_STAGE_FRAGMENT},
             {12, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
+            {13, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+             ShaderStage::SHADER_STAGE_FRAGMENT},
         }};
         pipeline_ = backend.CreatePipelineResource(desc);
         return pipeline_.IsValid();
@@ -191,6 +193,8 @@ namespace kpengine::render
                     inputs.gbuffer.GetColorAttachmentTexture(3), inputs.linear_sampler},
                 graphics::SampledTextureBinding{0, 12, inputs.screen_space_ao,
                     inputs.linear_sampler},
+                graphics::SampledTextureBinding{0, 13,
+                    inputs.gbuffer.GetColorAttachmentTexture(4), inputs.linear_sampler},
             }});
         if (!bindings.IsValid())
             return false;

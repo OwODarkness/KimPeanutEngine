@@ -5,6 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <chrono>
+#include <exception>
 #include <utility>
 
 #include "asset/mesh.h"
@@ -511,7 +512,27 @@ namespace kpengine::render
                 std::chrono::steady_clock::now() - finalize_started)
                 .count();
         const auto present_started = std::chrono::steady_clock::now();
-        backend_->EndFrame();
+        bool submitted = true;
+        try
+        {
+            backend_->EndFrame();
+        }
+        catch (const std::exception &error)
+        {
+            submitted = false;
+            last_diagnostic_ = std::string("Graphics frame submission failed: ") + error.what();
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", last_diagnostic_.c_str());
+        }
+        catch (...)
+        {
+            submitted = false;
+            last_diagnostic_ = "Graphics frame submission failed with an unknown error.";
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", last_diagnostic_.c_str());
+        }
+        if (deferred_renderer_)
+        {
+            deferred_renderer_->CommitSubmittedFrame(submitted);
+        }
         profile_.cpu_present_ms =
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - present_started)
@@ -578,7 +599,7 @@ namespace kpengine::render
             PublishMetricsSnapshot();
         }
         lifecycle_state_ = frame_return_state_;
-        return frame_finalized;
+        return frame_finalized && submitted;
     }
 
     void RenderSystem::RecordPresentationTime(const double milliseconds)

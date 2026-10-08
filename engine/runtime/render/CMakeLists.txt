@@ -37,6 +37,8 @@ render_pass_declaration.cpp
 render_target.cpp
 renderer_frame_targets.cpp
 render_camera.cpp
+temporal_reprojection.cpp
+submitted_transform_history.cpp
 camera_utils.cpp
 render_scene.cpp
 render_profile.cpp

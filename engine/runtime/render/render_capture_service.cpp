@@ -28,6 +28,7 @@ namespace kpengine::render
             case CaptureView::SelectionMask:
             case CaptureView::ScreenSpaceAoRaw:
             case CaptureView::ScreenSpaceAoFiltered:
+            case CaptureView::MotionVectors:
             case CaptureView::HostOutput:
                 return true;
             case CaptureView::EngineWindow:

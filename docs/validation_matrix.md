@@ -9,6 +9,12 @@ This document defines the minimum validation required for a change in KimPeanutE
 - Escalate when a public API, CMake wiring, or dependency boundary makes the impact uncertain.
 - Distinguish an environment failure from a source-code failure.
 - Runtime rendering changes require runtime evidence; successful compilation alone is insufficient.
+- Rendering-feature validation must also launch the canonical textured Sponza
+  level (`level/sponza.level`) and capture `base_color` and `scene_color` after
+  texture residency settles. Compare against the prior working scene. A neutral
+  material fixture such as `sponza_raster.level` is supplemental evidence only;
+  missing archive products or failed material dependencies must be repaired and
+  reported, never bypassed to claim the existing scene still works.
 
 ## Validation levels
 

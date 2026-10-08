@@ -25,6 +25,7 @@
 #include "render/render_system.h"
 #include "render/render_submission_executor.h"
 #include "render/prepared_render_asset_catalog.h"
+#include "render/passes/capture_view_pass.h"
 #include "render/passes/scene_draw_recorder.h"
 #include "render/path_trace_history_signature.h"
 #include "render/path_trace_history_progress.h"
@@ -638,6 +639,67 @@ namespace
         auto catalog = render::PreparedRenderAssetCatalog::Create(std::move(build), diagnostic);
         return catalog ? std::make_shared<const render::PreparedRenderAssetCatalog>(std::move(*catalog))
                        : nullptr;
+    }
+
+    TEST(RenderResourceResolverTest, GBufferPipelineMatchesTemporalAttachmentAndUniformStages)
+    {
+        auto probe = std::make_shared<BackendProbe>();
+        FakeBackend backend(probe);
+        const auto prepared_assets = BuildPreparedCatalog();
+        ASSERT_NE(prepared_assets, nullptr);
+        const asset::AssetID program_id = prepared_assets->GetBuiltIn(
+            render::BuiltInRenderAsset::GBufferDebugProgram);
+        const auto program = prepared_assets->Get<asset::ShaderProgramResource>(program_id);
+        ASSERT_NE(program, nullptr);
+
+        render::RenderResourceResolver resolver(backend, *prepared_assets);
+        const auto pipeline = resolver.GetOrCreateDefaultPipeline(
+            program_id, *program, nullptr, false, render::MaterialPass::GBuffer);
+        ASSERT_TRUE(pipeline.IsValid());
+        ASSERT_EQ(probe->pipelines.size(), 1u);
+
+        const auto &description = probe->pipelines.front();
+        ASSERT_EQ(description.color_attachment_formats.size(), 5u);
+        EXPECT_EQ(description.color_attachment_formats.back(),
+                  TextureFormat::TEXTURE_FORMAT_RGBA16F);
+        ASSERT_EQ(description.descriptor_binding_descs.size(), 1u);
+        const auto &bindings = description.descriptor_binding_descs.front();
+        const auto uses_stages = [&bindings](uint32_t binding,
+                                             ShaderStage expected_stage)
+        {
+            const auto descriptor = std::find_if(
+                bindings.begin(), bindings.end(),
+                [binding](const graphics::DescriptorBindingDesc &candidate)
+                { return candidate.binding == binding; });
+            return descriptor != bindings.end() &&
+                   descriptor->stage_flag == expected_stage;
+        };
+        EXPECT_TRUE(uses_stages(0, ShaderStage::SHADER_STAGE_VERTEX_FRAGMENT));
+        EXPECT_TRUE(uses_stages(1, ShaderStage::SHADER_STAGE_VERTEX_FRAGMENT));
+        resolver.Cleanup();
+    }
+
+    TEST(CaptureViewPassTest, DeclaresMotionVectorTextureBinding)
+    {
+        auto probe = std::make_shared<BackendProbe>();
+        FakeBackend backend(probe);
+        const auto prepared_assets = BuildPreparedCatalog();
+        ASSERT_NE(prepared_assets, nullptr);
+
+        render::CaptureViewPass pass;
+        ASSERT_TRUE(pass.PrepareResources(backend, *prepared_assets));
+        ASSERT_EQ(probe->pipelines.size(), 1u);
+        ASSERT_EQ(probe->pipelines.front().descriptor_binding_descs.size(), 1u);
+        const auto &bindings = probe->pipelines.front().descriptor_binding_descs.front();
+        const auto motion = std::find_if(
+            bindings.begin(), bindings.end(),
+            [](const graphics::DescriptorBindingDesc &binding)
+            { return binding.binding == 13; });
+        ASSERT_NE(motion, bindings.end());
+        EXPECT_EQ(motion->descriptor_type,
+                  graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER);
+        EXPECT_EQ(motion->stage_flag, ShaderStage::SHADER_STAGE_FRAGMENT);
+        pass.Cleanup(backend);
     }
 
     struct InitFixtures

@@ -240,3 +240,76 @@ AO-textured material overlap, and focused planar-darkening/silhouette tolerance
 checks remain open. AO-off and path-tracing-off behavior were checked only on
 Vulkan. No debugger, Debug configuration, or test suite was run, per the user's
 instruction to avoid debug tooling and to keep validation focused.
+
+### R7.2 implementation checkpoint — 2026-10-08
+
+The GBuffer now writes a fifth `RGBA16F` attachment containing previous-minus-
+current top-left UV displacement, positive view-space depth, and a validity bit.
+The per-pass ABI carries previous submitted view/projection matrices, extent,
+and jitter UVs; per-object data carries the previous submitted rigid transform
+and validity. `motion_vectors` exposes the attachment through the semantic
+capture path. UV motion removes each frame's jitter once. Current raster jitter
+is deliberately zero while R7.3's temporal consumer is absent; R6 path tracing
+does not use or advance raster history.
+
+Camera history rejects first-use, resize, large view/projection discontinuities,
+and PT-mode frames. Generational object identity rejects new/recycled handles;
+removed objects disappear after an accepted frame. Transform and camera state
+commit only after graph finalization and `RenderBackend::EndFrame` returns. A
+failed graph or thrown submission leaves the last submitted transforms intact.
+
+Validation: Debug `RenderPassScheduleTest` passed 102/102; Debug
+`RenderSystemTest` passed 49/49; full Debug `KimPeanutEngine` build passed.
+`glslc` compiled the GBuffer vertex/fragment and capture fragment shaders under
+both Vulkan and OpenGL defines. Runtime capture was not performed. The asset
+import wrapper does not register shader programs (`reimport
+shader/pbr_gbuffer.shader` returned “no import provider matches the source
+path”), so the active content archive was not updated by this attempt. The
+visible outside-sandbox launch/capture and shader archive publication are still
+required before R7.2 acceptance; R7.1 acceptance also remains open.
+
+### R7.2 runtime acceptance follow-up — 2026-10-08
+
+The first visible Vulkan run exposed three integration omissions that unit
+contracts and shader compilation had not caught: the GBuffer pipeline still
+declared four color formats for a five-color target; per-pass/per-object
+uniforms used in the fragment stage were visible only to the vertex stage; and
+`CaptureViewPass` omitted fragment sampler binding 13 for the motion target.
+The GBuffer pipeline description now matches the fifth `RGBA16F` attachment
+and makes bindings 0/1 visible to both stages. The capture pipeline now declares
+binding 13. Focused pipeline contract tests guard these declarations.
+
+Debug `RenderSystemTest` passed 51/51 and `RenderPassScheduleTest` passed
+102/102. The Debug `KimPeanutEngine` target built successfully. `ctest -R
+RenderPassScheduleTest` reported no registered tests in this build tree, so the
+test executable was run directly and passed. The earlier Vulkan shader
+compilation checks covered both API defines.
+
+Visible Debug Runtime validation used `level/sponza.level` on Vulkan and
+OpenGL, with `--disable-path-tracing` and the Runtime command transport. Both
+reported `path_trace_active=false`, zero PT samples, fully resident textures,
+and successfully exported `base_color`, `scene_color`, and `motion_vectors` at
+1094x631. Vulkan reported `hybrid_ray_query` with ray-query shadows enabled;
+its validation log contained zero pipeline/layout errors after the fixes.
+OpenGL reported `deferred` and completed all three captures. Both visible
+`GLFW30` windows were verified on the `Default` input desktop during their
+respective runs. The static motion diagnostic is the expected neutral
+zero-displacement color with the validity channel set.
+
+Captures:
+
+- `save/screenshots/validation/r7_2_sponza_base_color.png`
+- `save/screenshots/validation/r7_2_sponza_scene_color.png`
+- `save/screenshots/validation/r7_2_sponza_motion_vectors.png`
+- `save/screenshots/validation/r7_2_sponza_opengl_base_color.png`
+- `save/screenshots/validation/r7_2_sponza_opengl_scene_color.png`
+- `save/screenshots/validation/r7_2_sponza_opengl_motion_vectors.png`
+
+Correction to the earlier archive note: shader-program manifests and GLSL are
+loaded from `asset/shader` and compiled/served through the runtime shader cache;
+they are not inputs to the AssetTool's model/texture/audio import providers.
+The failed `reimport shader/pbr_gbuffer.shader` attempt therefore reflects an
+unsupported importer request, not a missing publication step. Runtime shader
+logs on Vulkan confirmed the current GBuffer GLSL source/cache entries were
+used. R7.2 is complete; R7.1's material/silhouette checks and the combined R7
+acceptance remain open. Raster jitter remains zero until R7.3 consumes it.

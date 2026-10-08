@@ -1,10 +1,11 @@
 #version 450
 
-// Deferred G-buffer fragment stage. Outputs a 4-color MRT + depth:
+// Deferred G-buffer fragment stage. Outputs a 5-color MRT + depth:
 //   loc0 albedo   RGBA8_UNORM linear   base_color.rgb * sRGB-sampled albedo
 //   loc1 normal   RGBA16F  raw world-space [-1,1] (no *2-1 encode needed)
 //   loc2 material RGBA8_UNORM linear   metallic R / roughness G / occlusion B
 //   loc3 selection R8_UNORM            selected object mask
+//   loc4 motion   RGBA16F               previous-minus-current UV, view depth, validity
 // The constants block is the StandardPbr ABI shared with
 // material_asset_resolver.cpp: base_color@0, metallic@16, roughness@20,
 // occlusion@24, emissive@32, texture_channels@48, normal_scale@64,
@@ -32,15 +33,50 @@ layout(binding = 9) uniform SelectionData
     vec4 selected;
 } selection_data;
 
+layout(binding = 0) uniform PerPassData
+{
+    mat4 view;
+    mat4 proj;
+    mat4 previous_view;
+    mat4 previous_proj;
+    vec4 temporal_params;
+    vec4 history_params;
+} pass_data;
+layout(binding = 1) uniform PerObjectData
+{
+    mat4 model;
+    mat4 previous_submitted_model;
+    vec4 temporal_state;
+} object_data;
+
 layout(location = 0) in vec2 frag_texcoord;
 layout(location = 1) in vec3 frag_T;
 layout(location = 2) in vec3 frag_B;
 layout(location = 3) in vec3 frag_N;
+layout(location = 4) in vec3 frag_local_position;
 
 layout(location = 0) out vec4 out_albedo;
 layout(location = 1) out vec4 out_normal;
 layout(location = 2) out vec4 out_material;
 layout(location = 3) out float out_selection;
+layout(location = 4) out vec4 out_motion;
+
+vec2 ClipToTopLeftUv(vec4 clip_position)
+{
+    return vec2(clip_position.x / clip_position.w * 0.5 + 0.5,
+                0.5 - clip_position.y / clip_position.w * 0.5);
+}
+
+bool IsInsideClip(vec4 clip_position)
+{
+    if (clip_position.w <= 1e-6 || any(isnan(clip_position)) || any(isinf(clip_position)))
+        return false;
+#if KP_GRAPHICS_API_VULKAN
+    return clip_position.z >= 0.0 && clip_position.z <= clip_position.w;
+#else
+    return clip_position.z >= -clip_position.w && clip_position.z <= clip_position.w;
+#endif
+}
 
 void main()
 {
@@ -109,4 +145,26 @@ void main()
     out_normal = vec4(normal, 1.0);
     out_material = vec4(metallic, roughness, occlusion, 1.0);
     out_selection = selection_data.selected.x;
+
+    vec4 local_position = vec4(frag_local_position, 1.0);
+    vec4 current_world = object_data.model * local_position;
+    vec4 current_clip = pass_data.proj * pass_data.view * current_world;
+    vec4 previous_world = object_data.previous_submitted_model * local_position;
+    vec4 previous_clip = pass_data.previous_proj * pass_data.previous_view * previous_world;
+#if KP_GRAPHICS_API_VULKAN
+    current_clip.z = 0.5 * (current_clip.z + current_clip.w);
+    previous_clip.z = 0.5 * (previous_clip.z + previous_clip.w);
+#endif
+    vec2 current_uv = ClipToTopLeftUv(current_clip) - pass_data.temporal_params.zw;
+    vec2 previous_uv = ClipToTopLeftUv(previous_clip) - pass_data.history_params.yz;
+    bool valid = pass_data.history_params.x > 0.5 &&
+                 object_data.temporal_state.x > 0.5 &&
+                 IsInsideClip(current_clip) && IsInsideClip(previous_clip) &&
+                 all(greaterThanEqual(current_uv, vec2(0.0))) &&
+                 all(lessThanEqual(current_uv, vec2(1.0))) &&
+                 all(greaterThanEqual(previous_uv, vec2(0.0))) &&
+                 all(lessThanEqual(previous_uv, vec2(1.0)));
+    float view_depth = max(0.0, -(pass_data.view * current_world).z);
+    out_motion = vec4(valid ? previous_uv - current_uv : vec2(0.0),
+                      view_depth, valid ? 1.0 : 0.0);
 }

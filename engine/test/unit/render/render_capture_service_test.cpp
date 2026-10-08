@@ -263,6 +263,9 @@ TEST(RenderCaptureServiceTest, ClassifiesEveryCaptureViewExplicitly)
         {CaptureView::PointShadowDepth, true},
         {CaptureView::PointShadowVisibility, true},
         {CaptureView::SelectionMask, true},
+        {CaptureView::ScreenSpaceAoRaw, true},
+        {CaptureView::ScreenSpaceAoFiltered, true},
+        {CaptureView::MotionVectors, true},
         {CaptureView::HostOutput, false},
         {CaptureView::EngineWindow, false},
     };

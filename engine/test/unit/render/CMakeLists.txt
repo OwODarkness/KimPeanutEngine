@@ -20,11 +20,14 @@ add_executable(
     camera_utils_test.cpp
     render_profile_test.cpp
     texture_mipmap_test.cpp
+    temporal_reprojection_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_system.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_asset_resolver.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/prepared_render_asset_catalog.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_camera.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/camera_utils.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/temporal_reprojection.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/submitted_transform_history.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_profile.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/render_world.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_source_registry.cpp

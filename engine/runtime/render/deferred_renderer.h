@@ -98,6 +98,7 @@ namespace kpengine::render
 
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
         bool FinalizeFrame();
+        void CommitSubmittedFrame(bool submitted);
 
         DeferredRendererFrameResult RecordFrame(
             FrameContext &frame_context, const RenderSceneFrameInput &input);
@@ -177,6 +178,11 @@ namespace kpengine::render
         RayTracingScene ray_tracing_scene_;
         uint64_t triangle_count_ = 0;
         RenderCamera scene_camera_;
+        std::optional<CameraData> previous_submitted_camera_;
+        graphics::Extent2D previous_submitted_extent_{};
+        CameraData pending_submitted_camera_{};
+        graphics::Extent2D pending_submitted_extent_{};
+        bool pending_temporal_commit_ = false;
         std::optional<CaptureView> active_pending_capture_;
         std::optional<CaptureView> active_debug_view_;
         bool ray_tracing_enabled_ = true;

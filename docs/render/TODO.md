@@ -358,7 +358,7 @@ details and stage checklists belong in the linked submodule documents.
       [concrete plan](.plan/R6.md) ·
   [journal](../../.spec/journal/2026-09-29-r6-implementation.md)
 
-## R7 — Raster image quality (R7.1 implementation complete; acceptance open)
+## R7 — Raster image quality (R7.2 complete; R7.1 and core acceptance open)
 
 R7.0 baseline scenes, captures, and budgets are marked complete at the user’s direction. Expanded R5 correctness validation remains open and is not represented as passed. Canonical [stage plan](.plan/R7.md),
 [execution spec](../../.spec/specs/render-r7-raster-image-quality.md), and
@@ -373,10 +373,20 @@ RelWithDebInfo Vulkan Sponza evidence confirms enabled/disabled graph behavior
 and measures the High AO passes within budget. OpenGL, AO-material overlap, and
 focused silhouette/planar-darkening acceptance remain open.
 
+R7.2 carries previous submitted camera/object transforms into the GBuffer,
+writes motion UV, view depth, and validity in a fifth attachment, and provides a
+`motion_vectors` diagnostic capture. Contract tests cover clip-depth
+conventions, jitter removal, camera cuts, generational object identity, and
+rejected-frame history. Debug Vulkan and OpenGL Sponza runtime captures confirm
+the GBuffer and diagnostic path; Vulkan validation reports no pipeline/layout
+errors. Shaders load from `asset/shader` and use the runtime shader cache, so the
+AssetTool's model/texture/audio reimport path does not apply. Raster jitter stays
+zero until R7.3 supplies a temporal consumer.
+
 - [x] **R7.0:** record raster fixtures, deterministic replay, disabled baseline, and quality/GPU/memory budgets.
 - [ ] **R7.1:** spatial SSAO plus edge-aware filtering and ambient-diffuse
   integration; accept AO-material overlap, silhouettes, both APIs, and off parity.
-- [ ] **R7.2:** validated jitter/motion and previous-submitted-frame contract;
+- [x] **R7.2:** validated jitter/motion and previous-submitted-frame contract;
   cover camera/rigid-object motion, invalid surfaces, cuts, and rejected frames.
 - [ ] **R7.3:** native-resolution TAA; accept shimmer/detail/ghosting tolerances,
   history lifecycle, unchanged PT, and measured cost.

@@ -232,6 +232,17 @@ namespace kpengine::asset
 
         const std::filesystem::path resolved =
             (owner.parent_path() / reference).lexically_normal();
+        const std::filesystem::path content_archive =
+            std::filesystem::path(GetContentArchiveDirectory()).lexically_normal();
+        // Generated materials may reference native textures in the same archive.
+        if (expected_type == AssetType::KPAT_Texture &&
+            owner.parent_path() == content_archive / "materials" &&
+            resolved.parent_path() == content_archive / "textures" &&
+            GetFileExtension(resolved.generic_string()) == "texture")
+        {
+            resolved_path = resolved.generic_string();
+            return true;
+        }
         const std::filesystem::path relative_to_asset_root =
             resolved.lexically_relative(asset_root);
         if (relative_to_asset_root.empty())

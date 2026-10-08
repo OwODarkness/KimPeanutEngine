@@ -52,6 +52,12 @@ namespace kpengine::test
         int fail_transient_acquire_after = -1;
         std::vector<std::string> events;
         std::vector<TargetRecord> targets;
+        struct PipelineRecord
+        {
+            std::vector<TextureFormat> color_attachment_formats;
+            std::vector<std::vector<graphics::DescriptorBindingDesc>> descriptor_binding_descs;
+        };
+        std::vector<PipelineRecord> pipelines;
         // Extent this double reports. Defaults to the value the render tests
         // were written against; a caller that drives extent-sensitive code sets
         // it explicitly instead of relying on the default.
@@ -185,9 +191,11 @@ namespace kpengine::test
             }
         }
 
-        graphics::PipelineHandle CreatePipelineResource(const graphics::PipelineDesc &) override
+        graphics::PipelineHandle CreatePipelineResource(const graphics::PipelineDesc &desc) override
         {
             ++probe_->pipeline_create_count;
+            probe_->pipelines.push_back(
+                {desc.color_attachment_formats, desc.descriptor_binding_descs});
             return MakeHandle<graphics::PipelineHandle>();
         }
 

@@ -57,19 +57,19 @@ KP Engine 围绕 `Asset → Resource → Render → RHI` 构建清晰的资源�
 - **Asset**：统一管理类型化资产、缓存、依赖关系与 CPU 生命周期，并提供同步和异步加载。
 - **Resource / Import / Cook**：将 Model、Material、Texture 等源资源转换为引擎资产与渲染数据，支持依赖处理、mipmap、格式策略和 content-addressed cooking。
 - **Render**：基于 RenderWorld 与 RenderProxy 组织场景渲染，负责材质、RenderTarget、Pass、SceneColor、阴影及调试捕获。
-- **Ray Tracing**：Vulkan 后端提供实验性的实时路径追踪与全局光照；渐进式累积和自适应 SPP 在相机移动与静止时切换采样率。需要支持 Vulkan 光追的 GPU 与驱动；OpenGL 路径继续提供光栅化渲染。
-- **RHI**：通过 API-neutral handles、descriptors 与 `RenderBackend` 抽象 GPU 资源、Pipeline、Command、同步和生命周期，目前支持 Vulkan 与 OpenGL。
+- **Ray Tracing**：Vulkan 后端提供实验性的实时路径追踪与全局光照；渐进式累积和自适应 SPP 在相机移动与静止时切换采样率。画质、性能和跨场景验收仍在进行；OpenGL 提供光栅化渲染。
+- **RHI**：通过 API-neutral handles、descriptors 与 `RenderBackend` 抽象 GPU 资源、Pipeline、Command、同步和生命周期，目前支持 Vulkan 与 OpenGL；具体场景录制仍有 Vulkan 专用路径。
 
 ### 引擎与工具
 
-- **Runtime**：窗口、输入、Gameplay、Lua 脚本及基础运行时服务。
-- **Command / Agent Interface**：统一的类型化 `CommandRegistry`，供编辑器控制台、Lua、测试、本地自动化和 AI Agent 共用；支持游戏线程调度、结构化结果以及 JSON-lines 本地通信。
-- **Audio**：基于 miniaudio 的播放与混音系统，支持同步、异步、缓冲和流式播放，以及独立的语音、音乐和主音量控制。独立播放器支持 WAV、MP3、FLAC 导入与原生音频产品播放，通过播放帧时钟同步波形进度和 SRT、WebVTT、LRC 字幕。详细设计见 [Audio 模块](docs/audio/audio_module.md)。
+- **Runtime**：窗口、输入、Gameplay、Lua VM 与基础运行时服务；Lua 目前提供命令桥，完整引擎绑定仍在扩展。
+- **Command / Agent Interface**：统一的类型化 `CommandRegistry`，供编辑器、Lua、测试和本地 JSON-lines 接口调用；支持游戏线程调度与结构化结果。
+- **Audio**：基于 miniaudio 的播放与混音系统，支持缓冲和流式播放，并可独立调节语音、音乐和主音量。独立播放器支持 WAV、MP3、FLAC 导入和 SRT、WebVTT、LRC 字幕；完整对话式语音链路仍在开发。详细设计见 [Audio 模块](docs/audio/audio_module.md)。
 - **Editor**：基于 Dear ImGui 的编辑器与调试工具。
 - **Optional Modules**：
   - Live2D
-  - TTS：通过 GPT-SoVITS HTTP 接口进行语音合成，支持同步或异步请求，并可将缓冲音频或流式音频交由 Audio 系统播放。
-  - Terrain PCG：通过可组合的确定性节点生成高度场、派生地形数据与网格，并支持侵蚀后处理、共享渲染器预览和可烘焙地形资产。
+  - TTS：通过 GPT-SoVITS HTTP 接口合成语音，并支持缓冲或流式预览；传输健壮性和对话集成仍在完善。
+  - Terrain PCG：通过确定性节点生成高度场、派生数据与网格，支持预览和地形资产烘焙；侵蚀目前处于原型阶段。
 
 
 ## 第三方依赖

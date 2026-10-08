@@ -103,6 +103,48 @@ TEST(NativeMaterialTest, ContentArchiveShaderReferenceResolvesIntoAssetRoot)
                "shader/pbr_gbuffer.shader").lexically_normal());
 }
 
+TEST(NativeMaterialTest, ContentArchiveTextureReferencesResolveForBothProfiles)
+{
+    auto settings = MakeSettings();
+    settings.asset_root = kpengine::GetAssetDirectory();
+    settings.archive_root = kpengine::GetContentArchiveDirectory();
+    settings.emit_texture_profile_variants = true;
+    const auto converted = kpengine::asset::ConvertImportedMaterials(MakeDocument(), settings);
+    ASSERT_FALSE(converted.materials.empty());
+    const auto owner = (settings.archive_root / "materials/terrain.material").generic_string();
+    for (const auto &parameter : converted.materials.front().material.parameters)
+    {
+        if (parameter.type != kpengine::asset::MaterialParameterSourceType::Texture) continue;
+        for (const auto &reference : {std::get<std::string>(parameter.value),
+                                     parameter.block_compressed_path})
+        {
+            std::string resolved;
+            ASSERT_TRUE(kpengine::asset::ResolveOwnedAssetPath(
+                owner, reference, kpengine::asset::AssetType::KPAT_Texture, resolved));
+            EXPECT_EQ(std::filesystem::path(resolved),
+                      (std::filesystem::path(owner).parent_path() / reference).lexically_normal());
+        }
+    }
+}
+
+TEST(NativeMaterialTest, ContentArchiveTextureReferencesRemainConfined)
+{
+    const auto archive = std::filesystem::path(kpengine::GetContentArchiveDirectory());
+    const auto owner = (archive / "materials/terrain.material").generic_string();
+    std::string resolved;
+    for (const auto *reference : {"../../outside.texture", "../audio/file.texture",
+                                  "../textures/file.png", "../textures/nested/file.texture"})
+    {
+        EXPECT_FALSE(kpengine::asset::ResolveOwnedAssetPath(
+            owner, reference, kpengine::asset::AssetType::KPAT_Texture, resolved));
+    }
+    const auto authored_owner =
+        (std::filesystem::path(kpengine::GetAssetDirectory()) / "material/authored.material").generic_string();
+    EXPECT_FALSE(kpengine::asset::ResolveOwnedAssetPath(
+        authored_owner, "../../content/.archive/textures/file.texture",
+        kpengine::asset::AssetType::KPAT_Texture, resolved));
+}
+
 TEST(NativeMaterialTest, EmitsPortableAndBlockCompressedTextureVariants)
 {
     auto settings = MakeSettings();

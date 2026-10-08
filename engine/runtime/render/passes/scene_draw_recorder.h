@@ -13,6 +13,7 @@
 #include "graphics/backend/common/render_backend.h"
 #include "render/material/material_system.h"
 #include "render/render_world/scene_visibility.h"
+#include "render/submitted_transform_history.h"
 
 namespace kpengine::render
 {
@@ -38,6 +39,10 @@ namespace kpengine::render
     {
     public:
         void BeginFrame(std::vector<MeshProxy> snapshot, uint64_t world_revision);
+        // Commits transforms only after the graph frame is accepted. Rejection
+        // retains the prior submitted snapshot for the next attempt.
+        void CommitSubmittedFrame(bool accepted);
+        void ResetTemporalHistory() noexcept { transform_history_.Reset(); }
         void Clear();
 
         const std::vector<MeshProxy> &Snapshot() const noexcept { return snapshot_; }
@@ -116,6 +121,7 @@ namespace kpengine::render
                            FrameObjectStateKeyHash> frame_object_states_;
         std::unordered_map<FrameMaterialBindingKey, FrameMaterialBinding,
                            FrameMaterialBindingKeyHash> frame_material_bindings_;
+        SubmittedTransformHistory transform_history_;
         SceneDrawProfileCounters profile_counters_{};
     };
 }

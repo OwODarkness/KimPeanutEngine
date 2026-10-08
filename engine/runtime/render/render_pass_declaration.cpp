@@ -102,7 +102,7 @@ namespace kpengine::render
                    RenderGraphUsage::DepthAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
                 {FixedRenderPassId::GBuffer, "GBufferPass",
-                 // Writes all four colour attachments and the depth.
+                 // Writes all five colour attachments and the depth.
                  {{RenderPassResource::GBuffer, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment, RenderGraphAttachmentScope::Whole()}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
@@ -175,7 +175,7 @@ namespace kpengine::render
                  // shadow maps; this pass does not read SceneColor, and the
                  // declaration must not claim a read that never reaches the GPU.
                  {{RenderPassResource::GBuffer, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b1111U, true)},
+                  RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b11111U, true)},
                   {RenderPassResource::DirectionalShadow, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::SpotShadow, RenderPassAccess::Read,
@@ -194,7 +194,7 @@ namespace kpengine::render
                  RenderPassCondition::DiagnosticCaptureRequested, false},
                 {FixedRenderPassId::DebugView, "DebugViewPass",
                 {{RenderPassResource::GBuffer, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b1111U, true)},
+                  RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b11111U, true)},
                   {RenderPassResource::DirectionalShadow, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::SpotShadow, RenderPassAccess::Read,

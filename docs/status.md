@@ -1,6 +1,16 @@
 # Project Status
 
-- **R7 raster image quality (2026-10-03; R7.1 implementation complete, acceptance open)** — Ordered plan for
+- **Sponza authored materials restored (2026-10-08)** — Canonical
+  `sponza.level` now loads this checkout's reimported native products from the
+  active content archive. Material path validation permits same-archive native
+  textures. Debug Vulkan albedo, SSAO raster, and path-traced captures show the
+  authored colors with settled residency; nine material tests pass. Rendering
+  validation now requires the textured canonical scene alongside neutral
+  fixtures. The broader suite retains 13 failures after an external retry;
+  OpenGL and portable scene packaging remain unverified. →
+  [repair evidence](../.spec/journal/2026-10-08-sponza-albedo-restoration.md)
+
+- **R7 raster image quality (2026-10-08; R7.2 complete; R7.1 and combined acceptance open)** — Ordered plan for
   spatial SSAO, motion/history contracts, native-resolution TAA, and exponential
   height fog. The compact fixture has a Vulkan raster capture and three matched
   RelWithDebInfo timing windows; Sponza has shadow-map and hybrid ray-query
@@ -12,10 +22,17 @@
   settings-off producer pruning, and raw/filtered semantic AO captures.
   RelWithDebInfo Vulkan Sponza captures verify AO-on/off behavior and High AO is
   within the recorded GPU budget. OpenGL, AO-material overlap, and focused
-  artifact checks remain open. R6 PT
+  artifact checks remain open. R7.2 adds per-object previous submitted
+  transforms, previous camera matrices, a motion/depth/validity GBuffer
+  attachment, `motion_vectors` capture, and commit-after-submit history. Its
+  Debug contract tests and Vulkan/OpenGL Sponza runtime captures pass, with PT
+  inactive and texture residency complete; Vulkan pipeline/layout validation
+  is clean. Shader sources are loaded from `asset/shader` and compiled through
+  the runtime cache, so AssetTool archive import does not apply. Raster jitter
+  is zero until TAA consumes it. R6 PT
   reconstruction stays independent; reflection probes, SSR, and volumetric fog
   remain separately designed follow-ups. →
-  [stage plan](render/.plan/R7.md), [roadmap](render/TODO.md#r7--raster-image-quality-r71-implementation-complete-acceptance-open),
+  [stage plan](render/.plan/R7.md), [roadmap](render/TODO.md#r7--raster-image-quality-r72-complete-r71-and-core-acceptance-open),
   [spec](../.spec/specs/render-r7-raster-image-quality.md),
   [planning journal](../.spec/journal/2026-10-03-render-r7-raster-image-quality.md)
 

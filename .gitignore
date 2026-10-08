@@ -157,6 +157,15 @@ imgui.ini
 # Large generated Audio archive product retained locally but excluded from Git.
 /content/.archive/audio/7f9de0f69914a0f47e60917d60a0f690007dee71324607837975fab5aea63df1.audio
 
+# Native model imports are checkout-local generated products and metadata.
+/content/.archive/models/
+/content/.archive/materials/
+/content/.archive/textures/
+/content/.archive/staging/
+/content/model/model/sponza/
+/content/material/model/sponza/
+/content/texture/model/sponza/
+
 # Common generated tool/runtime directories
 __pycache__/
 .pytest_cache/

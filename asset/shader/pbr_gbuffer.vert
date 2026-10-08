@@ -8,10 +8,16 @@
 layout(binding = 0) uniform PerPassData{
 	mat4 view;
 	mat4 proj;
+	mat4 previous_view;
+	mat4 previous_proj;
+	vec4 temporal_params;
+	vec4 history_params;
 }pass_data;
 
 layout(binding = 1) uniform PerObjectData{
 	mat4 model;
+	mat4 previous_submitted_model;
+	vec4 temporal_state;
 }object_data;
 
 layout(location = 0) in vec3 in_position;
@@ -24,6 +30,7 @@ layout(location = 0) out vec2 frag_texcoord;
 layout(location = 1) out vec3 frag_T;
 layout(location = 2) out vec3 frag_B;
 layout(location = 3) out vec3 frag_N;
+layout(location = 4) out vec3 frag_local_position;
 
 void main() {
     mat3 normal_mat = transpose(inverse(mat3(object_data.model)));
@@ -40,6 +47,7 @@ void main() {
                  ? normalize(world_normal)
                  : vec3(0.0, 0.0, 1.0);
     frag_texcoord = in_texcoord;
+    frag_local_position = in_position;
 
     vec4 world_pos = object_data.model * vec4(in_position, 1.0);
     gl_Position = pass_data.proj * pass_data.view * world_pos;

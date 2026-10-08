@@ -12,6 +12,7 @@ const uint CAPTURE_POINT_SHADOW_VISIBILITY = 9u;
 const uint CAPTURE_SELECTION_MASK = 10u;
 const uint CAPTURE_SCREEN_SPACE_AO_RAW = 11u;
 const uint CAPTURE_SCREEN_SPACE_AO_FILTERED = 12u;
+const uint CAPTURE_MOTION_VECTORS = 13u;
 
 layout(binding = 2) uniform sampler2D gbuffer_albedo;
 layout(binding = 3) uniform sampler2D gbuffer_normal;
@@ -22,6 +23,7 @@ layout(binding = 8) uniform sampler2D spot_shadow_depth;
 layout(binding = 9) uniform sampler2D point_shadow_depth;
 layout(binding = 11) uniform sampler2D selection_mask;
 layout(binding = 12) uniform sampler2D screen_space_ao;
+layout(binding = 13) uniform sampler2D gbuffer_motion;
 
 layout(std140, binding = 7) uniform CaptureViewConstants
 {
@@ -228,6 +230,12 @@ void main()
                        ? texture(screen_space_ao, source_uv).r
                        : 1.0;
         out_color = vec4(vec3(ao), 1.0);
+        return;
+    }
+    if (view == CAPTURE_MOTION_VECTORS)
+    {
+        vec4 motion = texture(gbuffer_motion, source_uv);
+        out_color = vec4(motion.xy * 0.5 + 0.5, motion.w, 1.0);
         return;
     }
     float depth = texture(gbuffer_depth, source_uv).r;

@@ -209,7 +209,7 @@ namespace kpengine::render
         std::variant<GraphTextureHandle, GraphBufferHandle, GraphAccelerationStructureHandle>;
 
     // Which attachments of a composite target a use touches. A logical resource
-    // can cover several physical images -- the G-buffer is four colour
+    // can cover several physical images -- the G-buffer is five colour
     // attachments plus depth -- and a pass usually touches a subset. Declaring
     // the whole target when only one attachment is read is how a plan comes to
     // schedule transitions it does not need, and to hide a read it does.

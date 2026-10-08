@@ -30,6 +30,7 @@ namespace kpengine::render
             return (uint64_t{0x4b02} << 48u) |
                    (static_cast<uint64_t>(handle.id) << 16u) | handle.generation;
         }
+
     }
 
     std::size_t SceneDrawRecorder::FrameObjectStateKeyHash::operator()(
@@ -52,9 +53,15 @@ namespace kpengine::render
             section_packets_ready_ = false;
         }
         snapshot_ = std::move(snapshot);
+        transform_history_.BeginFrame(snapshot_);
         frame_object_states_.clear();
         frame_material_bindings_.clear();
         profile_counters_ = {};
+    }
+
+    void SceneDrawRecorder::CommitSubmittedFrame(bool accepted)
+    {
+        transform_history_.CommitFrame(accepted);
     }
 
     std::size_t SceneDrawRecorder::FrameMaterialBindingKeyHash::operator()(
@@ -84,6 +91,7 @@ namespace kpengine::render
         section_packets_ready_ = false;
         frame_object_states_.clear();
         frame_material_bindings_.clear();
+        transform_history_.Reset();
         profile_counters_ = {};
     }
 
@@ -230,6 +238,14 @@ namespace kpengine::render
             PerObjectData per_object_data{};
             per_object_data.model =
                 Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
+            const std::optional<Transform3f> previous =
+                transform_history_.FindPrevious(proxy.handle);
+            const bool history_valid = previous.has_value();
+            per_object_data.previous_submitted_model = history_valid
+                ? Matrix4f::MakeTransformMatrix(*previous).Transpose()
+                : per_object_data.model;
+            per_object_data.temporal_state =
+                Vector4f{history_valid ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
             state.per_object = frame_context.UpdateStableUniform(
                 GetObjectUniformKey(proxy.handle), per_object_data);
             if (pass == MaterialPass::GBuffer)

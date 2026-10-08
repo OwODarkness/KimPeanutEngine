@@ -75,6 +75,7 @@ namespace kpengine::runtime
             if (view == "selection_mask") return render::CaptureView::SelectionMask;
             if (view == "screen_space_ao_raw") return render::CaptureView::ScreenSpaceAoRaw;
             if (view == "screen_space_ao_filtered") return render::CaptureView::ScreenSpaceAoFiltered;
+            if (view == "motion_vectors") return render::CaptureView::MotionVectors;
             // "live2d" stays the launch-time spelling recorded in the Live2D
             // validation workflow; the capture value itself names the role.
             if (view == "host_output") return render::CaptureView::HostOutput;
@@ -211,6 +212,7 @@ namespace kpengine::runtime
                                             "spot_shadow_visibility", "point_shadow_depth",
                                             "point_shadow_visibility", "selection_mask",
                                             "screen_space_ao_raw", "screen_space_ao_filtered",
+                                            "motion_vectors",
                                             "host_output",
                                             "live2d",
                                             "engine_window"}},

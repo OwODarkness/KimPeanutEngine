@@ -97,6 +97,7 @@ namespace kpengine::render
 
         DeferredLightingRecordResult RecordGBuffer(
             FrameContext &frame_context, RenderCamera &camera,
+            const CameraData &previous_camera, bool camera_history_valid,
             SceneDrawRecorder &draw_recorder, MaterialSystem &materials,
             RenderResourceResolver &resource_resolver,
             graphics::CommandRecorder &recorder, RenderTarget *target);

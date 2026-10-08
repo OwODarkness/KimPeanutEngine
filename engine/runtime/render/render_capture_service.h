@@ -32,6 +32,7 @@ namespace kpengine::render
         SelectionMask,
         ScreenSpaceAoRaw,
         ScreenSpaceAoFiltered,
+        MotionVectors,
         // The standalone host's own output target, supplied by that host.
         HostOutput,
         // The engine window's presented contents, resolved by the window
@@ -63,6 +64,7 @@ namespace kpengine::render
         case CaptureView::SelectionMask:
         case CaptureView::ScreenSpaceAoRaw:
         case CaptureView::ScreenSpaceAoFiltered:
+        case CaptureView::MotionVectors:
             return true;
         case CaptureView::SceneColor:
         case CaptureView::HostOutput:

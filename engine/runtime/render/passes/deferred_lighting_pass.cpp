@@ -158,6 +158,7 @@ namespace kpengine::render
 
     DeferredLightingRecordResult DeferredLightingPass::RecordGBuffer(
         FrameContext &frame_context, RenderCamera &camera,
+        const CameraData &previous_camera, bool camera_history_valid,
         SceneDrawRecorder &draw_recorder, MaterialSystem &materials,
         RenderResourceResolver &resource_resolver,
         graphics::CommandRecorder &recorder, RenderTarget *target)
@@ -175,6 +176,12 @@ namespace kpengine::render
             PerPassData per_pass_data{};
             per_pass_data.camera_data.view = camera_data.view;
             per_pass_data.camera_data.proj = camera_data.proj;
+            per_pass_data.previous_view = previous_camera.view;
+            per_pass_data.previous_proj = previous_camera.proj;
+            per_pass_data.temporal_params = Vector4f{
+                static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 0.0f};
+            per_pass_data.history_params = Vector4f{
+                camera_history_valid ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
             const std::vector<VisibleMeshSection> visible_sections =
                 draw_recorder.BuildVisibleSections(camera.GetViewProjectionMatrix(),
                                                    resource_resolver);

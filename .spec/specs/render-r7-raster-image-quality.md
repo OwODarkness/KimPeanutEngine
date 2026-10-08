@@ -1,8 +1,8 @@
 # Render R7 raster image quality
 
-- Status: active; R7.0 baseline recorded; R7.1 implementation complete with Vulkan runtime evidence; cross-backend acceptance open.
+- Status: active; R7.0 baseline recorded; R7.1 implementation complete with Vulkan runtime evidence; R7.2 implementation and Vulkan/OpenGL runtime capture complete; R7.1 and combined cross-backend acceptance remain open.
 - Owner: Render module.
-- Parent TODO: [R7 roadmap](../../docs/render/TODO.md#r7--raster-image-quality-r71-implementation-complete-acceptance-open).
+- Parent TODO: [R7 roadmap](../../docs/render/TODO.md#r7--raster-image-quality-r72-implementation-in-progress-acceptance-open).
 - Canonical design: [R7 stage plan](../../docs/render/.plan/R7.md).
 - Journal: [planning checkpoint](../journal/2026-10-03-render-r7-raster-image-quality.md).
 
@@ -33,6 +33,17 @@ behavior, and raw/filtered semantic views were inspected. High quality measured
 0.434 ms combined AO GPU time at 1094x631. OpenGL runtime, AO-material overlap,
 and focused silhouette/planar-darkening checks remain unverified; R7.1 stage
 acceptance is therefore open.
+
+R7.2 adds previous-submitted camera and rigid-object transforms, a fifth GBuffer
+attachment carrying previous-minus-current UV motion, positive view depth, and
+history validity, plus a semantic motion capture. CPU contracts define top-left
+normalized UV on both APIs, API-specific clip-depth validation, and one-time
+jitter removal. Current raster jitter is zero until TAA consumes it. Contract
+tests pass, and Debug Vulkan/OpenGL Sponza runtime captures exercise base color,
+scene color, and motion vectors with path tracing disabled. Runtime shader logs
+show the checkout's `asset/shader` sources using their compiled shader-cache
+entries. Shader programs are loaded as source assets, not cooked through the
+AssetTool import providers; a separate archive publication step does not apply.
 
 ## Scope and non-goals
 
