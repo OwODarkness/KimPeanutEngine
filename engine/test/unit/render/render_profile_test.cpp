@@ -16,10 +16,11 @@ TEST(RenderShaderDataAbi, PreservesUniformBlockSizesOffsetsAndAlignment)
     EXPECT_EQ(sizeof(PerPassData), 288u);
     EXPECT_EQ(alignof(PerPassData), 16u);
     EXPECT_EQ(offsetof(PerPassData, camera_data), 0u);
-    EXPECT_EQ(sizeof(PerObjectData), 144u);
+    EXPECT_EQ(sizeof(PerObjectData), 160u);
     EXPECT_EQ(offsetof(PerObjectData, model), 0u);
     EXPECT_EQ(offsetof(PerObjectData, previous_submitted_model), 64u);
     EXPECT_EQ(offsetof(PerObjectData, temporal_state), 128u);
+    EXPECT_EQ(offsetof(PerObjectData, temporal_identity), 144u);
 }
 
 TEST(RenderProfileScenario, SponzaBaselineIsStable)

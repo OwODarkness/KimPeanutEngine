@@ -10,31 +10,27 @@
   OpenGL and portable scene packaging remain unverified. →
   [repair evidence](../.spec/journal/2026-10-08-sponza-albedo-restoration.md)
 
-- **R7 raster image quality (2026-10-08; R7.2 complete; R7.1 and combined acceptance open)** — Ordered plan for
-  spatial SSAO, motion/history contracts, native-resolution TAA, and exponential
-  height fog. The compact fixture has a Vulkan raster capture and three matched
-  RelWithDebInfo timing windows; Sponza has shadow-map and hybrid ray-query
-  captures with PT disabled. Cornell and PBR showcase now have both raster
-  modes captured; their source variants still depend on checkout-local model
-  assets. R7.0 is marked complete at the user’s direction; expanded R5
-  correctness gates remain open. R7.1 adds graph-driven SSAO estimate/filter,
-  ambient-diffuse integration, Low/Medium/High sample-count settings, and
-  settings-off producer pruning, and raw/filtered semantic AO captures.
-  RelWithDebInfo Vulkan Sponza captures verify AO-on/off behavior and High AO is
-  within the recorded GPU budget. OpenGL, AO-material overlap, and focused
-  artifact checks remain open. R7.2 adds per-object previous submitted
-  transforms, previous camera matrices, a motion/depth/validity GBuffer
-  attachment, `motion_vectors` capture, and commit-after-submit history. Its
-  Debug contract tests and Vulkan/OpenGL Sponza runtime captures pass, with PT
-  inactive and texture residency complete; Vulkan pipeline/layout validation
-  is clean. Shader sources are loaded from `asset/shader` and compiled through
-  the runtime cache, so AssetTool archive import does not apply. Raster jitter
-  is zero until TAA consumes it. R6 PT
-  reconstruction stays independent; reflection probes, SSR, and volumetric fog
-  remain separately designed follow-ups. →
-  [stage plan](render/.plan/R7.md), [roadmap](render/TODO.md#r7--raster-image-quality-r72-complete-r71-and-core-acceptance-open),
+- **R7 raster image quality (2026-10-22; R7.3 complete; SSAO/fog/core acceptance open)** —
+  R7.0 is closed at the user's direction and R7.2 motion/history contracts are
+  complete. R7.1 SSAO is implemented; its material-overlap and focused artifact
+  acceptance remain open. R7.3 native raster TAA now passes camera-matched
+  Vulkan/OpenGL quality gates against a 2× reference: shimmer error falls
+  35.42% / 35.32%, with lower static and edge-gradient error. Full-window
+  captures are upright on both APIs. Cut/resize/minimize/restore/reload,
+  rigid-object disocclusion inspection, failed submissions, shader publication,
+  allocation rollback, and PT exclusion/history preservation are checked.
+  Three uncontended RelWithDebInfo Vulkan windows measure TAA p95 at
+  0.099–0.102 ms and total GPU p95 at 3.215–3.340 ms. Measured active Vulkan
+  allocation ranges are 30.94 MiB at 1094×631, under the 32 MiB cap; the old
+  43.5 MiB estimate is superseded. Render/Graphics tests pass 251/251 and
+  GraphicsSmoke passes six frames per API with clean Vulkan validation.
+  Broad validation retains nine unrelated Asset/Terrain failures. R7.4 height
+  fog and R7.5 combined acceptance remain; R5/R6 gates are independent.
+  Reflection probes, SSR, and volumetric fog remain separate follow-ups. →
+  [stage plan](render/.plan/R7.md), [roadmap](render/TODO.md),
+  [R7.3 review](render/.review/R7.3.md),
   [spec](../.spec/specs/render-r7-raster-image-quality.md),
-  [planning journal](../.spec/journal/2026-10-03-render-r7-raster-image-quality.md)
+  [acceptance evidence](../.spec/journal/2026-10-03-render-r7-raster-image-quality.md#r73-acceptance--2026-10-22)
 
 - **Standalone TTS editor (2026-10-03; TE1/TE2 implemented, runtime checked)** —
   `--mode tts` now has a separate TTS editor target, session dialog, voice

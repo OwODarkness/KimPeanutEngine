@@ -38,6 +38,10 @@ namespace kpengine::graphics
     public:
         ~VulkanTexture();
         TextureResource GetTextueHandle() const override{return ConvertToTextureResource(resource_);}
+        std::optional<uint64_t> GetAllocationBytes() const override
+        {
+            return allocation_.IsValid() ? std::optional<uint64_t>{allocation_.size} : std::nullopt;
+        }
     protected:
         void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) override;
         void Destroy(GraphicsContext context) override;

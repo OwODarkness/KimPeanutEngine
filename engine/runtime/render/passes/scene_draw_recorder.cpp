@@ -14,6 +14,17 @@ namespace kpengine::render
 {
     namespace
     {
+        Vector4f PackBytes(uint32_t value) noexcept
+        {
+            constexpr float scale = 1.0f / 255.0f;
+            return {static_cast<float>(value & 0xffu) * scale,
+                    static_cast<float>((value >> 8u) & 0xffu) * scale,
+                    static_cast<float>((value >> 16u) & 0xffu) * scale,
+                    static_cast<float>((value >> 24u) & 0xffu) * scale};
+        }
+    }
+    namespace
+    {
         struct alignas(16) SelectionGpuData
         {
             Vector4f selected{};
@@ -246,6 +257,8 @@ namespace kpengine::render
                 : per_object_data.model;
             per_object_data.temporal_state =
                 Vector4f{history_valid ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
+            // Reserve zero as the clear value for shaders without identity outputs.
+            per_object_data.temporal_identity = PackBytes(proxy.handle.id + 1u);
             state.per_object = frame_context.UpdateStableUniform(
                 GetObjectUniformKey(proxy.handle), per_object_data);
             if (pass == MaterialPass::GBuffer)

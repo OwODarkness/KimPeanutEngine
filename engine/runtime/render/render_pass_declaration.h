@@ -25,6 +25,8 @@ namespace kpengine::render
         PathTraceGuide,
         ScreenSpaceAoRaw,
         ScreenSpaceAoFiltered,
+        TemporalAaHistoryRead,
+        TemporalAaOutput,
         Count,
     };
 
@@ -45,6 +47,8 @@ namespace kpengine::render
         PathTraceGuide,
         ScreenSpaceAoRaw,
         ScreenSpaceAoFiltered,
+        TemporalAaHistoryRead,
+        TemporalAaOutput,
         SceneGeometry,
         SceneInstances,
         SceneScratch,
@@ -87,6 +91,7 @@ namespace kpengine::render
         ScreenSpaceAoEstimate,
         ScreenSpaceAoFilter,
         DeferredLighting,
+        TemporalAaResolve,
         RayTracingPathTrace,
         ToneMap,
         RayTracingToneMap,
@@ -116,6 +121,8 @@ namespace kpengine::render
         RasterFrame,
         ScreenSpaceAoEnabled,
         ScreenSpaceAoDiagnosticRequested,
+        TemporalAaEnabled,
+        TemporalAaDisabled,
     };
 
     struct RenderPassResourceUse
@@ -127,7 +134,7 @@ namespace kpengine::render
         // of it in the module.
         RenderGraphUsage usage = RenderGraphUsage::Undefined;
         // Which attachments of a composite target the pass touches. The G-buffer
-        // is five colour attachments plus depth and each consumer reads a
+        // has multiple colour attachments plus depth and consumers read a
         // subset, so a whole-target claim would both schedule transitions that
         // are not needed and describe reads that do not happen.
         RenderGraphAttachmentScope scope{};
@@ -156,6 +163,7 @@ namespace kpengine::render
         bool debug_view = false;
         bool screen_space_ao = true;
         bool screen_space_ao_diagnostic = false;
+        bool temporal_aa = true;
 
         friend bool operator==(const RenderFrameConditions &,
                                const RenderFrameConditions &) = default;

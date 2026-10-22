@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <cstdint>
+#include <optional>
 #include <vector>
 #include <string>
 #include "enum.h"
@@ -40,6 +41,7 @@ namespace kpengine::graphics
     public:
         virtual ~Texture() = default;
         virtual TextureResource GetTextueHandle() const = 0;
+        virtual std::optional<uint64_t> GetAllocationBytes() const { return std::nullopt; }
     protected:
         virtual void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) = 0;
         virtual void Destroy(GraphicsContext context) = 0;

@@ -27,6 +27,7 @@
 #include "render/prepared_render_asset_catalog.h"
 #include "render/passes/capture_view_pass.h"
 #include "render/passes/scene_draw_recorder.h"
+#include "render/passes/fullscreen_pass_resources.h"
 #include "render/path_trace_history_signature.h"
 #include "render/path_trace_history_progress.h"
 #include "render/path_trace_adaptive_spp.h"
@@ -659,9 +660,11 @@ namespace
         ASSERT_EQ(probe->pipelines.size(), 1u);
 
         const auto &description = probe->pipelines.front();
-        ASSERT_EQ(description.color_attachment_formats.size(), 5u);
-        EXPECT_EQ(description.color_attachment_formats.back(),
+        ASSERT_EQ(description.color_attachment_formats.size(), 6u);
+        EXPECT_EQ(description.color_attachment_formats[4],
                   TextureFormat::TEXTURE_FORMAT_RGBA16F);
+        EXPECT_EQ(description.color_attachment_formats[5],
+                  TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM);
         ASSERT_EQ(description.descriptor_binding_descs.size(), 1u);
         const auto &bindings = description.descriptor_binding_descs.front();
         const auto uses_stages = [&bindings](uint32_t binding,
@@ -754,6 +757,7 @@ namespace
         input.lights.push_back(light);
         input.is_shadow_handle_valid = [](render::ShadowHandle) { return true; };
 
+        EXPECT_TRUE(renderer.ApplyPendingExtent());
         backend.BeginFrame();
         frame_context.Begin(backend.GetCurrentFrameIndex(),
                             {frame_number, 0.0f, 1.0f / 60.0f},
@@ -1077,6 +1081,7 @@ TEST(RenderSystemLifecycleTest, FullscreenMeshSurvivesSamplerRetryFailure)
         fixtures.Info([probe](GraphicsAPIType)
                        { return std::make_unique<FakeBackend>(probe); })));
 
+    ASSERT_TRUE(system.RequestTemporalAaSettings({false, 0.9f}));
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
     // A failed required lighting producer blocks the frame's output.
     EXPECT_FALSE(system.EndFrame());
@@ -1099,6 +1104,7 @@ TEST(RenderSystemLifecycleTest, FullscreenSamplerSurvivesMeshRetryFailure)
         fixtures.Info([probe](GraphicsAPIType)
                        { return std::make_unique<FakeBackend>(probe); })));
 
+    ASSERT_TRUE(system.RequestTemporalAaSettings({false, 0.9f}));
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
     // A failed required lighting producer blocks the frame's output.
     EXPECT_FALSE(system.EndFrame());
@@ -1291,7 +1297,7 @@ TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardown
         // SceneHdr is deliberately absent: its contents never survive the frame,
         // so it is a transient the Graphics-owned pool allocates rather than one
         // of the persistent named targets.
-        "target:GBuffer", "target:SceneColor"};
+        "target:GBuffer", "target:TemporalHistory", "target:SceneColor"};
     std::vector<std::string> actual_targets;
     for (const std::string &event : probe->events)
     {
@@ -1581,4 +1587,181 @@ TEST(RenderSystemEnvironmentTest, ClearsEnvironmentSourceHandlesDuringShutdown)
     EXPECT_FALSE(replacement == handle);
     EXPECT_TRUE(system.GetEnvironmentSourceSink()->EnqueueDestroy(replacement));
     asset::AssetManager::GetInstance().UnRegisterAsset(texture_id);
+}
+
+TEST(TemporalAaPassTest, SubmitsHistoryOnlyAfterAcceptanceAndPassesCurrentReconstructionJitter)
+{
+    using namespace kpengine::render;
+    auto probe = std::make_shared<BackendProbe>();
+    FakeBackend backend(probe);
+    TemporalAaPass pass;
+    const auto assets = BuildPreparedCatalog();
+    ASSERT_TRUE(pass.PrepareResources(backend, *assets));
+    ASSERT_TRUE(pass.EnsureHistoryTargets(backend, 320, 200));
+    FullscreenPassResources fullscreen;
+    ASSERT_TRUE(fullscreen.Initialize(backend));
+    RendererFrameTargets targets;
+    targets.Initialize(backend, 320, 200);
+    RenderTarget &gbuffer = *targets.GetTarget(RenderTargetName::GBuffer);
+    RenderTarget &hdr = *targets.GetTarget(RenderTargetName::SceneColor);
+    FrameContext frame;
+    frame.Initialize(backend, 4096);
+    frame.Begin(0, {}, {320, 200});
+    ASSERT_TRUE(pass.Record(frame, hdr, gbuffer, fullscreen, *backend.GetCommandRecorder(),
+                            true, {0.01f, -0.02f}));
+    EXPECT_FALSE(pass.HistoryValid());
+    EXPECT_EQ(pass.ReadIndex(), 0U);
+    const auto &bindings = probe->resource_binding_snapshots.back().bindings;
+    const auto *uniform = std::get_if<graphics::UniformBufferBinding>(&bindings.back());
+    ASSERT_NE(uniform, nullptr);
+    Vector4f options;
+    const auto *bytes = static_cast<const std::byte *>(
+        backend.MapUniformBuffer(uniform->buffer, frame.GetUniformCapacity()));
+    std::memcpy(&options, bytes + uniform->offset, sizeof(options));
+    EXPECT_NEAR(options.z_, 0.01f, 1e-6f);
+    EXPECT_NEAR(options.w_, -0.02f, 1e-6f);
+    pass.CommitSubmittedFrame(false);
+    EXPECT_EQ(pass.ReadIndex(), 0U);
+    EXPECT_FALSE(pass.HistoryValid());
+    ASSERT_TRUE(pass.Record(frame, hdr, gbuffer, fullscreen, *backend.GetCommandRecorder(), true, {}));
+    pass.CommitSubmittedFrame(true);
+    EXPECT_EQ(pass.ReadIndex(), 1U);
+    EXPECT_TRUE(pass.HistoryValid());
+    const auto replacement = BuildPreparedCatalog();
+    probe->fail_pipeline_creation = true;
+    EXPECT_FALSE(pass.PrepareResources(backend, *replacement));
+    EXPECT_TRUE(pass.HistoryValid());
+    EXPECT_EQ(probe->pipeline_destroy_count, 0);
+    probe->fail_pipeline_creation = false;
+    ASSERT_TRUE(pass.Record(frame, hdr, gbuffer, fullscreen, *backend.GetCommandRecorder(), true, {}));
+    pass.Invalidate("camera_cut");
+    pass.CommitSubmittedFrame(true);
+    EXPECT_EQ(pass.ReadIndex(), 1U);
+    EXPECT_FALSE(pass.HistoryValid());
+    ASSERT_TRUE(pass.PrepareResources(backend, *BuildPreparedCatalog()));
+    EXPECT_STREQ(pass.ResetReason(), "shader_reloaded");
+    EXPECT_EQ(probe->pipeline_destroy_count, 1);
+    ASSERT_TRUE(pass.Record(frame, hdr, gbuffer, fullscreen, *backend.GetCommandRecorder(), true, {}));
+    probe->fail_render_target = true;
+    EXPECT_FALSE(pass.EnsureHistoryTargets(backend, 640, 400));
+    pass.CommitSubmittedFrame(true);
+    EXPECT_FALSE(pass.HistoryValid());
+    EXPECT_STREQ(pass.ResetReason(), "history_allocation_failed");
+    frame.End(); frame.Cleanup();
+    pass.Cleanup(backend); fullscreen.Cleanup(backend); targets.Cleanup();
+}
+
+TEST(TemporalAaPassTest, RollsBackPartialHistoryAllocationAndRetiresResize)
+{
+    using namespace kpengine::render;
+    auto probe = std::make_shared<BackendProbe>();
+    FakeBackend backend(probe);
+    TemporalAaPass pass;
+    probe->fail_render_target_after = 1;
+    EXPECT_FALSE(pass.EnsureHistoryTargets(backend, 320, 200));
+    EXPECT_FALSE(pass.HistoryValid());
+    EXPECT_EQ(probe->render_target_destroy_count, 1);
+    probe->fail_render_target_after = -1;
+    ASSERT_TRUE(pass.EnsureHistoryTargets(backend, 320, 200));
+    EXPECT_TRUE(pass.HistoryTarget(0)->IsValid());
+    EXPECT_TRUE(pass.HistoryTarget(1)->IsValid());
+    const auto before_resize = probe->render_target_destroy_count;
+    ASSERT_TRUE(pass.EnsureHistoryTargets(backend, 640, 400));
+    EXPECT_EQ(probe->render_target_destroy_count, before_resize + 2);
+    EXPECT_STREQ(pass.ResetReason(), "extent_changed");
+    pass.Cleanup(backend);
+    const auto after_cleanup = probe->render_target_destroy_count;
+    pass.Cleanup(backend);
+    EXPECT_EQ(probe->render_target_destroy_count, after_cleanup);
+}
+
+TEST(RenderSystemLifecycleTest, TaaHistoryRecoversAfterViewportAspectChanges)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(fixtures.Info([probe](GraphicsAPIType) {
+        return std::make_unique<FakeBackend>(probe);
+    })));
+    for (int frame = 0; frame < 3; ++frame)
+    {
+        ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+        ASSERT_TRUE(system.EndFrame());
+    }
+    EXPECT_TRUE(system.GetMetrics().profile.temporal_aa_history_valid);
+    probe->render_extent = {800, 400};
+    system.RequestSceneRenderTargetExtent(800, 400);
+    for (int frame = 0; frame < 3; ++frame)
+    {
+        probe->events.clear();
+        ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+        ASSERT_TRUE(system.EndFrame());
+        const auto begin = std::find(probe->events.begin(), probe->events.end(), "begin_frame");
+        ASSERT_NE(begin, probe->events.end());
+        EXPECT_EQ(std::find(begin, probe->events.end(), "wait_idle"), probe->events.end());
+    }
+    EXPECT_TRUE(system.GetMetrics().profile.temporal_aa_history_valid);
+    system.Shutdown();
+}
+
+TEST(RenderSystemLifecycleTest, TaaHistoryResetsOnlyForChangedAoAndShadowSettings)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(fixtures.Info([probe](GraphicsAPIType) {
+        return std::make_unique<FakeBackend>(probe);
+    })));
+    const auto frame = [&system] {
+        EXPECT_TRUE(system.BeginFrame(1.0f / 60.0f));
+        EXPECT_TRUE(system.EndFrame());
+    };
+    frame(); frame(); frame();
+    ASSERT_TRUE(system.GetMetrics().profile.temporal_aa_history_valid);
+    render::ScreenSpaceAoSettings ao;
+    ao.strength = 0.5f;
+    ASSERT_TRUE(system.RequestScreenSpaceAoSettings(ao));
+    frame();
+    EXPECT_FALSE(system.GetMetrics().profile.temporal_aa_history_valid);
+    EXPECT_EQ(system.GetMetrics().profile.temporal_aa_reset_reason, "ao_settings_changed");
+    frame();
+    ASSERT_TRUE(system.GetMetrics().profile.temporal_aa_history_valid);
+    const auto resets = system.GetMetrics().profile.temporal_aa_reset_count;
+    ASSERT_TRUE(system.RequestScreenSpaceAoSettings(ao));
+    frame();
+    EXPECT_TRUE(system.GetMetrics().profile.temporal_aa_history_valid);
+    EXPECT_EQ(system.GetMetrics().profile.temporal_aa_reset_count, resets);
+    render::PathTraceSettings path;
+    path.path_tracing_enabled = false;
+    path.hybrid_ray_query_shadows_enabled = false;
+    ASSERT_TRUE(system.RequestPathTraceSettings(path));
+    frame();
+    EXPECT_FALSE(system.GetMetrics().profile.temporal_aa_history_valid);
+    EXPECT_EQ(system.GetMetrics().profile.temporal_aa_reset_reason, "shadow_mode_changed");
+    frame();
+    EXPECT_TRUE(system.GetMetrics().profile.temporal_aa_history_valid);
+    system.Shutdown();
+}
+
+TEST(RenderSystemLifecycleTest, TaaPreparationFailureDoesNotAcquireFrameAndRecovers)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(fixtures.Info([probe](GraphicsAPIType) {
+        return std::make_unique<FakeBackend>(probe);
+    })));
+    probe->fail_render_target_after = static_cast<int>(probe->targets.size()) + 1;
+    probe->events.clear();
+    EXPECT_FALSE(system.BeginFrame(1.0f / 60.0f));
+    EXPECT_EQ(std::find(probe->events.begin(), probe->events.end(), "begin_frame"),
+              probe->events.end());
+    probe->fail_render_target_after = -1;
+    for (int frame = 0; frame < 3; ++frame)
+    {
+        ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+        ASSERT_TRUE(system.EndFrame());
+    }
+    EXPECT_TRUE(system.GetMetrics().profile.temporal_aa_history_valid);
+    system.Shutdown();
 }

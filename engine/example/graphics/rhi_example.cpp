@@ -1248,7 +1248,6 @@ namespace kpengine::example
                 {
                     throw std::runtime_error("D5.1 named frame target set is incomplete");
                 }
-                named_targets.Cleanup();
                 render::MaterialAssetResolver d3_material_resolver(materials, prepared_assets);
                 render::MaterialInstanceHandle rock_instance;
                 const render::MaterialResolution rock_resolution =
@@ -1311,37 +1310,7 @@ namespace kpengine::example
                     throw std::runtime_error("D5.3 floor mesh resource creation failed");
                 }
 
-                // GBuffer target: 4 color (albedo/normal/material/selection) + D32, matching
-                // the engine's RendererFrameTargets::BuildDesc encodings.
-                graphics::RenderTargetDesc gbuffer_desc{};
-                gbuffer_desc.width = target_width;
-                gbuffer_desc.height = target_height;
-                gbuffer_desc.color_attachments = {
-                    {graphics::RenderTargetColorAttachment{
-                         TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
-                         graphics::RenderTargetLoadOp::Clear,
-                         graphics::RenderTargetStoreOp::Store,
-                         {0.f, 0.f, 0.f, 0.f}}},
-                    {graphics::RenderTargetColorAttachment{
-                         TextureFormat::TEXTURE_FORMAT_RGBA16F,
-                         graphics::RenderTargetLoadOp::Clear,
-                         graphics::RenderTargetStoreOp::Store,
-                         {0.f, 0.f, 1.f, 0.f}}},
-                    {graphics::RenderTargetColorAttachment{
-                         TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
-                         graphics::RenderTargetLoadOp::Clear,
-                         graphics::RenderTargetStoreOp::Store,
-                         {0.f, 1.f, 1.f, 0.f}}},
-                    {graphics::RenderTargetColorAttachment{
-                         TextureFormat::TEXTURE_FORMAT_R8_UNORM,
-                         graphics::RenderTargetLoadOp::Clear,
-                         graphics::RenderTargetStoreOp::Store,
-                         {0.f, 0.f, 0.f, 0.f}}},
-                };
-                gbuffer_desc.depth = graphics::RenderTargetDepthAttachment{
-                    TextureFormat::TEXTURE_FORMAT_D32, graphics::RenderTargetLoadOp::Clear,
-                    graphics::RenderTargetStoreOp::Store, 1.0f, 0, true};
-                const graphics::RenderTargetHandle gbuffer_target = rhi->CreateRenderTarget(gbuffer_desc);
+                const graphics::RenderTargetHandle gbuffer_target = named_gbuffer->GetHandle();
                 graphics::RenderTargetDesc d3_output_desc{};
                 d3_output_desc.width = target_width;
                 d3_output_desc.height = target_height;
@@ -1428,7 +1397,8 @@ namespace kpengine::example
                       {10, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                       {11, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                       {12, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
-                      {13, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                      {13, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {15, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
                 };
                 deferred_lighting_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
                 deferred_lighting_pipeline_desc.raster_state.front_face =
@@ -1464,6 +1434,10 @@ namespace kpengine::example
                     {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                       ShaderStage::SHADER_STAGE_FRAGMENT},
                      {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                      ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                      ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                       ShaderStage::SHADER_STAGE_FRAGMENT}},
                 };
                 tone_map_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
@@ -1569,6 +1543,8 @@ namespace kpengine::example
                             per_pass_data.camera_data.proj = camera_data.proj;
                             const render::UniformAllocation d3_pass =
                                 frame_context.AllocateUniform(per_pass_data);
+                            const render::UniformAllocation tone_map_options =
+                                frame_context.AllocateUniform(Vector4f{});
                             render::PerObjectData per_object_data{};
                             per_object_data.model = Matrix4f::MakeTransformMatrix(Transform3f{}).Transpose();
                             const render::UniformAllocation d3_object =
@@ -1730,7 +1706,9 @@ namespace kpengine::example
                                        graphics::UniformBufferBinding{
                                            0, 13, d5_point_shadow_constants.buffer,
                                            d5_point_shadow_constants.offset,
-                                           d5_point_shadow_constants.range}}});
+                                           d5_point_shadow_constants.range},
+                                       graphics::SampledTextureBinding{
+                                           0, 15, environment_texture, debug_sampler}}});
                             if (!deferred_lighting_bindings.IsValid())
                             {
                                 throw std::runtime_error("D5.2 deferred-lighting binding failed");
@@ -1764,6 +1742,12 @@ namespace kpengine::example
                                       graphics::SampledTextureBinding{
                                           0, 3,
                                           rhi->GetRenderTargetColorAttachment(gbuffer_target, 3),
+                                          debug_sampler},
+                                      graphics::UniformBufferBinding{
+                                          0, 4, tone_map_options.buffer, tone_map_options.offset,
+                                          tone_map_options.range},
+                                      graphics::SampledTextureBinding{
+                                          0, 5, rhi->GetRenderTargetColorAttachment(gbuffer_target, 1),
                                           debug_sampler}}});
                             if (!tone_map_bindings.IsValid())
                             {
@@ -1868,7 +1852,7 @@ namespace kpengine::example
                 rhi->DestroyRenderTarget(d4_shadow_target);
                 rhi->DestroyRenderTarget(d5_hdr_target);
                 rhi->DestroyRenderTarget(d3_output_target);
-                rhi->DestroyRenderTarget(gbuffer_target);
+                named_targets.Cleanup();
             }
             if (!gameplay_world.DestroyActor(gameplay_actor_handle))
             {

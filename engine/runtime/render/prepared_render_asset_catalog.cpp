@@ -25,6 +25,8 @@ namespace kpengine::render
                  asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::ToneMapProgram, "shader/tone_map.shader",
                  asset::AssetType::KPAT_ShaderProgram},
+                {BuiltInRenderAsset::TemporalAaProgram, "shader/temporal_aa.shader",
+                 asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::CaptureViewProgram, "shader/capture_view.shader",
                  asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::RayTracingPathTracerProgram,

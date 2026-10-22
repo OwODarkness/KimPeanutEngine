@@ -590,16 +590,18 @@ namespace kpengine::render
         {
             // Deferred G-buffer: canonical 5-attribute layout (matches the
             // data::Vertex field order and the audited tangent convention) into
-            // a 5-color MRT + depth. The fourth attachment is the selected
-            // object mask and the fifth stores temporal motion data; binding 4
-            // is left open for the D5 frame lighting block. Sampler slots
-            // 2/5/6/7/8 mirror the StandardPbr material parameter ABI.
+            // a 6-color MRT + depth. The fourth attachment is the selected
+            // object mask, followed by temporal motion and exact handle ID
+            // bytes. Handle generations invalidate TAA history globally.
+            // Binding 4 stays open for the D5 frame lighting
+            // block. Sampler slots 2/5/6/7/8 mirror the StandardPbr material ABI.
             desc.color_attachment_formats = {
                 TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
                 TextureFormat::TEXTURE_FORMAT_RGBA16F,
                 TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
                 TextureFormat::TEXTURE_FORMAT_R8_UNORM,
-                TextureFormat::TEXTURE_FORMAT_RGBA16F};
+                TextureFormat::TEXTURE_FORMAT_RGBA16F,
+                TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM};
             desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
             desc.binding_descs = {{0, sizeof(data::Vertex), false}};
             desc.attri_descs = {

@@ -12,6 +12,7 @@ below are stable built-ins today.
 | `capture.glfw_window` | Capture the full composited GLFW client area and export a PNG. | [`capture.glfw_window`](#captureglfw_window) |
 | `window.resize` | Resize the active window's client area. | [`window.resize`](#windowresize) |
 | `render.screen_space_ao_settings` | Set raster screen-space AO enable, radius, bias, strength, and quality. | [`render.screen_space_ao_settings`](#renderscreen_space_ao_settings) |
+| `render.temporal_aa_settings` | Set raster temporal anti-aliasing and history weight. | [`render.temporal_aa_settings`](#rendertemporal_aa_settings) |
 | `actor.list` | List and filter live Gameplay Actors by authored name and generational handle. | [`actor.list`](#actorlist) |
 | `actor.query` | Read one Actor's state and root transform by handle. | [`actor.query`](#actorquery) |
 | `actor.control` | Set an Actor root's local position and rotation. | [`actor.control`](#actorcontrol) |
@@ -189,6 +190,23 @@ path-tracing frames, SSAO remains ineffective regardless of this setting.
 
 ```json
 {"op":"execute","command":"render.screen_space_ao_settings","arguments":{"enabled":true,"radius":0.65,"bias":0.025,"strength":1.0,"quality":"medium"}}
+```
+
+## `render.temporal_aa_settings`
+
+Set raster temporal anti-aliasing. The default history weight is 0.9; lower it
+to favor the current frame and recover faster from motion/disocclusion. Path
+tracing does not use this history.
+
+Both `enabled` and finite `history_weight` in `[0, 0.95]` are required. Active
+raster TAA selects a half-mip finer PBR texture footprint. `stats` reports
+requested/effective state, submitted history validity/reset reason, jitter UV,
+`r7_active_texture_payload_bytes`, and optional
+`r7_active_texture_allocation_bytes`. Allocation bytes measure Vulkan allocator
+ranges; unsupported backends return no native measurement.
+
+```json
+{"op":"execute","command":"render.temporal_aa_settings","arguments":{"enabled":true,"history_weight":0.9}}
 ```
 
 ## `capture.glfw_window`

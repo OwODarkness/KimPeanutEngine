@@ -162,6 +162,7 @@ namespace kpengine::render
                                 std::optional<CaptureView> view);
         bool RequestPathTraceSettings(PathTraceSettings settings);
         bool RequestScreenSpaceAoSettings(ScreenSpaceAoSettings settings);
+        bool RequestTemporalAaSettings(TemporalAaSettings settings);
         void RequestPathTraceProbeMode(PathTraceProbeMode mode);
         void RequestPathTraceDispatchFailureInjection() noexcept;
         CaptureView GetDebugView() const;
@@ -247,6 +248,7 @@ namespace kpengine::render
         PathTraceSettings requested_path_trace_settings_{};
         std::optional<PathTraceSettings> pending_path_trace_settings_;
         std::optional<ScreenSpaceAoSettings> pending_screen_space_ao_settings_;
+        std::optional<TemporalAaSettings> pending_temporal_aa_settings_;
         std::optional<std::pair<uint64_t,
             std::shared_ptr<const PreparedRenderAssetCatalog>>> pending_catalog_update_;
         std::map<uint64_t, PreparedAssetsUpdateResult> catalog_update_results_;

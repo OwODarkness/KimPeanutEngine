@@ -48,8 +48,8 @@ namespace kpengine::render
             desc.color_attachments = {{graphics::RenderTargetColorAttachment{}}};
             break;
         case RenderTargetName::GBuffer:
-            // Deferred G-buffer: linear albedo, raw world-space normal, packed
-            // material params, selection mask, motion/validity/depth, plus depth.
+            // Deferred G-buffer: albedo, normal, material, selection,
+            // motion/depth/validity, stable renderable identity, plus depth.
             // The selection mask
             // shares this depth-tested pass so post-process outlines respect
             // occlusion.
@@ -76,6 +76,11 @@ namespace kpengine::render
                      {0.f, 0.f, 0.f, 0.f}}},
                 {graphics::RenderTargetColorAttachment{
                      TextureFormat::TEXTURE_FORMAT_RGBA16F,
+                     graphics::RenderTargetLoadOp::Clear,
+                     graphics::RenderTargetStoreOp::Store,
+                     {0.f, 0.f, 0.f, 0.f}}},
+                {graphics::RenderTargetColorAttachment{
+                     TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
                      graphics::RenderTargetLoadOp::Clear,
                      graphics::RenderTargetStoreOp::Store,
                      {0.f, 0.f, 0.f, 0.f}}},

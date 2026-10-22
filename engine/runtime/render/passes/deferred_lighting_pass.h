@@ -39,6 +39,7 @@ namespace kpengine::render
         RenderTarget &gbuffer;
         graphics::TextureHandle screen_space_ao;
         bool screen_space_ao_enabled = false;
+        Vector2f temporal_jitter_uv{};
         RenderTarget &scene_hdr;
         RenderTarget &directional_shadow_target;
         RenderTarget &spot_shadow_target;
@@ -98,6 +99,7 @@ namespace kpengine::render
         DeferredLightingRecordResult RecordGBuffer(
             FrameContext &frame_context, RenderCamera &camera,
             const CameraData &previous_camera, bool camera_history_valid,
+            Vector2f current_jitter_uv, Vector2f previous_jitter_uv,
             SceneDrawRecorder &draw_recorder, MaterialSystem &materials,
             RenderResourceResolver &resource_resolver,
             graphics::CommandRecorder &recorder, RenderTarget *target);

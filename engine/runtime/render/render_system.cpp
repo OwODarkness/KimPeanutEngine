@@ -330,6 +330,7 @@ namespace kpengine::render
             std::optional<CaptureView> tooling_debug_view;
             std::optional<PathTraceSettings> path_trace_settings;
             std::optional<ScreenSpaceAoSettings> screen_space_ao_settings;
+            std::optional<TemporalAaSettings> temporal_aa_settings;
             {
                 std::lock_guard lock(request_mutex_);
                 editor_debug_view = debug_view_demands_[static_cast<std::size_t>(
@@ -339,6 +340,8 @@ namespace kpengine::render
                 path_trace_settings = std::exchange(pending_path_trace_settings_, std::nullopt);
                 screen_space_ao_settings = std::exchange(
                     pending_screen_space_ao_settings_, std::nullopt);
+                temporal_aa_settings = std::exchange(
+                    pending_temporal_aa_settings_, std::nullopt);
             }
             debug_view_ = editor_debug_view.value_or(
                 tooling_debug_view.value_or(CaptureView::SceneColor));
@@ -349,6 +352,10 @@ namespace kpengine::render
             if (screen_space_ao_settings.has_value())
             {
                 deferred_renderer_->SetScreenSpaceAoSettings(*screen_space_ao_settings);
+            }
+            if (temporal_aa_settings.has_value())
+            {
+                deferred_renderer_->SetTemporalAaSettings(*temporal_aa_settings);
             }
             if (requested_profile_window_reset_.exchange(false, std::memory_order_acq_rel))
             {
@@ -367,7 +374,11 @@ namespace kpengine::render
                 debug_view_ == CaptureView::SceneColor
                     ? std::nullopt
                     : std::optional<CaptureView>{debug_view_}));
-            deferred_renderer_->ApplyPendingExtent();
+            if (!deferred_renderer_->ApplyPendingExtent())
+            {
+                last_diagnostic_ = "Temporal frame resources are unavailable";
+                return false;
+            }
         }
         const double scene_prepare_ms =
             std::chrono::duration<double, std::milli>(
@@ -776,6 +787,17 @@ namespace kpengine::render
         return true;
     }
 
+    bool RenderSystem::RequestTemporalAaSettings(TemporalAaSettings settings)
+    {
+        if (!std::isfinite(settings.history_weight) || settings.history_weight < 0.0f ||
+            settings.history_weight > 0.95f)
+            return false;
+        std::lock_guard lock(request_mutex_);
+        pending_temporal_aa_settings_ = settings;
+        requested_profile_window_reset_.store(true, std::memory_order_release);
+        return true;
+    }
+
     void RenderSystem::RequestPathTraceProbeMode(PathTraceProbeMode mode)
     {
         {
@@ -936,6 +958,7 @@ namespace kpengine::render
             debug_view_demands_.fill(std::nullopt);
             pending_path_trace_settings_.reset();
             pending_screen_space_ao_settings_.reset();
+            pending_temporal_aa_settings_.reset();
             editor_presentation_assets_.reset();
             pending_editor_presentation_assets_.reset();
         }

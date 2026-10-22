@@ -132,6 +132,29 @@ namespace kpengine::render
             material_signature ^= value;
             material_signature *= 1099511628211ull;
         };
+        const RenderResourceResolver *const resource_resolver = resource_resolver_;
+        const auto add_texture_binding_signature =
+            [&add_material_signature, resource_resolver](MaterialInstanceHandle material,
+                                                         MaterialParameterID parameter) {
+                if (resource_resolver == nullptr || !parameter.IsValid())
+                {
+                    return;
+                }
+                const auto *const bindings = resource_resolver->FindTextureBindings(material);
+                if (bindings == nullptr)
+                {
+                    return;
+                }
+                const auto binding = bindings->textures.find(parameter.value);
+                if (binding == bindings->textures.end())
+                {
+                    return;
+                }
+                add_material_signature(binding->second.texture.id);
+                add_material_signature(binding->second.texture.generation);
+                add_material_signature(binding->second.sampler.id);
+                add_material_signature(binding->second.sampler.generation);
+            };
         const auto add_float = [&add_signature](float value) {
             add_signature(static_cast<uint64_t>(std::hash<float>{}(value)));
         };
@@ -310,6 +333,7 @@ namespace kpengine::render
                                         add_material_signature(texture->texture_asset.Pack());
                                     }
                                 }
+                                add_texture_binding_signature(material, texture_parameter);
                                 if (const auto *textures =
                                         resource_resolver_->FindTextureBindings(material))
                                 {
@@ -348,6 +372,7 @@ namespace kpengine::render
                                             add_material_signature(texture->texture_asset.Pack());
                                         }
                                     }
+                                    add_texture_binding_signature(material, parameter);
                                 }
                                 return index;
                             };
@@ -380,9 +405,8 @@ namespace kpengine::render
                     add_material_color(material_data.emissive.z_);
                     add_material_color(material_data.metallic);
                     add_material_color(material_data.roughness);
-                    add_material_signature(material_data.base_color_texture_index);
-                    add_material_signature(material_data.metallic_texture_index);
-                    add_material_signature(material_data.roughness_texture_index);
+                    // Bindless indices are allocator slots, not material content.
+                    // Hash the resolved texture and sampler handles above instead.
                     add_material_signature(material_data.metallic_channel);
                     add_material_signature(material_data.roughness_channel);
                     frame_ray_tracing_material_data_.push_back(material_data);

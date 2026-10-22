@@ -466,6 +466,60 @@ namespace kpengine
                            screen_space_ao_registration.diagnostic.c_str());
                 }
 
+                command::CommandRegistrationResult temporal_aa_registration =
+                    command_registry_->Register(
+                        {"render.temporal_aa_settings",
+                         "RenderSettings",
+                         "Set raster temporal anti-aliasing enable and history weight",
+                         command::CommandCategory::Render,
+                         command::CommandFlags::AgentAllowed |
+                             command::CommandFlags::MutatesState,
+                         {{command::CommandArgumentDesc{
+                               "enabled", command::CommandValueType::Boolean, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "history_weight", command::CommandValueType::Float, true, {}, {}}}},
+                         [this](const command::CommandCall &call,
+                                const command::CommandContext &context)
+                         {
+                             if (!render_system_)
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::Failed,
+                                     "RenderSystem is unavailable",
+                                     context.request_id,
+                                     {}};
+                             }
+                             const render::TemporalAaSettings settings{
+                                 std::get<bool>(call.arguments.at("enabled")),
+                                 static_cast<float>(std::get<double>(
+                                     call.arguments.at("history_weight")))};
+                             if (!render_system_->RequestTemporalAaSettings(settings))
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::InvalidArguments,
+                                     "Temporal AA history_weight must be in [0, 0.95]",
+                                     context.request_id,
+                                     {}};
+                             }
+                             return command::CommandResult{
+                                 command::CommandStatus::Success,
+                                 "Temporal AA settings scheduled",
+                                 context.request_id,
+                                 {}};
+                         },
+                         command::CommandThread::Game});
+                if (temporal_aa_registration.IsSuccess())
+                {
+                    temporal_aa_settings_command_registration_ =
+                        std::move(temporal_aa_registration.registration);
+                }
+                else
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register render.temporal_aa_settings: %s",
+                           temporal_aa_registration.diagnostic.c_str());
+                }
+
                 command::CommandRegistrationResult failure_registration =
                     command_registry_->Register(
                         {"render.path_trace_fail_next",
@@ -1144,6 +1198,7 @@ namespace kpengine
             path_trace_probe_command_registration_ = {};
             path_trace_settings_command_registration_ = {};
             screen_space_ao_settings_command_registration_ = {};
+            temporal_aa_settings_command_registration_ = {};
             path_trace_failure_command_registration_ = {};
             screenshot_service_.reset();
             report_progress(3, "Releasing renderer");

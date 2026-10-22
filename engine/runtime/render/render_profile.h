@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/type.h"
+#include "math/math_header.h"
 #include "graphics/backend/common/ray_tracing.h"
 #include "path_trace_settings.h"
 #include "render_graph/render_graph_frame.h"
@@ -24,6 +25,7 @@ namespace kpengine::render
         ScreenSpaceAoEstimate,
         ScreenSpaceAoFilter,
         DeferredLighting,
+        TemporalAaResolve,
         RayTracingPathTrace,
         ToneMap,
         RayTracingToneMap,
@@ -47,6 +49,7 @@ namespace kpengine::render
         case RenderProfilePass::ScreenSpaceAoEstimate: name = "render.ssao_estimate"; break;
         case RenderProfilePass::ScreenSpaceAoFilter: name = "render.ssao_filter"; break;
         case RenderProfilePass::DeferredLighting: name = "render.deferred_lighting"; break;
+        case RenderProfilePass::TemporalAaResolve: name = "render.temporal_aa_resolve"; break;
         case RenderProfilePass::RayTracingPathTrace: name = "render.ray_tracing_path_trace"; break;
         case RenderProfilePass::ToneMap: name = "render.tone_map"; break;
         case RenderProfilePass::RayTracingToneMap: name = "render.ray_tracing_tone_map"; break;
@@ -232,6 +235,15 @@ namespace kpengine::render
         float screen_space_ao_bias = 0.0f;
         float screen_space_ao_strength = 0.0f;
         uint32_t screen_space_ao_sample_count = 0;
+        bool temporal_aa_requested = true;
+        bool temporal_aa_effective = false;
+        bool temporal_aa_history_valid = false;
+        std::string temporal_aa_reset_reason = "uninitialized";
+        uint64_t temporal_aa_reset_count = 0;
+        Vector2f temporal_aa_jitter_uv{};
+        uint64_t r7_active_texture_payload_bytes = 0;
+        std::optional<uint64_t> r7_active_texture_allocation_bytes;
+        std::optional<uint64_t> screen_space_ao_active_texture_allocation_bytes;
         GraphicsAPIType graphics_api = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         uint32_t viewport_width = 0;
         uint32_t viewport_height = 0;

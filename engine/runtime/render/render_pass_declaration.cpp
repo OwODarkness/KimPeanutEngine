@@ -17,8 +17,8 @@ namespace kpengine::render
         constexpr std::array<const char *, kResourceCount> kResourceNames{
             "SceneColor", "SceneHdr", "GBuffer", "DirectionalShadow", "SpotShadow",
             "PointShadow", "CaptureOutput", "DebugViewOutput", "PathTraceHistory",
-            "PathTraceGuide",
-            "ScreenSpaceAoRaw", "ScreenSpaceAoFiltered",
+            "PathTraceGuide", "ScreenSpaceAoRaw", "ScreenSpaceAoFiltered",
+            "TemporalAaHistoryRead", "TemporalAaOutput",
         };
 
         constexpr std::array<RenderFrameResourceRole, kResourceCount> kTextureRoles{
@@ -34,6 +34,8 @@ namespace kpengine::render
             RenderFrameResourceRole::PathTraceGuide,
             RenderFrameResourceRole::ScreenSpaceAoRaw,
             RenderFrameResourceRole::ScreenSpaceAoFiltered,
+            RenderFrameResourceRole::TemporalAaHistoryRead,
+            RenderFrameResourceRole::TemporalAaOutput,
         };
 
         template <typename Handle>
@@ -82,6 +84,10 @@ namespace kpengine::render
             case RenderPassCondition::ScreenSpaceAoDiagnosticRequested:
                 return conditions.screen_space_ao_diagnostic && conditions.screen_space_ao &&
                        !conditions.ray_tracing_path_trace;
+            case RenderPassCondition::TemporalAaEnabled:
+                return conditions.temporal_aa && !conditions.ray_tracing_path_trace;
+            case RenderPassCondition::TemporalAaDisabled:
+                return !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
             }
             return false;
         }
@@ -102,7 +108,7 @@ namespace kpengine::render
                    RenderGraphUsage::DepthAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
                 {FixedRenderPassId::GBuffer, "GBufferPass",
-                 // Writes all five colour attachments and the depth.
+                 // Writes all six colour attachments and the depth.
                  {{RenderPassResource::GBuffer, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment, RenderGraphAttachmentScope::Whole()}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
@@ -140,6 +146,16 @@ namespace kpengine::render
                   {RenderPassResource::SceneHdr, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterFrame, false},
+                {FixedRenderPassId::TemporalAaResolve, "TemporalAaResolvePass",
+                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::GBuffer, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b110010U)},
+                  {RenderPassResource::TemporalAaHistoryRead, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::TemporalAaOutput, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::TemporalAaEnabled, false},
                 {FixedRenderPassId::RayTracingPathTrace, "RayTracingPathTracePass",
                  {{RenderPassResource::PathTraceHistory, RenderPassAccess::Read,
                    RenderGraphUsage::StorageRead},
@@ -151,7 +167,9 @@ namespace kpengine::render
                  false},
                 {FixedRenderPassId::ToneMap, "ToneMapPass",
                  {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled},
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::TemporalAaDisabled},
+                  {RenderPassResource::TemporalAaOutput, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::TemporalAaEnabled},
                   // The selection mask. This read was unstated until subresource
                   // scopes made it matter: it worked only because deferred
                   // lighting had already moved the whole G-buffer, so narrowing
@@ -287,6 +305,7 @@ namespace kpengine::render
             add_acceleration_structure_role(*scene_blas, RenderFrameResourceRole::SceneBlas);
         if (scene_tlas.has_value())
             add_acceleration_structure_role(*scene_tlas, RenderFrameResourceRole::SceneTlas);
+        std::vector<std::pair<uint32_t, RenderFrameResourceRole>> texture_roles;
         for (std::size_t resource_index = 0; resource_index < kResourceCount; ++resource_index)
         {
             const bool screen_space_ao_resource =
@@ -297,6 +316,9 @@ namespace kpengine::render
             {
                 continue;
             }
+            const bool temporal_aa_resource =
+                resource_index == static_cast<std::size_t>(RenderPassResource::TemporalAaHistoryRead) ||
+                resource_index == static_cast<std::size_t>(RenderPassResource::TemporalAaOutput);
             // SceneHdr is the one resource the graph plans but does not own: its
             // contents never survive the frame, so the renderer takes it from the
             // Graphics-owned pool for the window the plan computes.
@@ -309,7 +331,10 @@ namespace kpengine::render
                 transient_key = static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoRaw);
             else if (resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoFiltered))
                 transient_key = static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoFiltered);
-            if (conditions.ray_tracing_path_trace &&
+            if (conditions.temporal_aa && !conditions.ray_tracing_path_trace &&
+                temporal_aa_resource)
+                resources[resource_index] = graph.ImportTexture(kResourceNames[resource_index]);
+            else if (conditions.ray_tracing_path_trace &&
                 (resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr) ||
                  resource_index == static_cast<std::size_t>(RenderPassResource::PathTraceHistory) ||
                  resource_index == static_cast<std::size_t>(RenderPassResource::PathTraceGuide)))
@@ -319,6 +344,7 @@ namespace kpengine::render
                     kResourceNames[resource_index],
                     pooled ? std::optional<uint64_t>(transient_key)
                            : std::nullopt);
+            texture_roles.emplace_back(resources[resource_index].resource, kTextureRoles[resource_index]);
         }
 
         RenderGraphPassRef terminal_pass;
@@ -366,6 +392,12 @@ namespace kpengine::render
                 {
                     continue;
                 }
+                if (use.condition == RenderPassCondition::TemporalAaEnabled &&
+                    (!conditions.temporal_aa || conditions.ray_tracing_path_trace))
+                    continue;
+                if (use.condition == RenderPassCondition::TemporalAaDisabled &&
+                    (conditions.temporal_aa || conditions.ray_tracing_path_trace))
+                    continue;
                 const GraphTextureHandle &resource =
                     resources[static_cast<std::size_t>(use.resource)];
                 if (use.access == RenderPassAccess::Read)
@@ -507,9 +539,11 @@ namespace kpengine::render
             {
                 if (const auto *texture = std::get_if<GraphTextureHandle>(&use.handle))
                 {
-                    if (texture->resource < kTextureRoles.size())
+                    const auto role = std::find_if(texture_roles.begin(), texture_roles.end(),
+                        [texture](const auto &entry) { return entry.first == texture->resource; });
+                    if (role != texture_roles.end())
                     {
-                        AppendResourceVersion(plan, kTextureRoles[texture->resource], *texture);
+                        AppendResourceVersion(plan, role->second, *texture);
                     }
                 }
                 else if (const auto *buffer = std::get_if<GraphBufferHandle>(&use.handle))

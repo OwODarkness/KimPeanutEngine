@@ -663,6 +663,12 @@ namespace kpengine::graphics
         return handle;
     }
 
+    std::optional<uint64_t> VulkanBackend::GetTextureAllocationBytes(TextureHandle handle)
+    {
+        const Texture *texture = texture_manager_ ? texture_manager_->GetTexture(handle) : nullptr;
+        return texture ? texture->GetAllocationBytes() : std::nullopt;
+    }
+
     bool VulkanBackend::DestroyTexture(TextureHandle handle)
     {
         if (bindless_texture_table_ && bindless_texture_table_->ReferencesTexture(handle))
@@ -1058,7 +1064,9 @@ namespace kpengine::graphics
             {
                 const uint64_t completed_serial =
                     frame_context_->GetLastSubmittedSerial();
-                acceleration_structure_owner_->RetireSubmitted(completed_serial);
+                // Idle completes submitted work, never the frame still being recorded.
+                if (!frame_active_)
+                    acceleration_structure_owner_->RetireSubmitted(completed_serial);
                 acceleration_structure_owner_->CollectCompleted(completed_serial);
             }
             if (transient_target_pool_)

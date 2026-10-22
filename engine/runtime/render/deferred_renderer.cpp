@@ -15,6 +15,8 @@
 #include "render/material/material_asset_resolver.h"
 #include "render/render_capture_service_internal.h"
 #include "render/temporal_reprojection.h"
+#include "render/temporal_aa_history_signature.h"
+#include "render/temporal_jitter.h"
 #include "render/render_world/scene_visibility.h"
 #include "render_resource_resolver.h"
 #include "render_scene_coordinator.h"
@@ -96,6 +98,9 @@ namespace kpengine::render
         previous_submitted_extent_ = {};
         pending_temporal_commit_ = false;
         pending_submitted_extent_ = {};
+        current_temporal_jitter_ = {};
+        previous_temporal_jitter_ = {};
+        temporal_jitter_index_ = 0;
         const uint32_t allocated_history_targets =
             path_tracing_pass_.GetHistoryTargetCount();
         // Release graph-owned leases before the backend tears its pool down.
@@ -122,6 +127,7 @@ namespace kpengine::render
             deferred_lighting_pass_.Cleanup(*backend_);
             screen_space_ao_pass_.Cleanup(*backend_);
             tone_map_pass_.Cleanup(*backend_);
+            temporal_aa_pass_.Cleanup(*backend_);
             capture_view_pass_.Cleanup(*backend_);
             fullscreen_pass_resources_.Cleanup(*backend_);
             shadow_pass_.Cleanup(*backend_);
@@ -155,9 +161,29 @@ namespace kpengine::render
         }
     }
 
-    void DeferredRenderer::ApplyPendingExtent()
+    bool DeferredRenderer::ApplyPendingExtent()
     {
         ApplyPendingSceneRenderTargetExtent();
+        const RenderTarget *const target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
+        if (requested_path_trace_settings_.path_tracing_enabled && path_tracing_pass_.Available())
+        {
+            return backend_ && prepared_assets_ && target && target->IsValid() &&
+                fullscreen_pass_resources_.Initialize(*backend_) &&
+                tone_map_pass_.PrepareResources(*backend_, *prepared_assets_) &&
+                path_tracing_pass_.EnsureHistoryTargets(
+                    *backend_, target->GetWidth(), target->GetHeight());
+        }
+        const bool temporal_aa_requested = temporal_aa_settings_.enabled &&
+            !(requested_path_trace_settings_.path_tracing_enabled &&
+              path_tracing_pass_.Available());
+        if (!temporal_aa_requested)
+            return true;
+        // Idle-based replacement must precede recording AS builds into this frame.
+        return backend_ && prepared_assets_ && target && target->IsValid() &&
+            fullscreen_pass_resources_.Initialize(*backend_) &&
+            temporal_aa_pass_.PrepareResources(*backend_, *prepared_assets_) &&
+            temporal_aa_pass_.EnsureHistoryTargets(
+                *backend_, target->GetWidth(), target->GetHeight());
     }
 
     const RenderTarget &DeferredRenderer::GetSceneRenderTarget() const
@@ -219,6 +245,9 @@ namespace kpengine::render
         {
             return;
         }
+        if (requested_path_trace_settings_.hybrid_ray_query_shadows_enabled !=
+            settings.hybrid_ray_query_shadows_enabled)
+            temporal_aa_pass_.Invalidate("shadow_mode_changed");
         requested_path_trace_settings_ = settings;
         path_tracing_enabled_ = settings.path_tracing_enabled &&
                                 path_tracing_pass_.Available();
@@ -239,8 +268,21 @@ namespace kpengine::render
             settings.quality = ScreenSpaceAoQuality::Medium;
             break;
         }
+        if (screen_space_ao_settings_.enabled != settings.enabled ||
+            screen_space_ao_settings_.radius != settings.radius ||
+            screen_space_ao_settings_.bias != settings.bias ||
+            screen_space_ao_settings_.strength != settings.strength ||
+            screen_space_ao_settings_.quality != settings.quality)
+            temporal_aa_pass_.Invalidate("ao_settings_changed");
         screen_space_ao_settings_ = settings;
         screen_space_ao_pass_.SetSettings(settings);
+    }
+
+    void DeferredRenderer::SetTemporalAaSettings(TemporalAaSettings settings)
+    {
+        settings.history_weight = std::clamp(settings.history_weight, 0.0f, 0.95f);
+        temporal_aa_settings_ = settings;
+        temporal_aa_pass_.SetSettings(settings);
     }
 
     void DeferredRenderer::InjectNextPathTraceDispatchFailure()
@@ -314,6 +356,21 @@ namespace kpengine::render
                 std::chrono::steady_clock::now() - render_world_snapshot_started)
                 .count();
         scene_camera_ = input.camera;
+        const graphics::Extent2D frame_extent = frame_context.GetRenderExtent();
+        if (!effective_path_trace_settings_.path_tracing_enabled && frame_extent.height != 0)
+            scene_camera_.SetAspect(static_cast<float>(frame_extent.width) / frame_extent.height);
+        const bool temporal_aa_requested = temporal_aa_settings_.enabled &&
+                                           !effective_path_trace_settings_.path_tracing_enabled;
+        current_temporal_jitter_ = temporal_aa_requested
+            ? TemporalJitterUv(temporal_jitter_index_, frame_extent.width, frame_extent.height)
+            : Vector2f{};
+        profile_.temporal_aa_requested = temporal_aa_settings_.enabled;
+        profile_.temporal_aa_effective = temporal_aa_requested;
+        profile_.temporal_aa_jitter_uv = current_temporal_jitter_;
+        if (!temporal_aa_requested)
+            temporal_aa_pass_.Invalidate(effective_path_trace_settings_.path_tracing_enabled
+                                             ? "path_tracing"
+                                             : "disabled");
         pending_adaptive_spp_decision_.reset();
         path_trace_sampling_state_ = "fixed";
         if (effective_path_trace_settings_.path_tracing_enabled &&
@@ -519,28 +576,27 @@ namespace kpengine::render
         profile_.screen_space_ao_strength = screen_space_ao_settings_.strength;
         profile_.screen_space_ao_sample_count = profile_.screen_space_ao_effective
             ? ScreenSpaceAoSampleCount(screen_space_ao_settings_.quality) : 0u;
+        if (profile_.temporal_aa_effective)
+            temporal_aa_pass_.UpdateHistorySignature(
+                detail::ComputeTemporalAaSceneSignature(input, *material_system_));
+        const bool previous_camera_matches = previous_submitted_camera_.has_value() &&
+            previous_submitted_extent_.width == frame_extent.width &&
+            previous_submitted_extent_.height == frame_extent.height &&
+            !IsRasterCameraCut(*previous_submitted_camera_, scene_camera_.GetCameraData());
+        if (previous_submitted_camera_.has_value() &&
+            previous_submitted_extent_.width == frame_extent.width &&
+            previous_submitted_extent_.height == frame_extent.height &&
+            !previous_camera_matches)
+            temporal_aa_pass_.Invalidate("camera_cut");
+        else if (previous_submitted_camera_.has_value() && !previous_camera_matches)
+            temporal_aa_pass_.Invalidate("extent_changed");
+        profile_.temporal_aa_history_valid =
+            temporal_aa_pass_.HistoryValid() && previous_camera_matches;
+        profile_.temporal_aa_reset_reason = temporal_aa_pass_.ResetReason();
+        profile_.temporal_aa_reset_count = temporal_aa_pass_.ResetCount();
         if (ray_tracing_path_trace)
         {
-            if (backend_ == nullptr || prepared_assets_ == nullptr ||
-                !fullscreen_pass_resources_.Initialize(*backend_) ||
-                !tone_map_pass_.PrepareResources(*backend_, *prepared_assets_))
-            {
-                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "Frame stopped because path tracing tone-map resources are unavailable");
-                ClearActiveFrameInputs();
-                result.normal_recording_completed = false;
-                return result;
-            }
             const graphics::Extent2D extent = frame_context.GetRenderExtent();
-            if (!path_tracing_pass_.EnsureHistoryTargets(
-                    *backend_, extent.width, extent.height))
-            {
-                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "Frame stopped because path tracing history targets could not be prepared");
-                ClearActiveFrameInputs();
-                result.normal_recording_completed = false;
-                return result;
-            }
             const uint64_t signature = path_tracing_pass_.HistorySignature(
                 extent.width, extent.height, rt_scene,
                 deferred_lighting_pass_.Environment(), scene_camera_,
@@ -554,7 +610,7 @@ namespace kpengine::render
             is_deferred_capture, ray_query_shadow, rt_scene.blas_build_required,
             rt_scene.tlas_build_required, ray_tracing_path_trace,
             active_debug_view_.has_value(), profile_.screen_space_ao_effective,
-            screen_space_ao_diagnostic};
+            screen_space_ao_diagnostic, profile_.temporal_aa_effective};
         const CompiledRenderFramePlan *const compiled_frame_plan =
             GetCompiledFramePlan(frame_conditions);
         const CompiledRenderGraph *const frame_plan =
@@ -781,6 +837,9 @@ namespace kpengine::render
             succeeded = RecordDeferredLightingPass();
             break;
         }
+        case FixedRenderPassId::TemporalAaResolve:
+            succeeded = RecordTemporalAaResolvePass();
+            break;
         case FixedRenderPassId::ToneMap:
             succeeded = RecordToneMapPass();
             break;
@@ -944,6 +1003,20 @@ namespace kpengine::render
         {
             previous_submitted_camera_ = pending_submitted_camera_;
             previous_submitted_extent_ = pending_submitted_extent_;
+            temporal_aa_pass_.CommitSubmittedFrame(profile_.temporal_aa_effective);
+            if (profile_.temporal_aa_effective)
+            {
+                previous_temporal_jitter_ = current_temporal_jitter_;
+                ++temporal_jitter_index_;
+            }
+            else
+            {
+                previous_temporal_jitter_ = {};
+            }
+        }
+        else
+        {
+            temporal_aa_pass_.CommitSubmittedFrame(false);
         }
         pending_temporal_commit_ = false;
         pending_submitted_extent_ = {};
@@ -1043,6 +1116,12 @@ namespace kpengine::render
                     break;
                 case RenderFrameResourceRole::PathTraceGuide:
                     target = path_tracing_pass_.GuideTarget();
+                    break;
+                case RenderFrameResourceRole::TemporalAaHistoryRead:
+                    target = temporal_aa_pass_.HistoryTarget(temporal_aa_pass_.ReadIndex());
+                    break;
+                case RenderFrameResourceRole::TemporalAaOutput:
+                    target = temporal_aa_pass_.HistoryTarget(temporal_aa_pass_.WriteIndex());
                     break;
                 case RenderFrameResourceRole::SceneColor:
                     target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
@@ -1223,7 +1302,8 @@ namespace kpengine::render
                 (condition_bits & 16U) != 0,
                 (condition_bits & 32U) != 0,
                 (condition_bits & 64U) != 0,
-                (condition_bits & 128U) != 0};
+                (condition_bits & 128U) != 0,
+                (condition_bits & 256U) != 0};
             const std::size_t slot =
                 (conditions.diagnostic_capture ? 1U : 0U) |
                 (conditions.ray_query_shadow ? 2U : 0U) |
@@ -1232,7 +1312,8 @@ namespace kpengine::render
                 (conditions.ray_tracing_path_trace ? 16U : 0U) |
                 (conditions.debug_view ? 32U : 0U) |
                 (conditions.screen_space_ao ? 64U : 0U) |
-                (conditions.screen_space_ao_diagnostic ? 128U : 0U);
+                (conditions.screen_space_ao_diagnostic ? 128U : 0U) |
+                (conditions.temporal_aa ? 256U : 0U);
             const auto started = std::chrono::steady_clock::now();
             frame_plans_[slot] = CompileRenderFramePlan(conditions);
             frame_plan_compile_ms_ += std::chrono::duration<double, std::milli>(
@@ -1263,7 +1344,8 @@ namespace kpengine::render
                         (conditions.ray_tracing_path_trace ? 16U : 0U) |
                         (conditions.debug_view ? 32U : 0U) |
                         (conditions.screen_space_ao ? 64U : 0U) |
-                        (conditions.screen_space_ao_diagnostic ? 128U : 0U)];
+                        (conditions.screen_space_ao_diagnostic ? 128U : 0U) |
+                        (conditions.temporal_aa ? 256U : 0U)];
         if (!plan.has_value() || !plan->compilation.graph.has_value())
         {
             return nullptr;
@@ -1338,6 +1420,7 @@ namespace kpengine::render
                 previous_submitted_extent_.width == active_frame_context_->GetRenderExtent().width &&
                 previous_submitted_extent_.height == active_frame_context_->GetRenderExtent().height &&
                 !IsRasterCameraCut(*previous_submitted_camera_, scene_camera_.GetCameraData()),
+            current_temporal_jitter_, previous_temporal_jitter_,
             scene_draw_recorder_,
             *material_system_, *resource_resolver_, active_pass_context_->GetRecorder(),
             ResolveFrameTexture(RenderFrameResourceRole::GBuffer,
@@ -1383,6 +1466,10 @@ namespace kpengine::render
             !fullscreen_pass_resources_.Initialize(*backend_) ||
             !screen_space_ao_pass_.PrepareResources(*backend_, *prepared_assets_))
             return false;
+        const auto raw_bytes = backend_->GetTextureAllocationBytes(raw->GetColorAttachmentTexture(0));
+        const auto output_bytes = backend_->GetTextureAllocationBytes(output->GetColorAttachmentTexture(0));
+        profile_.screen_space_ao_active_texture_allocation_bytes = raw_bytes && output_bytes
+            ? std::optional<uint64_t>{*raw_bytes + *output_bytes} : std::nullopt;
         const bool recorded = screen_space_ao_pass_.RecordFilter(
             *active_frame_context_, *gbuffer, *raw, fullscreen_pass_resources_,
             active_pass_context_->GetRecorder());
@@ -1429,7 +1516,7 @@ namespace kpengine::render
             screen_space_ao_enabled
                 ? screen_space_ao->GetColorAttachmentTexture(0)
                 : gbuffer_target->GetColorAttachmentTexture(2),
-            screen_space_ao_enabled, *hdr_target,
+            screen_space_ao_enabled, current_temporal_jitter_, *hdr_target,
             *directional_target, *spot_target, *point_target,
             shadow_pass_.DirectionalFrame() ? &*shadow_pass_.DirectionalFrame() : nullptr,
             shadow_pass_.SpotFrame() ? &*shadow_pass_.SpotFrame() : nullptr,
@@ -1443,6 +1530,51 @@ namespace kpengine::render
         profile_.ray_query_shadows_active = result.ray_query_shadows_active;
         AddProfileDraws(result.draw_calls, result.sections);
         return result.succeeded;
+    }
+
+    bool DeferredRenderer::RecordTemporalAaResolvePass()
+    {
+        if (active_frame_context_ == nullptr || active_pass_context_ == nullptr ||
+            backend_ == nullptr)
+            return false;
+        RenderTarget *const hdr_target = ResolveFrameTexture(RenderFrameResourceRole::SceneHdr);
+        RenderTarget *const gbuffer_target = ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
+        RenderTarget *const output = ResolveFrameTexture(
+            RenderFrameResourceRole::TemporalAaOutput, RenderGraphAccess::Write);
+        if (hdr_target == nullptr || gbuffer_target == nullptr || output == nullptr ||
+            !fullscreen_pass_resources_.Initialize(*backend_))
+            return false;
+        uint64_t allocation_bytes = 0;
+        bool allocation_known = true;
+        const auto account_texture = [&](graphics::TextureHandle texture) {
+            const auto bytes = backend_->GetTextureAllocationBytes(texture);
+            if (bytes) allocation_bytes += *bytes;
+            else allocation_known = false;
+        };
+        for (uint32_t index = 0; index < 2; ++index)
+            for (uint32_t attachment = 0; attachment < 3; ++attachment)
+                account_texture(temporal_aa_pass_.HistoryTarget(index)->GetColorAttachmentTexture(attachment));
+        account_texture(gbuffer_target->GetColorAttachmentTexture(4));
+        account_texture(gbuffer_target->GetColorAttachmentTexture(5));
+        if (profile_.screen_space_ao_effective)
+        {
+            if (profile_.screen_space_ao_active_texture_allocation_bytes)
+                allocation_bytes += *profile_.screen_space_ao_active_texture_allocation_bytes;
+            else allocation_known = false;
+        }
+        profile_.r7_active_texture_payload_bytes =
+            uint64_t{gbuffer_target->GetWidth()} * gbuffer_target->GetHeight() *
+            (profile_.screen_space_ao_effective ? 46U : 44U);
+        profile_.r7_active_texture_allocation_bytes = allocation_known
+            ? std::optional<uint64_t>{allocation_bytes} : std::nullopt;
+        const bool recorded = temporal_aa_pass_.Record(
+            *active_frame_context_, *hdr_target, *gbuffer_target,
+            fullscreen_pass_resources_, active_pass_context_->GetRecorder(),
+            profile_.temporal_aa_history_valid,
+            current_temporal_jitter_);
+        if (recorded)
+            AddProfileDraws(1, 1);
+        return recorded;
     }
 
     bool DeferredRenderer::PrepareDeferredLightingPassResources()
@@ -1486,7 +1618,11 @@ namespace kpengine::render
         if (active_frame_context_ == nullptr || active_pass_context_ == nullptr ||
             backend_ == nullptr || prepared_assets_ == nullptr)
             return false;
-        RenderTarget *const hdr_target = ResolveFrameTexture(RenderFrameResourceRole::SceneHdr);
+        RenderTarget *const hdr_target = path_tracing_pass_.Active()
+            ? ResolveFrameTexture(RenderFrameResourceRole::SceneHdr)
+            : (profile_.temporal_aa_effective
+                   ? ResolveFrameTexture(RenderFrameResourceRole::TemporalAaOutput)
+                   : ResolveFrameTexture(RenderFrameResourceRole::SceneHdr));
         RenderTarget *const gbuffer_target = path_tracing_pass_.Active()
             ? nullptr : ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
         RenderTarget *const guide_target = path_tracing_pass_.Active()

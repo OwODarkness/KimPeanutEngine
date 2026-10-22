@@ -8,6 +8,7 @@
 #include "render/passes/gbuffer_pass_constants.h"
 #include "render/render_resource_resolver.h"
 #include "render/render_shader_data.h"
+#include "render/temporal_jitter.h"
 #include "render/render_world/scene_draw_list.h"
 
 #include <cstddef>
@@ -159,6 +160,7 @@ namespace kpengine::render
     DeferredLightingRecordResult DeferredLightingPass::RecordGBuffer(
         FrameContext &frame_context, RenderCamera &camera,
         const CameraData &previous_camera, bool camera_history_valid,
+        Vector2f current_jitter_uv, Vector2f previous_jitter_uv,
         SceneDrawRecorder &draw_recorder, MaterialSystem &materials,
         RenderResourceResolver &resource_resolver,
         graphics::CommandRecorder &recorder, RenderTarget *target)
@@ -172,16 +174,22 @@ namespace kpengine::render
         {
             camera.SetAspect(static_cast<float>(extent.width) /
                              static_cast<float>(extent.height));
-            const CameraData camera_data = camera.GetCameraData();
+            CameraData camera_data = camera.GetCameraData();
+            camera_data.proj = ApplyTemporalJitter(
+                camera_data.proj.Transpose(), current_jitter_uv).Transpose();
             PerPassData per_pass_data{};
             per_pass_data.camera_data.view = camera_data.view;
             per_pass_data.camera_data.proj = camera_data.proj;
             per_pass_data.previous_view = previous_camera.view;
-            per_pass_data.previous_proj = previous_camera.proj;
+            per_pass_data.previous_proj = ApplyTemporalJitter(
+                previous_camera.proj.Transpose(), previous_jitter_uv).Transpose();
             per_pass_data.temporal_params = Vector4f{
-                static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 0.0f};
+                static_cast<float>(extent.width), static_cast<float>(extent.height),
+                current_jitter_uv.x_, current_jitter_uv.y_};
             per_pass_data.history_params = Vector4f{
-                camera_history_valid ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
+                camera_history_valid ? 1.0f : 0.0f,
+                previous_jitter_uv.x_, previous_jitter_uv.y_,
+                current_jitter_uv.x_ != 0.0f || current_jitter_uv.y_ != 0.0f ? 1.0f : 0.0f};
             const std::vector<VisibleMeshSection> visible_sections =
                 draw_recorder.BuildVisibleSections(camera.GetViewProjectionMatrix(),
                                                    resource_resolver);
@@ -249,8 +257,12 @@ namespace kpengine::render
             return result;
 
         DeferredLightingGpuData lighting_data{};
+        const CameraData camera_data = camera.GetCameraData();
+        const Matrix4f jittered_view_projection =
+            ApplyTemporalJitter(camera_data.proj.Transpose(), inputs.temporal_jitter_uv) *
+            camera_data.view.Transpose();
         lighting_data.inverse_view_projection =
-            camera.GetViewProjectionMatrix().Inverse().Transpose();
+            jittered_view_projection.Inverse().Transpose();
         lighting_data.camera_world_position = Vector4f{camera.GetPosition(), 1.0f};
         lighting_data.environment_ibl_params = Vector4f{
             inputs.environment.ibl_enabled ? 1.0f : 0.0f,

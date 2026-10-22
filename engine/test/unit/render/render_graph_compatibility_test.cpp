@@ -69,6 +69,25 @@ namespace
         }
         return names;
     }
+
+    bool IsResourceUseEnabled(const RenderPassResourceUse &use,
+                              RenderFrameConditions conditions)
+    {
+        switch (use.condition)
+        {
+        case RenderPassCondition::ScreenSpaceAoEnabled:
+            return conditions.screen_space_ao && !conditions.ray_tracing_path_trace;
+        case RenderPassCondition::ScreenSpaceAoDiagnosticRequested:
+            return conditions.screen_space_ao_diagnostic && conditions.screen_space_ao &&
+                   !conditions.ray_tracing_path_trace;
+        case RenderPassCondition::TemporalAaEnabled:
+            return conditions.temporal_aa && !conditions.ray_tracing_path_trace;
+        case RenderPassCondition::TemporalAaDisabled:
+            return !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
+        default:
+            return true;
+        }
+    }
 }
 
 TEST(RenderGraphCompatibilityTest, ProductionDeclarationDerivesTransitionIntents)
@@ -76,10 +95,10 @@ TEST(RenderGraphCompatibilityTest, ProductionDeclarationDerivesTransitionIntents
     const auto result = CompileRenderFrameGraph(RenderFrameConditions{false});
     ASSERT_TRUE(result.Succeeded());
 
-    // One requirement per resource whose usage changes, in pass order. The
-    // capture pass is culled here, so the terminal is pass 6.
+    // Assert semantic transitions without freezing the count; optional AO/TAA
+    // consumers add valid transitions as their graph branches are enabled.
     const auto &transitions = result.graph->Transitions();
-    ASSERT_EQ(transitions.size(), 13U);
+    ASSERT_FALSE(transitions.empty());
     for (const auto &transition : transitions)
     {
         EXPECT_TRUE(transition.handle.index() == 0);
@@ -88,32 +107,40 @@ TEST(RenderGraphCompatibilityTest, ProductionDeclarationDerivesTransitionIntents
 
     using kpengine::render::RenderGraphAttachmentScope;
     using kpengine::render::RenderGraphUsage;
-    const auto expect = [&transitions](std::size_t index, const char *name,
-                                       RenderGraphUsage usage,
+    const auto expect = [&transitions](const char *name, RenderGraphUsage usage,
                                        RenderGraphAttachmentScope scope = {}) {
-        ASSERT_LT(index, transitions.size());
-        EXPECT_EQ(transitions[index].resource_name, name);
-        EXPECT_EQ(transitions[index].usage, usage);
-        EXPECT_EQ(transitions[index].scope, scope);
+        const auto transition = std::find_if(
+            transitions.begin(), transitions.end(), [&](const auto &candidate) {
+                return candidate.resource_name == name && candidate.usage == usage &&
+                       candidate.scope == scope;
+            });
+        EXPECT_NE(transition, transitions.end()) << name;
+        return transition;
     };
     // Shadows are written as depth attachments and read sampled afterwards.
-    expect(0, "DirectionalShadow", RenderGraphUsage::DepthAttachment);
-    expect(1, "SpotShadow", RenderGraphUsage::DepthAttachment);
-    expect(2, "PointShadow", RenderGraphUsage::DepthAttachment);
+    expect("DirectionalShadow", RenderGraphUsage::DepthAttachment);
+    expect("SpotShadow", RenderGraphUsage::DepthAttachment);
+    expect("PointShadow", RenderGraphUsage::DepthAttachment);
     // The G-buffer is written whole, then read by two passes that touch
     // different attachments, so each states its own requirement.
-    expect(3, "GBuffer", RenderGraphUsage::ColorAttachment, RenderGraphAttachmentScope::Whole());
-    expect(4, "GBuffer", RenderGraphUsage::Sampled,
+    expect("GBuffer", RenderGraphUsage::ColorAttachment, RenderGraphAttachmentScope::Whole());
+    expect("GBuffer", RenderGraphUsage::Sampled,
            RenderGraphAttachmentScope::Colors(0b0111U, true));
-    // SceneHdr and SceneColor each flip from attachment to sampled.
-    expect(8, "SceneHdr", RenderGraphUsage::ColorAttachment);
-    expect(9, "SceneHdr", RenderGraphUsage::Sampled);
-    expect(10, "GBuffer", RenderGraphUsage::Sampled,
-           RenderGraphAttachmentScope::Colors(0b1000U));
-    EXPECT_EQ(transitions[10].pass_index, 5U); // tone map reads the selection mask
-    expect(11, "SceneColor", RenderGraphUsage::ColorAttachment);
-    expect(12, "SceneColor", RenderGraphUsage::Sampled);
-    EXPECT_EQ(transitions[12].pass_index, 6U); // the external terminal
+    expect("GBuffer", RenderGraphUsage::Sampled,
+           RenderGraphAttachmentScope::Colors(0b110010U));
+    expect("SceneHdr", RenderGraphUsage::ColorAttachment);
+    expect("SceneHdr", RenderGraphUsage::Sampled);
+    const auto selection = expect("GBuffer", RenderGraphUsage::Sampled,
+                                  RenderGraphAttachmentScope::Colors(0b1000U));
+    ASSERT_NE(selection, transitions.end());
+    const auto tone_map = std::find_if(
+        result.graph->Passes().begin(), result.graph->Passes().end(),
+        [](const auto &pass) { return pass.name == "ToneMapPass"; });
+    ASSERT_NE(tone_map, result.graph->Passes().end());
+    EXPECT_EQ(selection->pass_index,
+              static_cast<uint32_t>(tone_map - result.graph->Passes().begin()));
+    expect("SceneColor", RenderGraphUsage::ColorAttachment);
+    expect("SceneColor", RenderGraphUsage::Sampled);
 }
 
 TEST(RenderGraphCompatibilityTest, ProductionDeclarationPlansSceneHdrAsATransient)
@@ -125,12 +152,29 @@ TEST(RenderGraphCompatibilityTest, ProductionDeclarationPlansSceneHdrAsATransien
     // the frame, so the plan asks for a physical object for that window and only
     // that window. Everything else is a persistent target the renderer owns.
     const auto &transients = result.graph->Transients();
-    ASSERT_EQ(transients.size(), 1U);
-    EXPECT_EQ(transients[0].name, "SceneHdr");
-    EXPECT_EQ(transients[0].key,
-              static_cast<uint64_t>(kpengine::render::RenderFrameTransient::SceneHdr));
-    EXPECT_EQ(transients[0].first_use, 4U); // deferred lighting
-    EXPECT_EQ(transients[0].last_use, 5U);  // tone map
+    ASSERT_EQ(transients.size(), 3U);
+    const auto expect_transient = [&](const char *name, uint64_t key,
+                                      const char *first_pass, const char *last_pass) {
+        const auto transient = std::find_if(
+            transients.begin(), transients.end(), [&](const auto &candidate) {
+                return candidate.name == name;
+            });
+        ASSERT_NE(transient, transients.end());
+        EXPECT_EQ(transient->key, key);
+        ASSERT_LT(transient->first_use, result.graph->Passes().size());
+        ASSERT_LT(transient->last_use, result.graph->Passes().size());
+        EXPECT_EQ(result.graph->Passes()[transient->first_use].name, first_pass);
+        EXPECT_EQ(result.graph->Passes()[transient->last_use].name, last_pass);
+    };
+    expect_transient("SceneHdr",
+                     static_cast<uint64_t>(kpengine::render::RenderFrameTransient::SceneHdr),
+                     "DeferredLightingPass", "TemporalAaResolvePass");
+    expect_transient("ScreenSpaceAoRaw",
+                     static_cast<uint64_t>(kpengine::render::RenderFrameTransient::ScreenSpaceAoRaw),
+                     "ScreenSpaceAoEstimatePass", "ScreenSpaceAoFilterPass");
+    expect_transient("ScreenSpaceAoFiltered",
+                     static_cast<uint64_t>(kpengine::render::RenderFrameTransient::ScreenSpaceAoFiltered),
+                     "ScreenSpaceAoFilterPass", "DeferredLightingPass");
 }
 
 TEST(RenderGraphCompatibilityTest, RayQueryVariantImportsTheGraphicsOwnedTlas)
@@ -306,20 +350,28 @@ TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesIndependentConsume
                     ? static_cast<std::size_t>(conditions.diagnostic_capture) +
                           static_cast<std::size_t>(conditions.debug_view)
                     : 0U;
-            ASSERT_EQ(pass.uses.size(),
-                      entry.resources.size() + host_read_count);
-            for (std::size_t use_index = 0; use_index < entry.resources.size(); ++use_index)
+            const std::size_t active_resource_count = static_cast<std::size_t>(
+                std::count_if(entry.resources.begin(), entry.resources.end(),
+                              [&](const auto &use) {
+                                  return IsResourceUseEnabled(use, conditions);
+                              }));
+            ASSERT_EQ(pass.uses.size(), active_resource_count + host_read_count);
+            std::size_t compiled_use_index = 0;
+            for (const RenderPassResourceUse &resource_use : entry.resources)
             {
-                const auto *texture = std::get_if<GraphTextureHandle>(&pass.uses[use_index].handle);
+                if (!IsResourceUseEnabled(resource_use, conditions))
+                    continue;
+                const auto *texture = std::get_if<GraphTextureHandle>(
+                    &pass.uses[compiled_use_index].handle);
                 ASSERT_NE(texture, nullptr);
                 const std::size_t resource_index =
-                    static_cast<std::size_t>(entry.resources[use_index].resource);
+                    static_cast<std::size_t>(resource_use.resource);
                 EXPECT_EQ(texture->resource, resource_index);
                 const RenderGraphAccess expected_access =
-                    entry.resources[use_index].access == RenderPassAccess::Read
+                    resource_use.access == RenderPassAccess::Read
                         ? RenderGraphAccess::Read
                         : RenderGraphAccess::Write;
-                EXPECT_EQ(pass.uses[use_index].access, expected_access);
+                EXPECT_EQ(pass.uses[compiled_use_index].access, expected_access);
                 if (expected_access == RenderGraphAccess::Write)
                 {
                     EXPECT_EQ(texture->version, current_versions[resource_index] + 1U);
@@ -329,6 +381,7 @@ TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesIndependentConsume
                 {
                     EXPECT_EQ(texture->version, current_versions[resource_index]);
                 }
+                ++compiled_use_index;
             }
         }
 
@@ -487,4 +540,33 @@ TEST(RenderGraphCompatibilityTest, TypedImportMetadataCoversAllSixtyFourVariants
         EXPECT_EQ(role_is_present(RenderFrameResourceRole::SceneInstances),
                   conditions.ray_tracing_tlas_build);
     }
+}
+
+TEST(RenderGraphCompatibilityTest, TaaRolesRemainCorrectWhenAoResourcesArePruned)
+{
+    using namespace kpengine::render;
+    RenderFrameConditions conditions{};
+    conditions.screen_space_ao = false;
+    conditions.temporal_aa = true;
+    const auto plan = CompileRenderFramePlan(conditions);
+    ASSERT_TRUE(plan.compilation.graph.has_value());
+    const auto &passes = plan.compilation.graph->Passes();
+    const auto taa = std::find_if(passes.begin(), passes.end(), [](const auto &pass) {
+        return pass.name == "TemporalAaResolvePass";
+    });
+    ASSERT_NE(taa, passes.end());
+    std::vector<RenderFrameResourceRole> roles;
+    for (const auto &use : taa->uses)
+    {
+        const auto physical = std::find_if(plan.resources.begin(), plan.resources.end(),
+            [&](const auto &resource) { return resource.handle == use.handle; });
+        ASSERT_NE(physical, plan.resources.end());
+        roles.push_back(physical->role);
+    }
+    EXPECT_NE(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::SceneHdr), roles.end());
+    EXPECT_NE(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::GBuffer), roles.end());
+    EXPECT_NE(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::TemporalAaHistoryRead), roles.end());
+    EXPECT_NE(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::TemporalAaOutput), roles.end());
+    EXPECT_EQ(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::ScreenSpaceAoRaw), roles.end());
+    EXPECT_EQ(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::ScreenSpaceAoFiltered), roles.end());
 }

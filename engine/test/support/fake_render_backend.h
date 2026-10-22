@@ -37,6 +37,7 @@ namespace kpengine::test
     struct BackendProbe
     {
         bool fail_initialize = false;
+        bool fail_pipeline_creation = false;
         bool fail_uniform_mapping = false;
         bool fail_render_target = false;
         int fail_render_target_after = -1;
@@ -78,6 +79,7 @@ namespace kpengine::test
         int render_target_begin_count = 0;
         int render_target_end_count = 0;
         int descriptor_set_create_count = 0;
+        std::vector<graphics::ResourceBindingSetDesc> resource_binding_snapshots;
         struct TargetUsageRecord
         {
             graphics::RenderTargetHandle target;
@@ -194,6 +196,8 @@ namespace kpengine::test
         graphics::PipelineHandle CreatePipelineResource(const graphics::PipelineDesc &desc) override
         {
             ++probe_->pipeline_create_count;
+            if (probe_->fail_pipeline_creation)
+                return {};
             probe_->pipelines.push_back(
                 {desc.color_attachment_formats, desc.descriptor_binding_descs});
             return MakeHandle<graphics::PipelineHandle>();
@@ -273,9 +277,12 @@ namespace kpengine::test
             };
             constexpr std::size_t name_count = sizeof(names) / sizeof(names[0]);
             const std::size_t name_index = probe_->targets.size() % name_count;
-            probe_->targets.push_back({names[name_index], desc.width, desc.height});
+            const char *name = desc.color_attachments.size() == 3
+                                   ? "TemporalHistory"
+                                   : names[name_index];
+            probe_->targets.push_back({name, desc.width, desc.height});
             const graphics::RenderTargetHandle handle = MakeHandle<graphics::RenderTargetHandle>();
-            target_names_[handle.id] = names[name_index];
+            target_names_[handle.id] = name;
             target_extents_[handle.id] = {desc.width, desc.height};
             return handle;
         }
@@ -359,6 +366,7 @@ namespace kpengine::test
             graphics::PipelineHandle, const graphics::ResourceBindingSetDesc &desc) override
         {
             ++probe_->descriptor_set_create_count;
+            probe_->resource_binding_snapshots.push_back(desc);
             std::array<uint32_t, 4> environment_texture_ids{
                 KPENGINE_NULL_HANDLE, KPENGINE_NULL_HANDLE,
                 KPENGINE_NULL_HANDLE, KPENGINE_NULL_HANDLE};

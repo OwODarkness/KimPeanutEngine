@@ -90,6 +90,8 @@ namespace kpengine::graphics
         virtual TextureHandle CreateTexture(const data::TextureData &data,
                                             const TextureSettings &settings) = 0;
         virtual bool DestroyTexture(TextureHandle handle) = 0;
+        // Allocator range bytes; unsupported measurements remain absent.
+        virtual std::optional<uint64_t> GetTextureAllocationBytes(TextureHandle) { return std::nullopt; }
         virtual SamplerHandle CreateSampler(const SamplerSettings &settings) = 0;
         virtual bool DestroySampler(SamplerHandle handle) = 0;
         virtual RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) = 0;

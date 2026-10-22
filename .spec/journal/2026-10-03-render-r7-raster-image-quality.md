@@ -313,3 +313,323 @@ unsupported importer request, not a missing publication step. Runtime shader
 logs on Vulkan confirmed the current GBuffer GLSL source/cache entries were
 used. R7.2 is complete; R7.1's material/silhouette checks and the combined R7
 acceptance remain open. Raster jitter remains zero until R7.3 consumes it.
+
+### R7.3 implementation checkpoint — 2026-10-11
+
+Added a Render-owned raster temporal resolve before ToneMap. The graph imports
+two persistent ping-pong targets (scene-linear RGBA16F history plus normal/depth
+metadata) and writes the opposite target; only accepted submitted frames advance
+the history index. Halton(2,3) jitter is applied to raster projection and removed
+once from R7.2's motion UV. The resolve rejects invalid/out-of-bounds motion,
+view-depth disagreement, and world-normal disagreement, and clips history to
+the current 3×3 RGB neighborhood before blending. Sky/invalid GBuffer pixels
+use current color. Tone mapping and editor composition remain downstream.
+PT frames neither jitter nor use the raster history. Runtime settings,
+requested/effective/history/reset stats, and a history-weight control are
+available through `render.temporal_aa_settings`.
+
+The new shader samples GBuffer motion and normal using the same screen UV
+convention as the existing deferred-lighting and SSAO shaders. The initial
+Vulkan-specific Y flip was removed after checking the common sampling contract.
+The `.gitignore` now explicitly includes the new source shader manifest and GLSL
+file; shader source assets are loaded from `asset/shader` by Runtime, not via
+AssetTool import.
+
+Validation: `cmake --build build --config Debug --target KimPeanutEngine`
+passed. A visible Debug Vulkan run loaded `level/sponza.level`; Runtime stats
+reported `hybrid_ray_query`, `pass.ray_tracing_path_trace.outcome=not_in_plan`,
+full texture residency, `temporal_aa_effective=true`, valid history, and an
+executed resolve at 1094×631. The resolve GPU sample was 0.07168 ms in Debug
+(diagnostic only, not performance acceptance). TAA-on/off scene captures
+exported, but the camera changed between commands, so they are not a matched
+quality comparison. The visible `GLFW30` window was brought to foreground and
+verified by handle/PID during runtime validation.
+
+Known acceptance gaps: the GBuffer does not carry a stable object-ID channel,
+so temporal reprojection cannot yet reject history by surface identity. No
+deterministic motion/disocclusion sequence or offline supersampled reference
+comparison has been recorded. Ghosting, edge-detail retention, and shimmer
+tolerances are not frozen. OpenGL, RelWithDebInfo cost/memory, cuts/resize/PT
+transition lifecycle, and unchanged PT output remain to validate; R7.3 is
+implemented but not accepted.
+
+Captures are under `save/screenshots/validation/` with the `r7_3-sponza-` prefix.
+
+### R7.3 identity rejection follow-up — 2026-10-13
+
+Added byte-exact renderable handle ID and generation outputs to the GBuffer.
+The values are packed into RGBA8 UNORM byte channels, copied into two
+additional ping-pong history attachments, and compared with `texelFetch` at
+the reprojected prior pixel before history contributes. This distinguishes
+recycled handles and avoids filtered/interpolated identity samples. The
+per-object uniform ABI and Vulkan/OpenGL GLSL source declarations were updated
+together; selection remains its own attachment and is still composed later.
+
+Validation: the Debug `KimPeanutEngine`, `RenderPassScheduleTest`,
+`RenderGraphTest`, and `RenderSystemTest` targets built successfully. The
+render/graphics CTest labels passed 245/245 after updating graph/resource and
+uniform-ABI expectations. Vulkan `glslc` compiled `pbr_gbuffer.vert`,
+`pbr_gbuffer.frag` with the Vulkan define, and `temporal_aa.frag`; OpenGL-mode
+`glslangValidator` checks also passed for those three shaders. The diff check
+reported no whitespace errors.
+
+A visible Debug Vulkan run loaded `level/sponza.level` and switched from path
+tracing to raster hybrid ray-query mode through the Runtime command registry.
+Stats confirmed `path_trace_active=false`, `render_graph_mode=hybrid_ray_query`,
+full texture residency, `temporal_aa_effective=true`,
+`temporal_aa_history_valid=true`, and an executed TAA resolve at 1094×631. The
+resolve GPU sample was 0.099 ms p50 / 0.420 ms p95 in Debug (diagnostic only).
+TAA-on and temporary TAA-off captures were exported, but their camera views
+differ; they are not a matched quality comparison. The Vulkan `GLFW30` window
+was verified on the `Default` desktop. Captures:
+
+- `save/screenshots/validation/r7_3-sponza-taa-on-20261013.png`
+- `save/screenshots/validation/r7_3-sponza-taa-off-20261013.png`
+- `save/screenshots/validation/r7_3-sponza-final-taa-on-20261013.png`
+
+One visible Debug OpenGL Sponza run also reported `render_graph_mode=deferred`,
+full texture residency, effective TAA, valid history, and an executed resolve
+(0.082 ms p50 / 0.086 ms p95). A `scene_color` capture from that run appeared
+upright on inspection. The user reports that OpenGL output has repeatedly
+appeared upside down; the captured scene target does not reproduce that report,
+and the full engine-window/composited path was not captured. No more OpenGL
+instances were launched after the report. The authored Sponza mesh transforms
+are identity and its camera has yaw 180 degrees; the camera basis defines zero
+yaw as +X-forward, so that yaw faces down the nave. The TAA resolve is scheduled
+once before tone mapping; current and previous projections are independently
+jittered from unjittered camera data.
+
+The RelWithDebInfo `KimPeanutEngine` build passed with an existing MSVC
+`LNK4098` default-library warning. Three uncontended Vulkan windows on commit
+`699ac30` plus the uncommitted R7 worktree used `level/sponza.level`,
+1094×631, path tracing disabled, hybrid ray-query shadows active, and full
+texture residency. Each window completed 120 warm-up and 300 sample frames.
+TAA resolve p50/p95 (ms): 0.094/0.132, 0.080/0.089, 0.081/0.088. Total GPU
+p50/p95 (ms): 4.158/7.173, 3.036/6.788, 3.011/6.812. These satisfy the 1.0 ms
+TAA and 8.5 ms combined p95 timing ceilings. The first run was excluded because
+Debug runtimes were still open during part of its sample window.
+
+Format-based R7-owned storage at this extent is estimated around 43.5 MiB:
+two 24-byte-per-pixel temporal targets (31.6 MiB total), motion and identity
+GBuffer attachments (10.5 MiB), and two full-resolution R8 AO transients
+(1.3 MiB). Runtime stats do not expose target allocation bytes, so allocator
+aliasing and the actual allocation total remain unmeasured; this estimate is
+above the 32 MiB ceiling and needs reduction or direct allocator evidence.
+Matched temporal-quality comparison, moving/disocclusion and history lifecycle
+checks, unchanged PT output, and OpenGL upside-down reproduction remain open.
+R7.3 is implemented but not accepted.
+
+
+## R7.3 acceptance — 2026-10-22
+
+### Objective, boundary, and starting state
+
+Complete native-resolution raster TAA against the already frozen quality,
+lifecycle, orientation, GPU, and memory gates. Starting revision was `699ac30`
+plus extensive uncommitted R7.3 work and the separate Scene3D stable-startup
+repair. Existing changes, including `engine.cpp`, were preserved. No commit was
+requested or created. R7.1/R5/R6 acceptance and R7.4 fog remain separate.
+
+Render retains temporal settings/history, graph scheduling, and resource
+preparation. Graphics retains GPU allocation, native synchronization, and
+submission-safe retirement. No dependency direction, common backend type,
+public resource owner, PT estimator, or PT reconstruction algorithm changed.
+
+### Diagnosis and completed changes
+
+- Current HDR is reconstructed once into a stable output grid; history uses
+  unjittered motion once. Current bilinear taps and Catmull-Rom history taps are
+  edge-clamped. YCoCg neighborhood bounds avoid independent RGB clipping.
+- A shader diagnostic showed about 10% normal rejection on a static view,
+  concentrated in detailed fabric. The final resolve keeps the original 0.85
+  normal-agreement threshold but accepts a matching normal in the same
+  identity/depth-bounded 3×3 surface footprint. Depth remains compared with
+  the surface's expected previous-view depth.
+- Filter-only experiments plateaued just below the frozen 20% shimmer gate.
+  Fine curtain detail exposed a native-versus-supersampled texture-band limit.
+  Active TAA now selects a −0.5 mip bias for PBR texture sampling through the
+  existing `history_params.w` uniform component. Raster without TAA and PT
+  select zero. All eight Vulkan TAA-off captures remain byte-identical to the
+  pre-correction baseline. Halton sequence, poses, settling frames, history
+  weight (0.9), and numeric acceptance thresholds are unchanged.
+- Direct unfiltered current accumulation, longer history (0.95), a global
+  looser normal threshold, Blackman-Harris reconstruction, and motion-based
+  history attenuation did not meet or improve the quality gate. These
+  experiments and the temporary rejection shader were removed.
+- Temporal targets/pipelines now prepare before `BeginFrame` recording. Failed
+  preparation propagates before frame acquisition. Allocation failure also
+  cancels pending history, so a later commit cannot validate released targets.
+- A real PT-enabled resize reproduced destruction of AS scratch referenced by
+  the recording command buffer. Moving temporal preparation alone did not fix
+  it: Editor UI resize also invokes `WaitIdle` during recording. Vulkan's idle
+  collection previously called `RetireSubmitted(last_submitted_serial)` on
+  active-frame scratch. It now does so only outside an active frame; real
+  submission still assigns the serial in `EndFrame`. The final Debug Vulkan
+  runs have no VUIDs and close with zero RT objects/temporary build batches.
+- AO/shadow-policy changes invalidate TAA history; unchanged settings retain
+  it. Owner tests cover shader replacement rejection/publication, pending
+  cancellation, failed allocation, submitted-only rotation, resize retirement,
+  and idempotent cleanup. Resized frames prohibit a mid-frame idle call.
+- GraphicsSmoke had drifted from the current shaders: a four-attachment
+  GBuffer, missing AO binding 15, and missing tone-map options/guide bindings
+  4/5. It now borrows the current `RendererFrameTargets` GBuffer and cleans it
+  through that owner, with the existing shader descriptors supplied. No
+  production shader was weakened for the smoke fixture.
+- The checked-in validator now bypasses Windows monitor tracking limits only
+  for oversized reference windows, restores the original client extent,
+  records source hashes, checks minimize/restore, can collect three timing
+  windows, and exits nonzero on any failed acceptance check. Captures still
+  use Runtime `capture.screenshot` plus polling, never backend inspection.
+
+The engine-reference workflow inspected the clean local gkNextEngine source
+at `4ba5b7cd106c282e7ed166ff853aeea87b392680`,
+`assets/shaders/Process.NativeTemporalReproject.comp.slang`, for stable
+reconstruction coordinates, Catmull-Rom history, and YCoCg bounds. Its temporal
+upscaling, lock state, and moments were not adopted. No source was copied.
+
+### Changed files in this completion turn
+
+- `asset/shader/temporal_aa.frag`, `asset/shader/pbr_gbuffer.frag`.
+- `engine/runtime/render/deferred_renderer.cpp` and `.h`.
+- `engine/runtime/render/render_system.cpp`.
+- `engine/runtime/render/passes/deferred_lighting_pass.cpp`.
+- `engine/runtime/render/passes/temporal_aa_pass.cpp`.
+- `engine/runtime/graphics/backend/vulkan/vulkan_backend.cpp`.
+- `engine/example/graphics/rhi_example.cpp`.
+- `engine/test/support/fake_render_backend.h`.
+- `engine/test/unit/render/render_system_test.cpp`.
+- `tools/validation/r7/taa_fixture.json`, `tools/validation/r7/taa_validation.py`.
+- `docs/render/.plan/R7.md`, `docs/render/.review/R7.3.md`,
+  `docs/render/TODO.md`, `docs/status.md`, `docs/command/built_in_commands.md`.
+- `.spec/specs/render-r7-raster-image-quality.md` and this journal.
+
+### Correctness and quality validation
+
+Validation level: **Level 4 plus visible cross-backend runtime acceptance**,
+because the existing R7.3 working tree spans shared shader/RHI/history contracts.
+Builds were serial. Visual launches and localhost command clients ran through
+the approved outside-sandbox path. Debug Vulkan validation was left enabled.
+The owned `GLFW30` windows were verified visible and foreground on `Default`.
+
+Relevant commands actually run (logs retain intermediate attempts):
+
+```powershell
+cmake --build build --config Debug
+cmake --build build --config Debug --target KimPeanutEngine RenderSystemTest RenderGraphTest RenderPassScheduleTest GraphicsContractTest
+ctest --test-dir build -C Debug --output-on-failure
+ctest --test-dir build -C Debug -L 'render|graphics' --output-on-failure
+build/engine/test/unit/render/Debug/RenderSystemTest.exe
+build/engine/example/graphics/Debug/GraphicsSmoke.exe
+cmake --build build --config RelWithDebInfo --target KimPeanutEngine
+python tools/validation/r7/taa_validation.py --port 37522 --pid 16088 --output save/diagnostics/r7_3-20261022/mip-vulkan.json --prefix r7_3-20261022-mip-vulkan --quality
+python tools/validation/r7/taa_validation.py --port 37522 --pid 18276 --output save/diagnostics/r7_3-20261022/final-opengl.json --prefix r7_3-20261022-final-opengl --quality
+python tools/validation/r7/taa_validation.py --port 37522 --pid 18276 --output save/diagnostics/r7_3-20261022/final-opengl-lifecycle.json --prefix r7_3-20261022-final-opengl-lifecycle
+python tools/validation/r7/taa_validation.py --port 37522 --pid 28064 --output save/diagnostics/r7_3-20261022/final-vulkan-Debug-lifecycle.json --prefix r7_3-20261022-final-vulkan-Debug-lifecycle
+python tools/validation/r7/taa_validation.py --port 37522 --pid 16300 --output save/diagnostics/r7_3-20261022/final-vulkan-performance.json --prefix r7_3-20261022-final-vulkan-performance --performance
+```
+
+The initial sandbox client hit WinError 10013; the approved external client
+worked. Initial full-suite sandbox failures included access-denied fixture
+publication and localhost tests. The external 1147-case run had 14 failures.
+Five Render failures were caused by test callers skipping the new pre-frame
+preparation or asserting the old lighting-only failure phase; the callers were
+corrected, the 55-case direct RenderSystem run passed. With the final pre-acquisition
+allocation-failure/recovery regression added, all 251 Render/Graphics CTest
+cases pass. Rechecking the 14 failures leaves nine unrelated failures:
+
+- `LevelLoaderTest.LoadsCheckedInGameplayLevelFixtures`.
+- `AssetCatalogProviderTest.MissingArchivePublishesAValidPartialLiveSnapshot`.
+- `AssetCatalogProviderTest.UnreadableArchiveFileIsReportedWithoutThrowing`.
+- `AssetCatalogProviderTest.LiveAssetsAreCopiedWithoutPayloadDataCrossingTheContract`.
+- `AssetCatalogProviderTest.DestroyingTheProviderLeavesTheManagerUsable`.
+- `NativeModelLoaderTest.ConcurrentLoadsShareModelAndUnloadOwnedMesh`.
+- `NativeModelRuntimeIntegrationTest.LoadsMultiMaterialGraphThroughAssetManager`.
+- `AssetImportRegistryTest.ExecuteReturnsProviderIdentityAndLateRegistrationIsRejected`.
+- `TerrainMeshTest.CoarseAndFineSamplingShareWorldPositionsAndGlobalNormals`.
+
+These include archive/fixture identity/layout expectations and a terrain index
+count mismatch (96 versus expected 24); they are not reported as passed. No
+unrelated Asset/Terrain implementation or tests were modified. The first smoke
+attempt failed with stale shader descriptors/attachment count and a dark rock;
+exception teardown also produced VUIDs. The updated smoke passes six frames on
+each API with **no Vulkan VUIDs**. Its intentional invalid-geometry negative
+probes still log rejected handles. One intermediate smoke build attempted to
+call private `BuildDesc`; the final fixture instead borrows the public owned
+GBuffer view, without exposing a new API.
+
+Quality fixture: canonical textured `level/sponza.level`; camera position
+`[10.80743, 1.59222, 0]`, rotation `[0, 180, 0]`; eight frozen subpixel strafe
+poses, 16 settling frames, native 1094×631 and 2188×1262 reference reduced
+offline in linear display color. Full tracked residency is required. SSAO and
+ray-query shadows are disabled only for isolated quality comparisons and are
+restored for combined acceptance. Exposure/lights/materials are fixed.
+
+| Metric | Vulkan off | Vulkan on | OpenGL off | OpenGL on |
+| --- | --- | --- | --- | --- |
+| Static MAE | 0.01828484 | 0.01311880 | 0.01824616 | 0.01283605 |
+| Pose-sequence error shimmer | 0.02064201 | 0.01333151 | 0.02060229 | 0.01332609 |
+| Edge-gradient error | 0.04535845 | 0.02983643 | 0.04525672 | 0.02985866 |
+
+All gates pass: shimmer improves 35.42% / 35.32% (required ≥20%), with lower
+static and edge-gradient errors. Both on/off composited windows are upright;
+the earlier OpenGL report does not reproduce. Rigid Ivy move/return captures
+show no full-scene trails. Cut, resize, minimize/restore, reload, disabled
+bypass, and history recovery pass. Vulkan PT excludes TAA/jitter, and toggling
+TAA during active PT preserves its increasing accumulated samples.
+
+### Performance, memory, and provenance
+
+Revision/state: `699ac30` plus the uncommitted working tree, with source hashes
+in the result files and supplementary final provenance. Rebuilt
+RelWithDebInfo Vulkan, normal configuration validation state; correctness uses
+separate Debug validation-on runs. RTX 4070 Laptop GPU, driver 617.42.
+Canonical fixture/camera as above, viewport 1094×631, PT inactive, hybrid
+ray-query shadows active, Medium SSAO, full texture residency. No build, test,
+or other owned engine ran during sampling. Each independent window resets the
+profiler and completes 120 warm-up plus 300 sample frames.
+
+| Window | TAA p50 / p95 ms | Total GPU p50 / p95 ms |
+| --- | --- | --- |
+| 1 | 0.096256 / 0.099328 | 3.152480 / 3.215283 |
+| 2 | 0.099328 / 0.102400 | 3.306976 / 3.339662 |
+| 3 | 0.099328 / 0.101376 | 3.291152 / 3.325155 |
+
+All windows pass 1.0 ms TAA / 8.5 ms combined p95 ceilings. These are current
+budget checks, not a matched speedup claim against historical runs. GPU
+telemetry before startup was idle (48°C, 210 MHz graphics/405 MHz memory);
+after sampling it was 58°C, 1875/8001 MHz. Per-frame clocks were not measured.
+
+Active R7 logical payload is 31,754,444 bytes (30.28 MiB). Measured Vulkan
+allocator ranges total 32,440,320 bytes (30.94 MiB) in all three windows,
+including both histories, motion/identity GBuffer additions, and AO targets.
+This is allocation-range accounting, not total device heap reservation or total
+engine VRAM. OpenGL native allocation measurement remains unavailable and is
+left absent. The earlier 43.5 MiB estimate describes obsolete attachments.
+
+### Evidence index and completion limits
+
+- Results: `save/diagnostics/r7_3-20261022/mip-vulkan.json`,
+  `final-opengl.json`, `final-opengl-lifecycle.json`,
+  `final-vulkan-Debug-lifecycle.json`, `final-vulkan-performance.json`,
+  `final-provenance.json`, and `final-visible.json`.
+- Captures under `save/screenshots/validation/`: prefixes
+  `r7_3-20261022-mip-vulkan-*`, `r7_3-20261022-final-opengl-*`,
+  `r7_3-20261022-final-opengl-lifecycle-*`, and
+  `r7_3-20261022-final-vulkan-performance-*`. Each includes semantic and
+  composited-window PNGs; quality runs retain all eight off/on/reference poses.
+- Build/test logs under `save/logs/`: `r7_3-20261022-final-full-debug-build.log`,
+  `final-debug-build.log`, `final-rel-v2-build.log`, `final-focused-v3-tests.log`,
+  `full-tests-external.log`, `full-failure-recheck.log`,
+  `graphics-smoke.log` (first failure), `graphics-smoke-v2.log` (passing).
+  All names after the first share the `r7_3-20261022-` prefix.
+- Runtime diagnostics: `save/diagnostics/r7_3-20261022/final-vulkan-Debug.stdout.log`,
+  `performance-vulkan-RelWithDebInfo.stdout.log`, `performance-before.csv`,
+  `performance-after.csv`. Debug Vulkan closes with zero AS/pipelines/bindings/
+  address tables/temporary build batches. Captures from other tasks are retained.
+
+R7.3 is accepted within the frozen native-resolution fixture and supported
+rigid-motion contract. The pose-sequence metric is not a guarantee for every
+scene/deforming surface. OpenGL allocator bytes, the nine unrelated broad-suite
+failures, and R5/R6/R7.1/R7.4/R7.5 acceptance are not claimed complete. No
+required R7.3 gate was skipped. The final RelWithDebInfo Vulkan editor remains
+visible on `Default` for user inspection, with raster TAA and query shadows active.

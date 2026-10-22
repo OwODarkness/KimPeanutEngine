@@ -18,6 +18,7 @@ layout(binding = 1) uniform PerObjectData{
 	mat4 model;
 	mat4 previous_submitted_model;
 	vec4 temporal_state;
+	vec4 temporal_identity;
 }object_data;
 
 layout(location = 0) in vec3 in_position;

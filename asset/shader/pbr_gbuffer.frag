@@ -1,11 +1,12 @@
 #version 450
 
-// Deferred G-buffer fragment stage. Outputs a 5-color MRT + depth:
+// Deferred G-buffer fragment stage. Outputs a 6-color MRT + depth:
 //   loc0 albedo   RGBA8_UNORM linear   base_color.rgb * sRGB-sampled albedo
-//   loc1 normal   RGBA16F  raw world-space [-1,1] (no *2-1 encode needed)
+//   loc1 normal   RGBA16F  world normal XYZ / previous-view surface depth W
 //   loc2 material RGBA8_UNORM linear   metallic R / roughness G / occlusion B
 //   loc3 selection R8_UNORM            selected object mask
 //   loc4 motion   RGBA16F               previous-minus-current UV, view depth, validity
+//   loc5 identity RGBA8_UNORM           exact renderable handle ID+1 bytes (zero is invalid)
 // The constants block is the StandardPbr ABI shared with
 // material_asset_resolver.cpp: base_color@0, metallic@16, roughness@20,
 // occlusion@24, emissive@32, texture_channels@48, normal_scale@64,
@@ -47,6 +48,7 @@ layout(binding = 1) uniform PerObjectData
     mat4 model;
     mat4 previous_submitted_model;
     vec4 temporal_state;
+    vec4 temporal_identity;
 } object_data;
 
 layout(location = 0) in vec2 frag_texcoord;
@@ -60,6 +62,7 @@ layout(location = 1) out vec4 out_normal;
 layout(location = 2) out vec4 out_material;
 layout(location = 3) out float out_selection;
 layout(location = 4) out vec4 out_motion;
+layout(location = 5) out vec4 out_identity;
 
 vec2 ClipToTopLeftUv(vec4 clip_position)
 {
@@ -80,8 +83,10 @@ bool IsInsideClip(vec4 clip_position)
 
 void main()
 {
+    // Temporal coverage retains a finer texture band than a single raster sample.
+    const float mip_bias = -0.5 * pass_data.history_params.w;
     // Hardware sRGB decode linearizes the base-color fetch.
-    vec4 base_sample = texture(base_color_texture, frag_texcoord);
+    vec4 base_sample = texture(base_color_texture, frag_texcoord, mip_bias);
     if (material_data.alpha_cutoff > 0.0 && base_sample.a < material_data.alpha_cutoff)
     {
         discard;
@@ -95,7 +100,7 @@ void main()
     // hemisphere instead of reading the format's unused B channel. This is
     // also valid for the portable RGBA8 normal product and keeps both paths
     // on the same tangent-normal convention.
-    vec2 tangent_xy = texture(normal_texture, frag_texcoord).rg * 2.0 - 1.0;
+    vec2 tangent_xy = texture(normal_texture, frag_texcoord, mip_bias).rg * 2.0 - 1.0;
     tangent_xy *= material_data.normal_scale;
     vec3 tangent_normal = vec3(
         tangent_xy,
@@ -125,9 +130,9 @@ void main()
         }
     }
 
-    vec4 metallic_sample = texture(metallic_texture, frag_texcoord);
-    vec4 roughness_sample = texture(roughness_texture, frag_texcoord);
-    vec4 occlusion_sample = texture(occlusion_texture, frag_texcoord);
+    vec4 metallic_sample = texture(metallic_texture, frag_texcoord, mip_bias);
+    vec4 roughness_sample = texture(roughness_texture, frag_texcoord, mip_bias);
+    vec4 occlusion_sample = texture(occlusion_texture, frag_texcoord, mip_bias);
     float metallic = material_data.metallic *
                      (material_data.texture_channels.x < 0.5 ? metallic_sample.r :
                       material_data.texture_channels.x < 1.5 ? metallic_sample.g :
@@ -165,6 +170,8 @@ void main()
                  all(greaterThanEqual(previous_uv, vec2(0.0))) &&
                  all(lessThanEqual(previous_uv, vec2(1.0)));
     float view_depth = max(0.0, -(pass_data.view * current_world).z);
+    out_normal.w = max(0.0, -(pass_data.previous_view * previous_world).z);
     out_motion = vec4(valid ? previous_uv - current_uv : vec2(0.0),
                       view_depth, valid ? 1.0 : 0.0);
+    out_identity = object_data.temporal_identity;
 }

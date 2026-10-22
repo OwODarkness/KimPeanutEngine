@@ -21,6 +21,7 @@ namespace kpengine::render
         Matrix4f model;
         Matrix4f previous_submitted_model;
         Vector4f temporal_state;
+        Vector4f temporal_identity;
     };
 
     static_assert(sizeof(CameraData) == sizeof(Matrix4f) * 2);
@@ -35,7 +36,9 @@ namespace kpengine::render
     static_assert(offsetof(PerObjectData, model) == 0);
     static_assert(offsetof(PerObjectData, previous_submitted_model) == sizeof(Matrix4f));
     static_assert(offsetof(PerObjectData, temporal_state) == sizeof(Matrix4f) * 2);
-    static_assert(sizeof(PerObjectData) == sizeof(Matrix4f) * 2 + sizeof(Vector4f));
+    static_assert(offsetof(PerObjectData, temporal_identity) ==
+                  sizeof(Matrix4f) * 2 + sizeof(Vector4f));
+    static_assert(sizeof(PerObjectData) == sizeof(Matrix4f) * 2 + sizeof(Vector4f) * 2);
 }
 
 #endif

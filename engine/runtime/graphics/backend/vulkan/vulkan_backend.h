@@ -33,6 +33,7 @@ namespace kpengine::graphics
         TextureHandle CreateTexture(const data::TextureData &data,
                                     const TextureSettings &settings) override;
         bool DestroyTexture(TextureHandle handle) override;
+        std::optional<uint64_t> GetTextureAllocationBytes(TextureHandle handle) override;
         SamplerHandle CreateSampler(const SamplerSettings &settings) override;
         bool DestroySampler(SamplerHandle handle) override;
         RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;

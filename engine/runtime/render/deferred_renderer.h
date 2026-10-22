@@ -24,6 +24,7 @@
 #include "render/passes/deferred_lighting_pass.h"
 #include "render/passes/screen_space_ao_pass.h"
 #include "render/passes/tone_map_pass.h"
+#include "render/passes/temporal_aa_pass.h"
 #include "render/passes/capture_view_pass.h"
 #include "render/passes/path_tracing_pass.h"
 #include "render/passes/shadow_pass.h"
@@ -82,9 +83,10 @@ namespace kpengine::render
         void RequestExtent(uint32_t width, uint32_t height);
         void SetPathTraceSettings(const PathTraceSettings &settings);
         void SetScreenSpaceAoSettings(ScreenSpaceAoSettings settings);
+        void SetTemporalAaSettings(TemporalAaSettings settings);
         void InjectNextPathTraceDispatchFailure();
         void InvalidateRayTracingTextureBindings();
-        void ApplyPendingExtent();
+        bool ApplyPendingExtent();
         const RenderTarget &GetSceneRenderTarget() const;
         spatial::Ray BuildSceneRay(float ndc_x, float ndc_y,
                                    float viewport_aspect) const;
@@ -130,6 +132,7 @@ namespace kpengine::render
         bool RecordGBufferPass();
         bool RecordScreenSpaceAoEstimatePass();
         bool RecordScreenSpaceAoFilterPass();
+        bool RecordTemporalAaResolvePass();
         bool RecordDeferredLightingPass();
         bool RecordToneMapPass();
         bool RecordRayTracingPathTracePass();
@@ -147,7 +150,7 @@ namespace kpengine::render
         RendererFrameTargets frame_targets_;
         // One compiled plan per frame-start condition set, each compiled once.
         // The compiled plan is now the only authority for pass order.
-        std::array<std::optional<CompiledRenderFramePlan>, 256> frame_plans_;
+        std::array<std::optional<CompiledRenderFramePlan>, 512> frame_plans_;
         RenderGraphExecutor graph_executor_;
         // The frame's pooled transient, wrapped around a pool-owned handle.
         // RenderTarget is not movable, so the wrapper is held by pointer.
@@ -171,8 +174,10 @@ namespace kpengine::render
         DeferredLightingPass deferred_lighting_pass_;
         ScreenSpaceAoPass screen_space_ao_pass_;
         ScreenSpaceAoSettings screen_space_ao_settings_{};
+        TemporalAaSettings temporal_aa_settings_{};
         ShadowPass shadow_pass_;
         ToneMapPass tone_map_pass_;
+        TemporalAaPass temporal_aa_pass_;
         CaptureViewPass capture_view_pass_;
         PathTracingPass path_tracing_pass_;
         RayTracingScene ray_tracing_scene_;
@@ -183,6 +188,9 @@ namespace kpengine::render
         CameraData pending_submitted_camera_{};
         graphics::Extent2D pending_submitted_extent_{};
         bool pending_temporal_commit_ = false;
+        Vector2f current_temporal_jitter_{};
+        Vector2f previous_temporal_jitter_{};
+        uint32_t temporal_jitter_index_ = 0;
         std::optional<CaptureView> active_pending_capture_;
         std::optional<CaptureView> active_debug_view_;
         bool ray_tracing_enabled_ = true;

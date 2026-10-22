@@ -44,6 +44,8 @@ namespace kpengine::runtime
                 return "ssao_filter";
             case render::RenderProfilePass::DeferredLighting:
                 return "deferred_lighting";
+            case render::RenderProfilePass::TemporalAaResolve:
+                return "temporal_aa_resolve";
             case render::RenderProfilePass::ToneMap:
                 return "tone_map";
             case render::RenderProfilePass::RayTracingToneMap:
@@ -374,6 +376,15 @@ namespace kpengine::runtime
             data["screen_space_ao_bias"] = profile.screen_space_ao_bias;
             data["screen_space_ao_strength"] = profile.screen_space_ao_strength;
             data["screen_space_ao_sample_count"] = static_cast<uint64_t>(profile.screen_space_ao_sample_count);
+            data["temporal_aa_requested"] = profile.temporal_aa_requested;
+            data["temporal_aa_effective"] = profile.temporal_aa_effective;
+            data["temporal_aa_history_valid"] = profile.temporal_aa_history_valid;
+            data["temporal_aa_reset_reason"] = profile.temporal_aa_reset_reason;
+            data["temporal_aa_reset_count"] = profile.temporal_aa_reset_count;
+            data["temporal_aa_jitter_uv_x"] = profile.temporal_aa_jitter_uv.x_;
+            data["temporal_aa_jitter_uv_y"] = profile.temporal_aa_jitter_uv.y_;
+            data["r7_active_texture_payload_bytes"] = profile.r7_active_texture_payload_bytes;
+            AddOptional(data, "r7_active_texture_allocation_bytes", profile.r7_active_texture_allocation_bytes);
             AddOptional(data, "gpu_frame_number", profile.gpu_frame_number);
             data["graphics_api"] = std::string{GraphicsApiName(profile.graphics_api)};
             data["viewport_width"] = static_cast<uint64_t>(profile.viewport_width);

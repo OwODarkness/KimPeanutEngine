@@ -1,0 +1,21 @@
+{
+  "schema": "kimpeanut.r7.taa_fixture.v1",
+  "level": "level/sponza.level",
+  "camera_actor": "Sponza Camera",
+  "viewport": {"width": 1094, "height": 631},
+  "moving_actor": "Sponza Ivy",
+  "camera_position": [10.80743, 1.59222, 0.0],
+  "camera_rotation": [0.0, 180.0, 0.0],
+  "camera_strafe_offsets": [0.0, 0.006, 0.012, 0.018, 0.024, 0.030, 0.036, 0.042],
+  "settle_frames": 16,
+  "history_weight": 0.9,
+  "reference_scale": 2,
+  "limits": {
+    "static_error_ratio": 1.0,
+    "motion_error_shimmer_ratio": 0.8,
+    "edge_gradient_error_ratio": 1.1,
+    "taa_gpu_p95_ms": 1.0,
+    "combined_gpu_p95_ms": 8.5,
+    "r7_texture_allocation_bytes": 33554432
+  }
+}

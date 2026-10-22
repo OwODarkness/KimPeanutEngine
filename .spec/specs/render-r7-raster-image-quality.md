@@ -1,8 +1,8 @@
 # Render R7 raster image quality
 
-- Status: active; R7.0 baseline recorded; R7.1 implementation complete with Vulkan runtime evidence; R7.2 implementation and Vulkan/OpenGL runtime capture complete; R7.1 and combined cross-backend acceptance remain open.
+- Status: active overall; R7.0, R7.2, and R7.3 complete; R7.1 focused acceptance, R7.4 height fog, and R7.5 combined acceptance remain open.
 - Owner: Render module.
-- Parent TODO: [R7 roadmap](../../docs/render/TODO.md#r7--raster-image-quality-r72-implementation-in-progress-acceptance-open).
+- Parent TODO: [R7 roadmap](../../docs/render/TODO.md).
 - Canonical design: [R7 stage plan](../../docs/render/.plan/R7.md).
 - Journal: [planning checkpoint](../journal/2026-10-03-render-r7-raster-image-quality.md).
 
@@ -44,6 +44,29 @@ scene color, and motion vectors with path tracing disabled. Runtime shader logs
 show the checkout's `asset/shader` sources using their compiled shader-cache
 entries. Shader programs are loaded as source assets, not cooked through the
 AssetTool import providers; a separate archive publication step does not apply.
+
+R7.3 is accepted on 2026-10-22. The graph-scheduled scene-linear resolve owns
+ping-pong HDR/packed-normal-depth/identity history, submitted-frame Halton
+jitter, current-frame reconstruction, Catmull-Rom history sampling, YCoCg
+bounds, and same-surface normal-footprint rejection. Active TAA selects a
+half-mip finer PBR texture footprint; disabled raster and PT keep their mip
+policy. History resources and shader replacement prepare before frame
+recording. Vulkan idle collection no longer retires unsubmitted AS scratch.
+
+Matched Vulkan/OpenGL Sponza comparisons at 1094×631 pass all frozen quality
+gates against a 2188×1262 reference: shimmer error decreases 35.42% / 35.32%,
+static error 28.25% / 29.65%, and edge-gradient error 34.22% / 34.02%.
+Composited-window orientation, cut/resize/minimize/restore/reload, rigid-object
+inspection, rejected-history and shader/allocation lifecycle contracts pass.
+PT excludes TAA/jitter and preserves accumulation when TAA settings toggle.
+Three uncontended RelWithDebInfo Vulkan windows (120 warm-up, 300 samples)
+measure resolve p95 0.099–0.102 ms and total GPU p95 3.215–3.340 ms. Active R7
+Vulkan allocator ranges measure 32,440,320 bytes (30.94 MiB), within 32 MiB;
+OpenGL native allocation measurement remains unsupported and absent.
+Render/Graphics contracts pass 251/251, and GraphicsSmoke passes both APIs.
+Nine unrelated Asset/Terrain broad-suite failures remain recorded separately.
+See the [review](../../docs/render/.review/R7.3.md) and
+[acceptance journal](../journal/2026-10-03-render-r7-raster-image-quality.md#r73-acceptance--2026-10-22).
 
 ## Scope and non-goals
 

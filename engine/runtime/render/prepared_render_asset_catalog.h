@@ -36,6 +36,7 @@ namespace kpengine::render
         ScreenSpaceAoFilterProgram,
         GBufferDebugProgram,
         ToneMapProgram,
+        TemporalAaProgram,
         CaptureViewProgram,
         RayTracingPathTracerProgram,
         DirectionalShadowProgram,

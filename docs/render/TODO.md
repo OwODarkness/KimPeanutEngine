@@ -358,7 +358,7 @@ details and stage checklists belong in the linked submodule documents.
       [concrete plan](.plan/R6.md) ·
   [journal](../../.spec/journal/2026-09-29-r6-implementation.md)
 
-## R7 — Raster image quality (R7.2 complete; R7.1 and core acceptance open)
+## R7 — Raster image quality (R7.3 complete; SSAO and core acceptance open)
 
 R7.0 baseline scenes, captures, and budgets are marked complete at the user’s direction. Expanded R5 correctness validation remains open and is not represented as passed. Canonical [stage plan](.plan/R7.md),
 [execution spec](../../.spec/specs/render-r7-raster-image-quality.md), and
@@ -380,16 +380,34 @@ conventions, jitter removal, camera cuts, generational object identity, and
 rejected-frame history. Debug Vulkan and OpenGL Sponza runtime captures confirm
 the GBuffer and diagnostic path; Vulkan validation reports no pipeline/layout
 errors. Shaders load from `asset/shader` and use the runtime shader cache, so the
-AssetTool's model/texture/audio reimport path does not apply. Raster jitter stays
-zero until R7.3 supplies a temporal consumer.
+AssetTool's model/texture/audio reimport path does not apply. Raster jitter is
+enabled only while R7.3 raster TAA is effective; full PT does not consume or
+advance it.
+
+R7.3 is accepted on 2026-10-22. Native scene-linear TAA uses stable-grid
+reconstruction, Catmull-Rom history sampling, YCoCg neighborhood bounds,
+same-surface normal-footprint rejection, and a TAA-only half-mip detail bias.
+Camera-matched 2× reference comparisons pass on Vulkan and OpenGL: shimmer
+error falls 35.42% / 35.32%, with lower static and edge-gradient error. Full
+composited-window captures are upright with TAA on and off. Cut, resize,
+minimize/restore, reload, rigid-object disocclusion inspection, submission
+rejection, shader replacement, and PT exclusion/history preservation pass.
+Three uncontended RelWithDebInfo Vulkan windows report resolve p95
+0.099–0.102 ms and total GPU p95 3.215–3.340 ms. Measured active Vulkan
+allocator ranges total 30.94 MiB at 1094×631, below 32 MiB; OpenGL reports
+logical payload only. The 251 Render/Graphics tests and six-frame-per-API
+GraphicsSmoke pass. Nine unrelated Asset/Terrain tests still fail in broad
+validation; R5/R6 and R7.1 acceptance remain independent. See the
+[acceptance review](.review/R7.3.md) and
+[dated evidence](../../.spec/journal/2026-10-03-render-r7-raster-image-quality.md#r73-acceptance--2026-10-22).
 
 - [x] **R7.0:** record raster fixtures, deterministic replay, disabled baseline, and quality/GPU/memory budgets.
 - [ ] **R7.1:** spatial SSAO plus edge-aware filtering and ambient-diffuse
   integration; accept AO-material overlap, silhouettes, both APIs, and off parity.
 - [x] **R7.2:** validated jitter/motion and previous-submitted-frame contract;
   cover camera/rigid-object motion, invalid surfaces, cuts, and rejected frames.
-- [ ] **R7.3:** native-resolution TAA; accept shimmer/detail/ghosting tolerances,
-  history lifecycle, unchanged PT, and measured cost.
+- [x] **R7.3:** native-resolution TAA quality, cross-backend orientation,
+  history lifecycle, PT exclusion, and GPU/memory acceptance complete (2026-10-22).
 - [ ] **R7.4:** integrated exponential height fog; accept numerical limits,
   sky policy, HDR/TAA ordering, zero-density identity, and terrain/indoor fixtures.
 - [ ] **R7.5:** combined core acceptance and explicit subsequent decisions for
