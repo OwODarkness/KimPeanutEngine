@@ -1,4 +1,5 @@
 #include "render_system.h"
+#include "deferred_renderer.h"
 
 #include <algorithm>
 #include <atomic>
@@ -330,6 +331,7 @@ namespace kpengine::render
             std::optional<CaptureView> tooling_debug_view;
             std::optional<PathTraceSettings> path_trace_settings;
             std::optional<ScreenSpaceAoSettings> screen_space_ao_settings;
+            std::optional<HeightFogSettings> height_fog_settings;
             std::optional<TemporalAaSettings> temporal_aa_settings;
             {
                 std::lock_guard lock(request_mutex_);
@@ -340,6 +342,7 @@ namespace kpengine::render
                 path_trace_settings = std::exchange(pending_path_trace_settings_, std::nullopt);
                 screen_space_ao_settings = std::exchange(
                     pending_screen_space_ao_settings_, std::nullopt);
+                height_fog_settings = std::exchange(pending_height_fog_settings_, std::nullopt);
                 temporal_aa_settings = std::exchange(
                     pending_temporal_aa_settings_, std::nullopt);
             }
@@ -353,6 +356,8 @@ namespace kpengine::render
             {
                 deferred_renderer_->SetScreenSpaceAoSettings(*screen_space_ao_settings);
             }
+            if (height_fog_settings)
+                deferred_renderer_->SetHeightFogSettings(*height_fog_settings);
             if (temporal_aa_settings.has_value())
             {
                 deferred_renderer_->SetTemporalAaSettings(*temporal_aa_settings);
@@ -374,7 +379,7 @@ namespace kpengine::render
                 debug_view_ == CaptureView::SceneColor
                     ? std::nullopt
                     : std::optional<CaptureView>{debug_view_}));
-            if (!deferred_renderer_->ApplyPendingExtent())
+            if (!deferred_renderer_->PrepareFrame(*scene_input))
             {
                 last_diagnostic_ = "Temporal frame resources are unavailable";
                 return false;
@@ -543,6 +548,7 @@ namespace kpengine::render
         if (deferred_renderer_)
         {
             deferred_renderer_->CommitSubmittedFrame(submitted);
+            profile_.path_trace_samples = deferred_renderer_->GetProfileSnapshot().path_trace_samples;
         }
         profile_.cpu_present_ms =
             std::chrono::duration<double, std::milli>(
@@ -787,6 +793,16 @@ namespace kpengine::render
         return true;
     }
 
+    bool RenderSystem::RequestHeightFogSettings(HeightFogSettings settings)
+    {
+        if (!IsValidHeightFogSettings(settings))
+            return false;
+        std::lock_guard lock(request_mutex_);
+        pending_height_fog_settings_ = settings;
+        requested_profile_window_reset_.store(true, std::memory_order_release);
+        return true;
+    }
+
     bool RenderSystem::RequestTemporalAaSettings(TemporalAaSettings settings)
     {
         if (!std::isfinite(settings.history_weight) || settings.history_weight < 0.0f ||
@@ -959,6 +975,7 @@ namespace kpengine::render
             pending_path_trace_settings_.reset();
             pending_screen_space_ao_settings_.reset();
             pending_temporal_aa_settings_.reset();
+            pending_height_fog_settings_.reset();
             editor_presentation_assets_.reset();
             pending_editor_presentation_assets_.reset();
         }

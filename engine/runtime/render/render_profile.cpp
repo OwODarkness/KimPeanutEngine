@@ -22,6 +22,18 @@ namespace
 
 namespace kpengine::render
 {
+    void RecordRasterTextureFootprints(RenderProfileSnapshot &profile,
+                                      TextureFootprint guides, TextureFootprint history,
+                                      TextureFootprint ao, TextureFootprint fog)
+    {
+        profile.screen_space_ao_active_texture_allocation_bytes = ao.allocation_bytes;
+        guides += history;
+        guides += ao;
+        guides += fog;
+        profile.r7_active_texture_payload_bytes = guides.payload_bytes;
+        profile.r7_active_texture_allocation_bytes = guides.allocation_bytes;
+    }
+
     static_assert(static_cast<size_t>(RenderProfileCpuSubphase::Count) == 9);
 
     RenderProfileWindow::RenderProfileWindow(const uint32_t warmup_frames,

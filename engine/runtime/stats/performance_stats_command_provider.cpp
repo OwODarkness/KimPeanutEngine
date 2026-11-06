@@ -44,6 +44,8 @@ namespace kpengine::runtime
                 return "ssao_filter";
             case render::RenderProfilePass::DeferredLighting:
                 return "deferred_lighting";
+            case render::RenderProfilePass::HeightFog:
+                return "height_fog";
             case render::RenderProfilePass::TemporalAaResolve:
                 return "temporal_aa_resolve";
             case render::RenderProfilePass::ToneMap:
@@ -376,6 +378,8 @@ namespace kpengine::runtime
             data["screen_space_ao_bias"] = profile.screen_space_ao_bias;
             data["screen_space_ao_strength"] = profile.screen_space_ao_strength;
             data["screen_space_ao_sample_count"] = static_cast<uint64_t>(profile.screen_space_ao_sample_count);
+            data["height_fog_requested"] = profile.height_fog_requested;
+            data["height_fog_effective"] = profile.height_fog_effective;
             data["temporal_aa_requested"] = profile.temporal_aa_requested;
             data["temporal_aa_effective"] = profile.temporal_aa_effective;
             data["temporal_aa_history_valid"] = profile.temporal_aa_history_valid;

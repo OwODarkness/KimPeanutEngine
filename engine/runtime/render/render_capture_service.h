@@ -38,6 +38,7 @@ namespace kpengine::render
         // The engine window's presented contents, resolved by the window
         // capture path.
         EngineWindow,
+        FogTransmittance,
     };
 
     // True only for the views the deferred renderer produces in its own
@@ -65,6 +66,7 @@ namespace kpengine::render
         case CaptureView::ScreenSpaceAoRaw:
         case CaptureView::ScreenSpaceAoFiltered:
         case CaptureView::MotionVectors:
+        case CaptureView::FogTransmittance:
             return true;
         case CaptureView::SceneColor:
         case CaptureView::HostOutput:

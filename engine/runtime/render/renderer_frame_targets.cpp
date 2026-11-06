@@ -31,6 +31,16 @@ namespace kpengine::render
 
     RendererFrameTargets::~RendererFrameTargets() = default;
 
+    TextureFootprint RendererFrameTargets::TemporalGuideFootprint() const
+    {
+        const RenderTarget *const gbuffer = GetTarget(RenderTargetName::GBuffer);
+        if (!gbuffer)
+            return {0, std::nullopt};
+        TextureFootprint footprint = gbuffer->GetColorAttachmentFootprint(4);
+        footprint += gbuffer->GetColorAttachmentFootprint(5);
+        return footprint;
+    }
+
     graphics::RenderTargetDesc RendererFrameTargets::BuildDesc(RenderTargetName name,
                                                                uint32_t width,
                                                                uint32_t height) const

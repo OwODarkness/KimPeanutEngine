@@ -14,6 +14,7 @@
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
 #include "render_asset_preparer.h"
+#include "render_settings_command_provider.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
 #include "gameplay/factory/point_light_actor_factory.h"
 #include "gameplay/factory/spot_light_actor_factory.h"
@@ -465,6 +466,14 @@ namespace kpengine
                            "Could not register render.screen_space_ao_settings: %s",
                            screen_space_ao_registration.diagnostic.c_str());
                 }
+
+                auto fog_registration = RegisterHeightFogSettingsCommand(
+                    *command_registry_, [this] { return render_system_.get(); });
+                if (fog_registration.IsSuccess())
+                    height_fog_settings_command_registration_ = std::move(fog_registration.registration);
+                else
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR, "Could not register height fog settings: %s",
+                           fog_registration.diagnostic.c_str());
 
                 command::CommandRegistrationResult temporal_aa_registration =
                     command_registry_->Register(
@@ -1199,6 +1208,7 @@ namespace kpengine
             path_trace_settings_command_registration_ = {};
             screen_space_ao_settings_command_registration_ = {};
             temporal_aa_settings_command_registration_ = {};
+            height_fog_settings_command_registration_ = {};
             path_trace_failure_command_registration_ = {};
             screenshot_service_.reset();
             report_progress(3, "Releasing renderer");

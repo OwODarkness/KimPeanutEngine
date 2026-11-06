@@ -18,7 +18,9 @@
 #include "base/type.h"
 #include "delegate/event_dispatcher.h"
 #include "graphics/backend/common/api.h"
-#include "deferred_renderer.h"
+#include "screen_space_ao_settings.h"
+#include "temporal_aa_settings.h"
+#include "height_fog_settings.h"
 #include "frame_context.h"
 #include "render/material/material_system.h"
 #include "render/render_capture_service.h"
@@ -32,6 +34,7 @@
 namespace kpengine::graphics
 {
     class RenderBackend;
+    class IEditorPresentationBridge;
 }
 
 namespace kpengine::runtime
@@ -43,6 +46,7 @@ namespace kpengine::render
 {
     class RenderResourceResolver;
     class RenderCaptureService;
+    class DeferredRenderer;
 
     enum class RenderSystemLifecycleState : uint8_t
     {
@@ -162,6 +166,7 @@ namespace kpengine::render
                                 std::optional<CaptureView> view);
         bool RequestPathTraceSettings(PathTraceSettings settings);
         bool RequestScreenSpaceAoSettings(ScreenSpaceAoSettings settings);
+        bool RequestHeightFogSettings(HeightFogSettings settings);
         bool RequestTemporalAaSettings(TemporalAaSettings settings);
         void RequestPathTraceProbeMode(PathTraceProbeMode mode);
         void RequestPathTraceDispatchFailureInjection() noexcept;
@@ -248,6 +253,7 @@ namespace kpengine::render
         PathTraceSettings requested_path_trace_settings_{};
         std::optional<PathTraceSettings> pending_path_trace_settings_;
         std::optional<ScreenSpaceAoSettings> pending_screen_space_ao_settings_;
+        std::optional<HeightFogSettings> pending_height_fog_settings_;
         std::optional<TemporalAaSettings> pending_temporal_aa_settings_;
         std::optional<std::pair<uint64_t,
             std::shared_ptr<const PreparedRenderAssetCatalog>>> pending_catalog_update_;

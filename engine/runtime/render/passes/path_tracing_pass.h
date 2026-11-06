@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "graphics/backend/common/render_backend.h"
@@ -42,8 +43,8 @@ namespace kpengine::render
             const EnvironmentFrameBindings &environment,
             const RenderCamera &camera, const PathTraceSettings &settings);
         const char *UpdateHistorySignature(uint64_t signature) noexcept;
-        void CommitFrame(bool finalized, bool frame_execution_failed,
-                         bool required_pass_failed, uint32_t samples_per_dispatch) noexcept;
+        void StageFrame(bool succeeded, uint32_t samples_per_dispatch) noexcept;
+        void CommitSubmittedFrame(bool submitted) noexcept;
         bool CanTraceScene(const ray_tracing::RayTracingSceneView &scene) const noexcept;
         bool ShouldReportSceneCapacity(uint64_t signature) noexcept;
         void ClearSceneCapacityReport() noexcept { scene_capacity_report_signature_ = 0; }
@@ -100,6 +101,7 @@ namespace kpengine::render
         const char *pending_history_reset_reason_ = "signature_changed";
         bool active_ = false;
         bool fail_next_dispatch_ = false;
+        std::optional<uint32_t> pending_samples_;
         uint64_t scene_capacity_report_signature_ = 0;
     };
 }

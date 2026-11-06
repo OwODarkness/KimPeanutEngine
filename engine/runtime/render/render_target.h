@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "graphics/backend/common/render_target.h"
+#include "render/texture_footprint.h"
 
 namespace kpengine::graphics
 {
@@ -37,6 +38,8 @@ namespace kpengine::render
         graphics::RenderTargetHandle GetHandle() const;
         graphics::RenderTargetView GetView() const;
         uint32_t GetColorAttachmentCount() const;
+        TextureFootprint GetColorAttachmentFootprint(uint32_t index) const;
+        TextureFootprint GetColorFootprint() const;
         graphics::TextureHandle GetColorAttachmentTexture(uint32_t index) const;
         graphics::TextureHandle GetDepthTexture() const;
         graphics::TextureHandle GetSampledDepthTexture() const;

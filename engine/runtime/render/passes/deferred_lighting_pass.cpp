@@ -112,22 +112,6 @@ namespace kpengine::render
         }
     }
 
-    void DeferredLightingPass::UpdateEnvironment(
-        const std::optional<EnvironmentSourceDesc> &source,
-        const std::optional<EnvironmentSourceHandle> &source_handle,
-        RenderResourceResolver &resolver,
-        const PreparedRenderAssetCatalog &prepared_assets)
-    {
-        environment_bindings_owner_.Update(source, source_handle, resolver,
-                                           prepared_assets);
-    }
-
-    bool DeferredLightingPass::EnsureEnvironmentFallback(
-        RenderResourceResolver &resolver)
-    {
-        return environment_bindings_owner_.EnsureFallback(resolver);
-    }
-
     bool DeferredLightingPass::PrepareResources(
         graphics::RenderBackend &backend, const PreparedRenderAssetCatalog &assets,
         bool ray_query_shadows_supported)
@@ -154,7 +138,6 @@ namespace kpengine::render
         ray_query_shadows_supported_ = false;
         ray_query_shadow_path_active_ = false;
         frame_lighting_binding_ = {};
-        environment_bindings_owner_.Clear();
     }
 
     DeferredLightingRecordResult DeferredLightingPass::RecordGBuffer(

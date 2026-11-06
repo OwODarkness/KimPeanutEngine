@@ -1,6 +1,8 @@
 #ifndef KPENGINE_RUNTIME_RENDER_RENDER_PASS_DECLARATION_H
 #define KPENGINE_RUNTIME_RENDER_RENDER_PASS_DECLARATION_H
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -27,6 +29,7 @@ namespace kpengine::render
         ScreenSpaceAoFiltered,
         TemporalAaHistoryRead,
         TemporalAaOutput,
+        FoggedHdr,
         Count,
     };
 
@@ -49,6 +52,7 @@ namespace kpengine::render
         ScreenSpaceAoFiltered,
         TemporalAaHistoryRead,
         TemporalAaOutput,
+        FoggedHdr,
         SceneGeometry,
         SceneInstances,
         SceneScratch,
@@ -91,6 +95,7 @@ namespace kpengine::render
         ScreenSpaceAoEstimate,
         ScreenSpaceAoFilter,
         DeferredLighting,
+        HeightFog,
         TemporalAaResolve,
         RayTracingPathTrace,
         ToneMap,
@@ -123,6 +128,10 @@ namespace kpengine::render
         ScreenSpaceAoDiagnosticRequested,
         TemporalAaEnabled,
         TemporalAaDisabled,
+        HeightFogEnabled,
+        HeightFogDisabled,
+        RasterToneMapFogged,
+        RasterToneMapUnfogged,
     };
 
     struct RenderPassResourceUse
@@ -164,10 +173,38 @@ namespace kpengine::render
         bool screen_space_ao = true;
         bool screen_space_ao_diagnostic = false;
         bool temporal_aa = true;
+        bool height_fog = false;
 
         friend bool operator==(const RenderFrameConditions &,
                                const RenderFrameConditions &) = default;
     };
+
+    inline constexpr std::array kRenderFrameConditionFields{
+        &RenderFrameConditions::diagnostic_capture, &RenderFrameConditions::ray_query_shadow,
+        &RenderFrameConditions::ray_tracing_blas_build, &RenderFrameConditions::ray_tracing_tlas_build,
+        &RenderFrameConditions::ray_tracing_path_trace, &RenderFrameConditions::debug_view,
+        &RenderFrameConditions::screen_space_ao, &RenderFrameConditions::screen_space_ao_diagnostic,
+        &RenderFrameConditions::temporal_aa, &RenderFrameConditions::height_fog,
+    };
+    inline constexpr std::size_t kRenderFrameVariantCount =
+        std::size_t{1} << kRenderFrameConditionFields.size();
+
+    constexpr std::size_t RenderFrameVariantIndex(const RenderFrameConditions &conditions) noexcept
+    {
+        std::size_t index = 0;
+        for (std::size_t bit = 0; bit < kRenderFrameConditionFields.size(); ++bit)
+            if (conditions.*kRenderFrameConditionFields[bit])
+                index |= std::size_t{1} << bit;
+        return index;
+    }
+
+    constexpr RenderFrameConditions DecodeRenderFrameVariant(std::size_t index) noexcept
+    {
+        RenderFrameConditions conditions{};
+        for (std::size_t bit = 0; bit < kRenderFrameConditionFields.size(); ++bit)
+            conditions.*kRenderFrameConditionFields[bit] = (index & (std::size_t{1} << bit)) != 0;
+        return conditions;
+    }
 
     // Caller-owned keys for resources the graph plans but does not own. The
     // graph never interprets them; the renderer maps a key to the description
@@ -177,6 +214,7 @@ namespace kpengine::render
         SceneHdr = 1,
         ScreenSpaceAoRaw = 2,
         ScreenSpaceAoFiltered = 3,
+        FoggedHdr = 4,
     };
 
     // The one authored raster declaration. The compiled plan is derived from it

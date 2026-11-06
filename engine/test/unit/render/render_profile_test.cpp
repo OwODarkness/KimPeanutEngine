@@ -3,6 +3,19 @@
 #include "render/render_profile.h"
 #include "render/render_shader_data.h"
 
+TEST(RenderProfileTextureFootprint, AggregatesMeasuredAndUnknownOwners)
+{
+    using namespace kpengine::render;
+    RenderProfileSnapshot profile;
+    RecordRasterTextureFootprints(profile, {12, 16}, {32, 40}, {2, 4});
+    EXPECT_EQ(profile.r7_active_texture_payload_bytes, 46U);
+    ASSERT_TRUE(profile.r7_active_texture_allocation_bytes);
+    EXPECT_EQ(*profile.r7_active_texture_allocation_bytes, 60U);
+    RecordRasterTextureFootprints(profile, {12, 16}, {32, std::nullopt}, {});
+    EXPECT_EQ(profile.r7_active_texture_payload_bytes, 44U);
+    EXPECT_FALSE(profile.r7_active_texture_allocation_bytes);
+}
+
 TEST(RenderShaderDataAbi, PreservesUniformBlockSizesOffsetsAndAlignment)
 {
     using kpengine::render::CameraData;

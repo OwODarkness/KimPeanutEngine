@@ -29,8 +29,8 @@ namespace kpengine::render
         graphics::SamplerHandle directional_shadow_sampler;
         graphics::SamplerHandle spot_shadow_sampler;
         graphics::SamplerHandle point_shadow_sampler;
-        graphics::TextureHandle screen_space_ao;
-        bool screen_space_ao_available = false;
+        graphics::TextureHandle diagnostic_texture;
+        bool diagnostic_texture_available = false;
     };
 
     class CaptureViewPass final

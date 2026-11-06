@@ -9,6 +9,9 @@ namespace kpengine::render
     class FullscreenPassResources final
     {
     public:
+        static graphics::PipelineDesc DescribePipeline(
+            data::ShaderData &vertex, data::ShaderData &fragment);
+
         bool Initialize(graphics::RenderBackend &backend);
         void Cleanup(graphics::RenderBackend &backend);
 

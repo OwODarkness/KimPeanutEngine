@@ -1,4 +1,5 @@
 #include "render_target.h"
+#include "data/texture_mipmap.h"
 
 #include "graphics/backend/common/command_recorder.h"
 #include "graphics/backend/common/render_backend.h"
@@ -76,6 +77,23 @@ namespace kpengine::render
             return {};
         }
         return impl_->backend->GetRenderTargetColorAttachment(impl_->handle, index);
+    }
+
+    TextureFootprint RenderTarget::GetColorAttachmentFootprint(uint32_t index) const
+    {
+        if (!IsValid() || !impl_->backend || index >= impl_->desc.color_attachments.size())
+            return {0, std::nullopt};
+        return {data::GetTextureMipByteCount(impl_->width, impl_->height,
+                    impl_->desc.color_attachments[index].format) * impl_->desc.sample_count,
+                impl_->backend->GetTextureAllocationBytes(GetColorAttachmentTexture(index))};
+    }
+
+    TextureFootprint RenderTarget::GetColorFootprint() const
+    {
+        TextureFootprint footprint;
+        for (uint32_t index = 0; index < GetColorAttachmentCount(); ++index)
+            footprint += GetColorAttachmentFootprint(index);
+        return footprint;
     }
 
     graphics::TextureHandle RenderTarget::GetDepthTexture() const

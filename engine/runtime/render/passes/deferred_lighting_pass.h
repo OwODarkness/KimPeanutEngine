@@ -12,7 +12,6 @@
 #include "render/material/material_system.h"
 #include "render/passes/scene_draw_recorder.h"
 #include "render/passes/fullscreen_pass_resources.h"
-#include "render/passes/environment_bindings_owner.h"
 #include "render/passes/shadow_frame_output.h"
 #include "render/render_camera.h"
 #include "render/render_target.h"
@@ -75,14 +74,7 @@ namespace kpengine::render
                    (!ray_query_shadows_supported || ray_query_pipeline_.IsValid());
         }
 
-        void UpdateEnvironment(
-            const std::optional<EnvironmentSourceDesc> &source,
-            const std::optional<EnvironmentSourceHandle> &source_handle,
-            RenderResourceResolver &resolver,
-            const PreparedRenderAssetCatalog &prepared_assets);
-        bool EnsureEnvironmentFallback(RenderResourceResolver &resolver);
         void ClearFrameLightingBinding() noexcept { frame_lighting_binding_ = {}; }
-        void ClearEnvironment() noexcept { environment_bindings_owner_.Clear(); }
         void SetFrameLightingBinding(FrameLightingBinding binding) noexcept
         {
             frame_lighting_binding_ = std::move(binding);
@@ -90,10 +82,6 @@ namespace kpengine::render
         const FrameLightingBinding &FrameLighting() const noexcept
         {
             return frame_lighting_binding_;
-        }
-        const EnvironmentFrameBindings &Environment() const noexcept
-        {
-            return environment_bindings_owner_.Active();
         }
 
         DeferredLightingRecordResult RecordGBuffer(
@@ -111,7 +99,6 @@ namespace kpengine::render
             graphics::CommandRecorder &recorder);
 
     private:
-        EnvironmentBindingsOwner environment_bindings_owner_;
         FrameLightingBinding frame_lighting_binding_;
         graphics::PipelineHandle pipeline_;
         graphics::PipelineHandle ray_query_pipeline_;

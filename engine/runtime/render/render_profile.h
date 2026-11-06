@@ -13,6 +13,7 @@
 #include "graphics/backend/common/ray_tracing.h"
 #include "path_trace_settings.h"
 #include "render_graph/render_graph_frame.h"
+#include "texture_footprint.h"
 
 namespace kpengine::render
 {
@@ -25,6 +26,7 @@ namespace kpengine::render
         ScreenSpaceAoEstimate,
         ScreenSpaceAoFilter,
         DeferredLighting,
+        HeightFog,
         TemporalAaResolve,
         RayTracingPathTrace,
         ToneMap,
@@ -49,6 +51,7 @@ namespace kpengine::render
         case RenderProfilePass::ScreenSpaceAoEstimate: name = "render.ssao_estimate"; break;
         case RenderProfilePass::ScreenSpaceAoFilter: name = "render.ssao_filter"; break;
         case RenderProfilePass::DeferredLighting: name = "render.deferred_lighting"; break;
+        case RenderProfilePass::HeightFog: name = "render.height_fog"; break;
         case RenderProfilePass::TemporalAaResolve: name = "render.temporal_aa_resolve"; break;
         case RenderProfilePass::RayTracingPathTrace: name = "render.ray_tracing_path_trace"; break;
         case RenderProfilePass::ToneMap: name = "render.tone_map"; break;
@@ -235,6 +238,8 @@ namespace kpengine::render
         float screen_space_ao_bias = 0.0f;
         float screen_space_ao_strength = 0.0f;
         uint32_t screen_space_ao_sample_count = 0;
+        bool height_fog_requested = false;
+        bool height_fog_effective = false;
         bool temporal_aa_requested = true;
         bool temporal_aa_effective = false;
         bool temporal_aa_history_valid = false;
@@ -310,6 +315,10 @@ namespace kpengine::render
         std::optional<uint64_t> gpu_frame_number;
         RenderProfileSummary summary;
     };
+
+    void RecordRasterTextureFootprints(RenderProfileSnapshot &profile,
+                                      TextureFootprint guides, TextureFootprint history,
+                                      TextureFootprint ao, TextureFootprint fog = {});
 
     struct RenderProfileScenario
     {

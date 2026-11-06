@@ -47,6 +47,21 @@ namespace kpengine::render
         return {position_, ray_direction};
     }
 
+    std::optional<Vector3f> RenderCamera::ProjectWorldPoint(
+        const Vector3f &world_point, float viewport_aspect) const
+    {
+        if (!std::isfinite(viewport_aspect) || viewport_aspect <= 0.0f)
+            return std::nullopt;
+        RenderCamera camera = *this;
+        camera.SetAspect(viewport_aspect);
+        const Vector4f clip = camera.GetViewProjectionMatrix() * Vector4f(world_point, 1.0f);
+        if (!std::isfinite(clip.x_) || !std::isfinite(clip.y_) ||
+            !std::isfinite(clip.z_) || !std::isfinite(clip.w_) || clip.w_ <= 0.0001f)
+            return std::nullopt;
+        const float inverse_w = 1.0f / clip.w_;
+        return Vector3f{clip.x_ * inverse_w, clip.y_ * inverse_w, clip.z_ * inverse_w};
+    }
+
     Matrix4f RenderCamera::GetViewProjectionMatrix() const
     {
         return CalculateProjectionMatrix() * CalculateViewMatrix();

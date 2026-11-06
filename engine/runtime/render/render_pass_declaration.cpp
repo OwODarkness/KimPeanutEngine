@@ -18,7 +18,7 @@ namespace kpengine::render
             "SceneColor", "SceneHdr", "GBuffer", "DirectionalShadow", "SpotShadow",
             "PointShadow", "CaptureOutput", "DebugViewOutput", "PathTraceHistory",
             "PathTraceGuide", "ScreenSpaceAoRaw", "ScreenSpaceAoFiltered",
-            "TemporalAaHistoryRead", "TemporalAaOutput",
+            "TemporalAaHistoryRead", "TemporalAaOutput", "FoggedHdr",
         };
 
         constexpr std::array<RenderFrameResourceRole, kResourceCount> kTextureRoles{
@@ -36,6 +36,7 @@ namespace kpengine::render
             RenderFrameResourceRole::ScreenSpaceAoFiltered,
             RenderFrameResourceRole::TemporalAaHistoryRead,
             RenderFrameResourceRole::TemporalAaOutput,
+            RenderFrameResourceRole::FoggedHdr,
         };
 
         template <typename Handle>
@@ -54,9 +55,10 @@ namespace kpengine::render
             }
         }
 
-        bool IsPassEnabled(const FixedRenderPassEntry &entry, RenderFrameConditions conditions)
+        bool IsConditionEnabled(RenderPassCondition condition, FixedRenderPassId pass,
+                                const RenderFrameConditions &conditions)
         {
-            switch (entry.condition)
+            switch (condition)
             {
             case RenderPassCondition::Always:
                 return true;
@@ -69,7 +71,7 @@ namespace kpengine::render
                 // declares, so it is always compiled and the executor decides.
                 return true;
             case RenderPassCondition::RayTracingBuildRequested:
-                return entry.id == FixedRenderPassId::RayTracingBlasBuild
+                return pass == FixedRenderPassId::RayTracingBlasBuild
                            ? conditions.ray_tracing_blas_build
                            : conditions.ray_tracing_tlas_build;
             case RenderPassCondition::RayTracingPathTrace:
@@ -88,6 +90,14 @@ namespace kpengine::render
                 return conditions.temporal_aa && !conditions.ray_tracing_path_trace;
             case RenderPassCondition::TemporalAaDisabled:
                 return !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
+            case RenderPassCondition::HeightFogEnabled:
+                return conditions.height_fog && !conditions.ray_tracing_path_trace;
+            case RenderPassCondition::HeightFogDisabled:
+                return !conditions.height_fog && !conditions.ray_tracing_path_trace;
+            case RenderPassCondition::RasterToneMapFogged:
+                return conditions.height_fog && !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
+            case RenderPassCondition::RasterToneMapUnfogged:
+                return !conditions.height_fog && !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
             }
             return false;
         }
@@ -146,9 +156,17 @@ namespace kpengine::render
                   {RenderPassResource::SceneHdr, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterFrame, false},
+                {FixedRenderPassId::HeightFog, "HeightFogPass",
+                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read, RenderGraphUsage::Sampled},
+                  {RenderPassResource::GBuffer, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0u, true)},
+                  {RenderPassResource::FoggedHdr, RenderPassAccess::Write, RenderGraphUsage::ColorAttachment}},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::HeightFogEnabled, false},
                 {FixedRenderPassId::TemporalAaResolve, "TemporalAaResolvePass",
                  {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled},
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::HeightFogDisabled},
+                  {RenderPassResource::FoggedHdr, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::HeightFogEnabled},
                   {RenderPassResource::GBuffer, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b110010U)},
                   {RenderPassResource::TemporalAaHistoryRead, RenderPassAccess::Read,
@@ -167,7 +185,9 @@ namespace kpengine::render
                  false},
                 {FixedRenderPassId::ToneMap, "ToneMapPass",
                  {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled, {}, RenderPassCondition::TemporalAaDisabled},
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::RasterToneMapUnfogged},
+                  {RenderPassResource::FoggedHdr, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::RasterToneMapFogged},
                   {RenderPassResource::TemporalAaOutput, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, {}, RenderPassCondition::TemporalAaEnabled},
                   // The selection mask. This read was unstated until subresource
@@ -206,6 +226,8 @@ namespace kpengine::render
                   {RenderPassResource::ScreenSpaceAoFiltered, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, {},
                    RenderPassCondition::ScreenSpaceAoDiagnosticRequested},
+                  {RenderPassResource::FoggedHdr, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::HeightFogEnabled},
                   {RenderPassResource::CaptureOutput, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer,
@@ -225,6 +247,8 @@ namespace kpengine::render
                   {RenderPassResource::ScreenSpaceAoFiltered, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, {},
                    RenderPassCondition::ScreenSpaceAoDiagnosticRequested},
+                  {RenderPassResource::FoggedHdr, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::HeightFogEnabled},
                   {RenderPassResource::DebugViewOutput, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::DebugViewRequested,
@@ -316,13 +340,13 @@ namespace kpengine::render
             {
                 continue;
             }
+            const bool fog_resource = resource_index == static_cast<std::size_t>(RenderPassResource::FoggedHdr);
+            if (fog_resource && (!conditions.height_fog || conditions.ray_tracing_path_trace))
+                continue;
             const bool temporal_aa_resource =
                 resource_index == static_cast<std::size_t>(RenderPassResource::TemporalAaHistoryRead) ||
                 resource_index == static_cast<std::size_t>(RenderPassResource::TemporalAaOutput);
-            // SceneHdr is the one resource the graph plans but does not own: its
-            // contents never survive the frame, so the renderer takes it from the
-            // Graphics-owned pool for the window the plan computes.
-            const bool pooled =
+            const bool pooled = fog_resource ||
                 resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr) ||
                 resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoRaw) ||
                 resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoFiltered);
@@ -331,6 +355,8 @@ namespace kpengine::render
                 transient_key = static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoRaw);
             else if (resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoFiltered))
                 transient_key = static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoFiltered);
+            if (fog_resource)
+                transient_key = static_cast<uint64_t>(RenderFrameTransient::FoggedHdr);
             if (conditions.temporal_aa && !conditions.ray_tracing_path_trace &&
                 temporal_aa_resource)
                 resources[resource_index] = graph.ImportTexture(kResourceNames[resource_index]);
@@ -365,7 +391,7 @@ namespace kpengine::render
             // Reads and writes act on each resource's current version, so the
             // chain carries the SSA lineage without threading handles by hand.
             RenderGraphPassRef pass = graph.AddPass(
-                RenderGraphPassDesc{entry.name, condition, IsPassEnabled(entry, conditions),
+                RenderGraphPassDesc{entry.name, condition, IsConditionEnabled(entry.condition, entry.id, conditions),
                                     owner == RenderGraphPassOwner::External ||
                                         entry.id == FixedRenderPassId::RayTracingBlasBuild ||
                                         entry.id == FixedRenderPassId::RayTracingTlasBuild,
@@ -375,28 +401,13 @@ namespace kpengine::render
                                      entry.id == FixedRenderPassId::DebugView)
                                         ? RenderGraphPassFailurePolicy::Optional
                                         : RenderGraphPassFailurePolicy::Required});
-            if (!IsPassEnabled(entry, conditions))
+            if (!IsConditionEnabled(entry.condition, entry.id, conditions))
             {
                 continue;
             }
             for (const RenderPassResourceUse &use : entry.resources)
             {
-                if (use.condition == RenderPassCondition::ScreenSpaceAoEnabled &&
-                    (!conditions.screen_space_ao || conditions.ray_tracing_path_trace))
-                {
-                    continue;
-                }
-                if (use.condition == RenderPassCondition::ScreenSpaceAoDiagnosticRequested &&
-                    (!conditions.screen_space_ao_diagnostic || !conditions.screen_space_ao ||
-                     conditions.ray_tracing_path_trace))
-                {
-                    continue;
-                }
-                if (use.condition == RenderPassCondition::TemporalAaEnabled &&
-                    (!conditions.temporal_aa || conditions.ray_tracing_path_trace))
-                    continue;
-                if (use.condition == RenderPassCondition::TemporalAaDisabled &&
-                    (conditions.temporal_aa || conditions.ray_tracing_path_trace))
+                if (!IsConditionEnabled(use.condition, entry.id, conditions))
                     continue;
                 const GraphTextureHandle &resource =
                     resources[static_cast<std::size_t>(use.resource)];

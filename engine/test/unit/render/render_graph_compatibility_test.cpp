@@ -55,6 +55,8 @@ namespace
                  !conditions.debug_view) ||
                 (entry.condition == RenderPassCondition::RasterFrame &&
                  conditions.ray_tracing_path_trace) ||
+                (entry.condition == RenderPassCondition::HeightFogEnabled &&
+                 (!conditions.height_fog || conditions.ray_tracing_path_trace)) ||
                 (entry.condition == RenderPassCondition::RayTracingPathTrace &&
                  !conditions.ray_tracing_path_trace) ||
                 (entry.condition == RenderPassCondition::RayTracingBuildRequested &&
@@ -84,6 +86,14 @@ namespace
             return conditions.temporal_aa && !conditions.ray_tracing_path_trace;
         case RenderPassCondition::TemporalAaDisabled:
             return !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
+        case RenderPassCondition::HeightFogEnabled:
+            return conditions.height_fog && !conditions.ray_tracing_path_trace;
+        case RenderPassCondition::HeightFogDisabled:
+            return !conditions.height_fog && !conditions.ray_tracing_path_trace;
+        case RenderPassCondition::RasterToneMapFogged:
+            return conditions.height_fog && !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
+        case RenderPassCondition::RasterToneMapUnfogged:
+            return !conditions.height_fog && !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
         default:
             return true;
         }
@@ -569,4 +579,43 @@ TEST(RenderGraphCompatibilityTest, TaaRolesRemainCorrectWhenAoResourcesArePruned
     EXPECT_NE(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::TemporalAaOutput), roles.end());
     EXPECT_EQ(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::ScreenSpaceAoRaw), roles.end());
     EXPECT_EQ(std::find(roles.begin(), roles.end(), RenderFrameResourceRole::ScreenSpaceAoFiltered), roles.end());
+}
+
+TEST(RenderGraphCompatibilityTest, FogFeedsTheFirstHdrConsumerAndIsPrunedForPathTracing)
+{
+    using namespace kpengine::render;
+    RenderFrameConditions conditions{};
+    conditions.height_fog = true;
+    for (bool taa : {false, true})
+    {
+        conditions.temporal_aa = taa;
+        const auto plan = CompileRenderFramePlan(conditions);
+        ASSERT_TRUE(plan.Succeeded());
+        const auto &graph = *plan.compilation.graph;
+        const auto &passes = graph.Passes();
+        const auto find = [&](FixedRenderPassId id) {
+            return std::find_if(passes.begin(), passes.end(), [id](const auto &pass) {
+                return pass.user_key == static_cast<uint64_t>(id);
+            });
+        };
+        const auto fog = find(FixedRenderPassId::HeightFog);
+        const auto consumer = find(taa ? FixedRenderPassId::TemporalAaResolve : FixedRenderPassId::ToneMap);
+        ASSERT_NE(fog, passes.end());
+        ASSERT_NE(consumer, passes.end());
+        EXPECT_LT(find(FixedRenderPassId::DeferredLighting), fog);
+        EXPECT_LT(fog, consumer);
+        const auto reads_fog = [&](const auto &use) {
+            return use.access == RenderGraphAccess::Read &&
+                std::any_of(plan.resources.begin(), plan.resources.end(), [&](const auto &resource) {
+                    return resource.handle == use.handle && resource.role == RenderFrameResourceRole::FoggedHdr;
+                });
+        };
+        EXPECT_TRUE(std::any_of(consumer->uses.begin(), consumer->uses.end(), reads_fog));
+    }
+    conditions.ray_tracing_path_trace = true;
+    const auto pt = CompileRenderFramePlan(conditions);
+    ASSERT_TRUE(pt.Succeeded());
+    EXPECT_FALSE(std::any_of(pt.resources.begin(), pt.resources.end(), [](const auto &resource) {
+        return resource.role == RenderFrameResourceRole::FoggedHdr;
+    }));
 }

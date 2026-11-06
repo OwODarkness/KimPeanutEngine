@@ -1,6 +1,8 @@
 #ifndef KPENGINE_RUNTIME_RENDER_RENDER_CAMERA_H
 #define KPENGINE_RUNTIME_RENDER_RENDER_CAMERA_H
 
+#include <optional>
+
 #include "render/camera_source.h"
 #include "math/math_header.h"
 #include "spatial/ray.h"
@@ -33,11 +35,14 @@ namespace kpengine::render
         const Vector3f &GetPosition() const { return position_; }
         const Rotatorf &GetRotation() const { return rotation_; }
         const Vector3f &GetForward() const { return forward_; }
+        CameraProjectionMode GetProjectionMode() const noexcept { return projection_mode_; }
         float GetFarPlane() const { return far_; }
 
         CameraData GetCameraData() const;
         spatial::Ray BuildWorldRay(float ndc_x, float ndc_y,
                                    float viewport_aspect) const;
+        std::optional<Vector3f> ProjectWorldPoint(const Vector3f &world_point,
+                                                float viewport_aspect) const;
         // CPU-side visibility uses the math-library matrix convention directly.
         // GetCameraData() remains GPU-facing and transposes its matrices for UBO upload.
         Matrix4f GetViewProjectionMatrix() const;

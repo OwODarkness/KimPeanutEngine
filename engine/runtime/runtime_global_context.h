@@ -190,6 +190,7 @@ namespace kpengine
             command::CommandRegistration path_trace_probe_command_registration_;
             command::CommandRegistration path_trace_settings_command_registration_;
             command::CommandRegistration screen_space_ao_settings_command_registration_;
+            command::CommandRegistration height_fog_settings_command_registration_;
             command::CommandRegistration temporal_aa_settings_command_registration_;
             command::CommandRegistration path_trace_failure_command_registration_;
             std::array<command::CommandRegistration, 3> gameplay_command_registrations_;

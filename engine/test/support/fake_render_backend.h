@@ -37,6 +37,7 @@ namespace kpengine::test
     struct BackendProbe
     {
         bool fail_initialize = false;
+        bool fail_submission = false;
         bool fail_pipeline_creation = false;
         bool fail_uniform_mapping = false;
         bool fail_render_target = false;
@@ -401,7 +402,12 @@ namespace kpengine::test
             return probe_->missing_command_recorder ? nullptr : &recorder_;
         }
 
-        void EndFrame() override { probe_->events.push_back("end_frame"); }
+        void EndFrame() override
+        {
+            probe_->events.push_back("end_frame");
+            if (probe_->fail_submission)
+                throw std::runtime_error("Injected submission failure");
+        }
 
         GraphicsAPIType GetGraphicsAPI() const override
         {

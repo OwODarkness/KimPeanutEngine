@@ -1,5 +1,13 @@
 # Project Status
 
+- **R7.4 exponential height fog (2026-11-06; accepted)** — A graph pass
+  integrates opaque raster fog before TAA and tone mapping. Vulkan/OpenGL
+  Sponza, indoor and terrain preview checks pass, including zero-density pixel
+  identity, analytic sky transmittance and TAA recovery. Render/Graphics tests
+  pass 260/260. Vulkan fog p95 is 0.024 ms; combined GPU p95 is 3.36–3.38 ms.
+  Combined allocations reach 36.29 MiB at 1094×631, above the 32 MiB R7.5 cap.
+  R7.1 focused SSAO acceptance remains separate. → [R7.4 review](render/.review/R7.4.md)
+
 - **Sponza authored materials restored (2026-10-08)** — Canonical
   `sponza.level` now loads this checkout's reimported native products from the
   active content archive. Material path validation permits same-archive native
@@ -24,8 +32,8 @@
   allocation ranges are 30.94 MiB at 1094×631, under the 32 MiB cap; the old
   43.5 MiB estimate is superseded. Render/Graphics tests pass 251/251 and
   GraphicsSmoke passes six frames per API with clean Vulkan validation.
-  Broad validation retains nine unrelated Asset/Terrain failures. R7.4 height
-  fog and R7.5 combined acceptance remain; R5/R6 gates are independent.
+  Broad validation at that checkpoint retains nine unrelated Asset/Terrain
+  failures. R7.5 combined acceptance remains; R5/R6 gates are independent.
   Reflection probes, SSR, and volumetric fog remain separate follow-ups. →
   [stage plan](render/.plan/R7.md), [roadmap](render/TODO.md),
   [R7.3 review](render/.review/R7.3.md),

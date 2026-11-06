@@ -44,6 +44,7 @@ namespace kpengine::render
         void RebuildForExtent(graphics::RenderBackend &backend, uint32_t width, uint32_t height);
         void Cleanup();
         bool IsValid() const;
+        TextureFootprint TemporalGuideFootprint() const;
 
         RenderTarget *GetTarget(RenderTargetName name);
         const RenderTarget *GetTarget(RenderTargetName name) const;

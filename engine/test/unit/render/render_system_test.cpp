@@ -32,6 +32,7 @@
 #include "render/path_trace_history_progress.h"
 #include "render/path_trace_adaptive_spp.h"
 #include "render/path_trace_settings.h"
+#include "render/render_frame_mode.h"
 #include "render/ray_tracing_scene_signature.h"
 #include "support/fake_render_backend.h"
 
@@ -757,7 +758,7 @@ namespace
         input.lights.push_back(light);
         input.is_shadow_handle_valid = [](render::ShadowHandle) { return true; };
 
-        EXPECT_TRUE(renderer.ApplyPendingExtent());
+        EXPECT_TRUE(renderer.PrepareFrame(input));
         backend.BeginFrame();
         frame_context.Begin(backend.GetCurrentFrameIndex(),
                             {frame_number, 0.0f, 1.0f / 60.0f},
@@ -767,6 +768,7 @@ namespace
         EXPECT_TRUE(renderer.FinalizeFrame());
         frame_context.End();
         backend.EndFrame();
+        renderer.CommitSubmittedFrame(true);
         return renderer.GetProfileSnapshot();
     }
 }
@@ -1164,7 +1166,6 @@ TEST(DeferredRendererTest, ReusesDirectionalShadowWhenCameraStaysInsideEffective
     // The Editor submits the current viewport extent every UI frame. Repeating
     // an unchanged request must not invalidate the shadow cache.
     renderer.RequestExtent(320, 200);
-    renderer.ApplyPendingExtent();
     const auto second = RecordDirectionalShadowCacheFrame(
         renderer, backend, frame_context, render_world, 2, {1.0f, 0.0f, 2.0f}, light_direction);
 
@@ -1675,6 +1676,104 @@ TEST(TemporalAaPassTest, RollsBackPartialHistoryAllocationAndRetiresResize)
     EXPECT_EQ(probe->render_target_destroy_count, after_cleanup);
 }
 
+TEST(PathTracingPassTest, PublishesHistoryOnlyAfterSuccessfulSubmission)
+{
+    kpengine::render::PathTracingPass pass;
+    pass.SetActive(true);
+    pass.StageFrame(true, 4);
+    EXPECT_EQ(pass.SampleCount(), 0U);
+    EXPECT_EQ(pass.WriteIndex(), 0U);
+    pass.CommitSubmittedFrame(false);
+    EXPECT_EQ(pass.SampleCount(), 0U);
+    EXPECT_EQ(pass.WriteIndex(), 0U);
+    pass.StageFrame(true, 4);
+    pass.CommitSubmittedFrame(true);
+    EXPECT_EQ(pass.SampleCount(), 4U);
+    EXPECT_EQ(pass.WriteIndex(), 1U);
+    pass.CommitSubmittedFrame(true);
+    EXPECT_EQ(pass.SampleCount(), 4U);
+    pass.StageFrame(false, 4);
+    pass.CommitSubmittedFrame(true);
+    EXPECT_EQ(pass.SampleCount(), 4U);
+    EXPECT_EQ(pass.WriteIndex(), 1U);
+}
+
+TEST(RenderFrameModeTest, RasterFallbackEnablesRequestedTemporalAndAoConsumers)
+{
+    using namespace kpengine::render;
+    const RenderFrameModeInput traced{true, true, true, true, true, true, true};
+    EXPECT_TRUE(ResolveRenderFrameMode(traced).path_tracing);
+    EXPECT_FALSE(ResolveRenderFrameMode(traced).temporal_aa);
+    EXPECT_FALSE(ResolveRenderFrameMode(traced).screen_space_ao);
+    for (int missing = 0; missing < 5; ++missing)
+    {
+        auto fallback = traced;
+        switch (missing)
+        {
+        case 0: fallback.path_trace_requested = false; break;
+        case 1: fallback.path_trace_available = false; break;
+        case 2: fallback.scene_has_tlas = false; break;
+        case 3: fallback.scene_has_instances = false; break;
+        case 4: fallback.scene_within_capacity = false; break;
+        }
+        const auto mode = ResolveRenderFrameMode(fallback);
+        EXPECT_FALSE(mode.path_tracing);
+        EXPECT_TRUE(mode.temporal_aa);
+        EXPECT_TRUE(mode.screen_space_ao);
+        fallback.temporal_aa_requested = false;
+        fallback.screen_space_ao_requested = false;
+        EXPECT_FALSE(ResolveRenderFrameMode(fallback).temporal_aa);
+        EXPECT_FALSE(ResolveRenderFrameMode(fallback).screen_space_ao);
+    }
+}
+
+TEST(RenderSystemLifecycleTest, SubmissionFailurePreservesLastSubmittedRasterHistory)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(fixtures.Info([probe](GraphicsAPIType) {
+        return std::make_unique<FakeBackend>(probe);
+    })));
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    const auto rejected_jitter = system.GetMetrics().profile.temporal_aa_jitter_uv;
+    probe->fail_submission = true;
+    EXPECT_FALSE(system.EndFrame());
+    probe->fail_submission = false;
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    const auto recovered = system.GetMetrics().profile;
+    EXPECT_TRUE(recovered.temporal_aa_history_valid);
+    EXPECT_FLOAT_EQ(recovered.temporal_aa_jitter_uv.x_, rejected_jitter.x_);
+    EXPECT_FLOAT_EQ(recovered.temporal_aa_jitter_uv.y_, rejected_jitter.y_);
+    ASSERT_TRUE(system.EndFrame());
+    system.Shutdown();
+}
+
+TEST(RenderSystemLifecycleTest, ReportsRasterGuideAndAoStorageWhenTaaIsDisabled)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(fixtures.Info([probe](GraphicsAPIType) {
+        return std::make_unique<FakeBackend>(probe);
+    })));
+    ASSERT_TRUE(system.RequestTemporalAaSettings({false, 0.9f}));
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    auto profile = system.GetMetrics().profile;
+    EXPECT_EQ(profile.r7_active_texture_payload_bytes, 320U * 200U * 14U);
+    EXPECT_FALSE(profile.r7_active_texture_allocation_bytes.has_value());
+    ASSERT_TRUE(system.EndFrame());
+    render::ScreenSpaceAoSettings ao;
+    ao.enabled = false;
+    ASSERT_TRUE(system.RequestScreenSpaceAoSettings(ao));
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    EXPECT_EQ(system.GetMetrics().profile.r7_active_texture_payload_bytes, 320U * 200U * 12U);
+    ASSERT_TRUE(system.EndFrame());
+    system.Shutdown();
+}
+
 TEST(RenderSystemLifecycleTest, TaaHistoryRecoversAfterViewportAspectChanges)
 {
     const auto probe = std::make_shared<BackendProbe>();
@@ -1763,5 +1862,45 @@ TEST(RenderSystemLifecycleTest, TaaPreparationFailureDoesNotAcquireFrameAndRecov
         ASSERT_TRUE(system.EndFrame());
     }
     EXPECT_TRUE(system.GetMetrics().profile.temporal_aa_history_valid);
+    system.Shutdown();
+}
+
+TEST(RenderSystemLifecycleTest, HeightFogPrunesZeroDensityAndInvalidatesHistoryOnlyOnVisibleChange)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(fixtures.Info([probe](GraphicsAPIType) {
+        return std::make_unique<FakeBackend>(probe);
+    })));
+    const auto frame = [&] {
+        EXPECT_TRUE(system.BeginFrame(1.0f / 60.0f));
+        EXPECT_TRUE(system.EndFrame());
+        return system.GetMetrics().profile;
+    };
+    frame();
+    const auto baseline = frame();
+    ASSERT_TRUE(baseline.temporal_aa_history_valid);
+    render::HeightFogSettings settings;
+    settings.enabled = true;
+    settings.density = -1.0f;
+    EXPECT_FALSE(system.RequestHeightFogSettings(settings));
+    settings.density = 0.0f;
+    ASSERT_TRUE(system.RequestHeightFogSettings(settings));
+    const auto zero = frame();
+    EXPECT_TRUE(zero.height_fog_requested);
+    EXPECT_FALSE(zero.height_fog_effective);
+    EXPECT_TRUE(zero.temporal_aa_history_valid);
+    EXPECT_EQ(zero.r7_active_texture_payload_bytes, baseline.r7_active_texture_payload_bytes);
+    settings.density = 0.02f;
+    ASSERT_TRUE(system.RequestHeightFogSettings(settings));
+    const auto enabled = frame();
+    EXPECT_TRUE(enabled.height_fog_effective);
+    EXPECT_FALSE(enabled.temporal_aa_history_valid);
+    EXPECT_EQ(enabled.temporal_aa_reset_reason, "height_fog_changed");
+    EXPECT_EQ(enabled.r7_active_texture_payload_bytes,
+              baseline.r7_active_texture_payload_bytes + 320U * 200U * 8U);
+    ASSERT_TRUE(system.RequestHeightFogSettings(settings));
+    EXPECT_TRUE(frame().temporal_aa_history_valid);
     system.Shutdown();
 }

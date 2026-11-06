@@ -7,18 +7,13 @@
 
 #include "graphics/backend/common/render_backend.h"
 #include "render/render_target.h"
+#include "render/temporal_aa_settings.h"
 
 namespace kpengine::render
 {
     class FrameContext;
     class PreparedRenderAssetCatalog;
     class FullscreenPassResources;
-
-    struct TemporalAaSettings
-    {
-        bool enabled = true;
-        float history_weight = 0.9f;
-    };
 
     class TemporalAaPass final
     {
@@ -44,6 +39,7 @@ namespace kpengine::render
         const TemporalAaSettings &Settings() const noexcept { return settings_; }
         const char *ResetReason() const noexcept { return reset_reason_; }
         uint64_t ResetCount() const noexcept { return reset_count_; }
+        TextureFootprint HistoryFootprint() const;
 
     private:
         graphics::PipelineHandle pipeline_{};

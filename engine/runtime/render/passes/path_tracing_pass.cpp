@@ -250,17 +250,22 @@ namespace kpengine::render
         return reason;
     }
 
-    void PathTracingPass::CommitFrame(bool finalized, bool frame_execution_failed,
-                                      bool required_pass_failed,
-                                      uint32_t samples_per_dispatch) noexcept
+    void PathTracingPass::StageFrame(bool succeeded, uint32_t samples_per_dispatch) noexcept
     {
+        pending_samples_ = succeeded && active_
+            ? std::optional<uint32_t>{samples_per_dispatch} : std::nullopt;
+    }
+
+    void PathTracingPass::CommitSubmittedFrame(bool submitted) noexcept
+    {
+        const auto samples = std::exchange(pending_samples_, std::nullopt);
+        if (!submitted || !samples)
+            return;
         random_frame_index_ = detail::CommitPathTraceRandomFrameIndex(
-            random_frame_index_, finalized, frame_execution_failed,
-            required_pass_failed, active_, samples_per_dispatch);
+            random_frame_index_, true, false, false, active_, *samples);
         const detail::PathTraceHistoryProgress progress =
             detail::CommitPathTraceHistoryProgress(
-                {sample_count_, write_index_}, finalized, frame_execution_failed,
-                required_pass_failed, active_, samples_per_dispatch);
+                {sample_count_, write_index_}, true, false, false, active_, *samples);
         sample_count_ = progress.sample_count;
         write_index_ = progress.write_index;
     }
@@ -458,6 +463,7 @@ namespace kpengine::render
         active_ = false;
         fail_next_dispatch_ = false;
         scene_capacity_report_signature_ = 0;
+        pending_samples_.reset();
     }
 
     RenderTarget *PathTracingPass::HistoryTarget(uint32_t index) noexcept

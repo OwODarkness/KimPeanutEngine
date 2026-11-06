@@ -2,8 +2,27 @@
 
 #include "data/mesh.h"
 
+#include <cstddef>
+
 namespace kpengine::render
 {
+    graphics::PipelineDesc FullscreenPassResources::DescribePipeline(
+        data::ShaderData &vertex, data::ShaderData &fragment)
+    {
+        graphics::PipelineDesc desc{};
+        desc.vert_shader = &vertex;
+        desc.frag_shader = &fragment;
+        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+        desc.attri_descs = {
+            {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, position)},
+            {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, tex_coord)},
+        };
+        desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+        desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
+        return desc;
+    }
+
     bool FullscreenPassResources::Initialize(graphics::RenderBackend &backend)
     {
         if (IsReady())

@@ -109,6 +109,7 @@ include(GoogleTest)
 gtest_discover_tests(RenderPassScheduleTest PROPERTIES LABELS "render")
 
 add_executable(RenderSystemTest
+    render_public_header_compile.cpp
     render_system_test.cpp
     scene_draw_recorder_test.cpp
     fullscreen_pass_resources_test.cpp

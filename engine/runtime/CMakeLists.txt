@@ -26,6 +26,7 @@ add_library(RuntimeLib STATIC
     runtime_global_context.cpp
     runtime_startup.cpp
     render_asset_preparer.cpp
+    render_settings_command_provider.cpp
     )
 
 target_include_directories(RuntimeLib PUBLIC

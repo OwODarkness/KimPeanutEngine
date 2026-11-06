@@ -1,6 +1,6 @@
 # Render R7 raster image quality
 
-- Status: active overall; R7.0, R7.2, and R7.3 complete; R7.1 focused acceptance, R7.4 height fog, and R7.5 combined acceptance remain open.
+- Status: active overall; R7.0 and R7.2–R7.4 complete. R7.1 focused acceptance and R7.5 combined acceptance remain open.
 - Owner: Render module.
 - Parent TODO: [R7 roadmap](../../docs/render/TODO.md).
 - Canonical design: [R7 stage plan](../../docs/render/.plan/R7.md).
@@ -67,6 +67,14 @@ Render/Graphics contracts pass 251/251, and GraphicsSmoke passes both APIs.
 Nine unrelated Asset/Terrain broad-suite failures remain recorded separately.
 See the [review](../../docs/render/.review/R7.3.md) and
 [acceptance journal](../journal/2026-10-03-render-r7-raster-image-quality.md#r73-acceptance--2026-10-22).
+
+R7.4 is accepted on 2026-11-06. Exponential height fog runs on scene-linear
+HDR before TAA/tone mapping. Vulkan/OpenGL agree with the analytic sky cases
+within 0.003 linear transmittance at the measured pixel, and zero density
+preserves byte-identical captures. Debug Sponza, indoor, and procedural terrain
+preview checks pass; Vulkan PT bypasses fog. RelWithDebInfo Vulkan fog p95 is
+0.024 ms. Combined active allocation is 36.29 MiB at 1094×631, above the
+32 MiB R7.5 ceiling. See [R7.4 evidence](../journal/2026-11-06-render-r7-4-height-fog.md).
 
 ## Scope and non-goals
 

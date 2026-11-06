@@ -5,6 +5,7 @@
 
 #include "graphics/backend/common/render_backend.h"
 #include "render/render_target.h"
+#include "render/screen_space_ao_settings.h"
 
 namespace kpengine::render
 {
@@ -12,33 +13,6 @@ namespace kpengine::render
     class PreparedRenderAssetCatalog;
     class RenderCamera;
     class FullscreenPassResources;
-
-    enum class ScreenSpaceAoQuality : std::uint8_t
-    {
-        Low,
-        Medium,
-        High,
-    };
-
-    constexpr std::uint32_t ScreenSpaceAoSampleCount(ScreenSpaceAoQuality quality) noexcept
-    {
-        switch (quality)
-        {
-        case ScreenSpaceAoQuality::Low: return 6u;
-        case ScreenSpaceAoQuality::Medium: return 12u;
-        case ScreenSpaceAoQuality::High: return 24u;
-        }
-        return 12u;
-    }
-
-    struct ScreenSpaceAoSettings
-    {
-        bool enabled = true;
-        float radius = 0.65f;
-        float bias = 0.025f;
-        float strength = 1.0f;
-        ScreenSpaceAoQuality quality = ScreenSpaceAoQuality::Medium;
-    };
 
     class ScreenSpaceAoPass final
     {

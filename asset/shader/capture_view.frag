@@ -13,6 +13,7 @@ const uint CAPTURE_SELECTION_MASK = 10u;
 const uint CAPTURE_SCREEN_SPACE_AO_RAW = 11u;
 const uint CAPTURE_SCREEN_SPACE_AO_FILTERED = 12u;
 const uint CAPTURE_MOTION_VECTORS = 13u;
+const uint CAPTURE_FOG_TRANSMITTANCE = 16u;
 
 layout(binding = 2) uniform sampler2D gbuffer_albedo;
 layout(binding = 3) uniform sampler2D gbuffer_normal;
@@ -22,7 +23,7 @@ layout(binding = 6) uniform sampler2D directional_shadow_depth;
 layout(binding = 8) uniform sampler2D spot_shadow_depth;
 layout(binding = 9) uniform sampler2D point_shadow_depth;
 layout(binding = 11) uniform sampler2D selection_mask;
-layout(binding = 12) uniform sampler2D screen_space_ao;
+layout(binding = 12) uniform sampler2D diagnostic_texture;
 layout(binding = 13) uniform sampler2D gbuffer_motion;
 
 layout(std140, binding = 7) uniform CaptureViewConstants
@@ -36,7 +37,7 @@ layout(std140, binding = 7) uniform CaptureViewConstants
     vec4 light_direction_and_view;
     vec4 depth_params;
     vec4 punctual_depth_params;
-    vec4 screen_space_ao_params;
+    vec4 diagnostic_params;
 } capture_constants;
 
 layout(std140, binding = 10) uniform PointShadowConstants
@@ -226,10 +227,17 @@ void main()
     if (view == CAPTURE_SCREEN_SPACE_AO_RAW ||
         view == CAPTURE_SCREEN_SPACE_AO_FILTERED)
     {
-        float ao = capture_constants.screen_space_ao_params.x > 0.5
-                       ? texture(screen_space_ao, source_uv).r
+        float ao = capture_constants.diagnostic_params.x > 0.5
+                       ? texture(diagnostic_texture, source_uv).r
                        : 1.0;
         out_color = vec4(vec3(ao), 1.0);
+        return;
+    }
+    if (view == CAPTURE_FOG_TRANSMITTANCE)
+    {
+        float t = capture_constants.diagnostic_params.x > 0.5
+                    ? texture(diagnostic_texture, frag_texcoord).a : 1.0;
+        out_color = vec4(vec3(t), 1.0);
         return;
     }
     if (view == CAPTURE_MOTION_VECTORS)

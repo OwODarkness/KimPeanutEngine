@@ -1,9 +1,7 @@
 #include "temporal_aa_pass.h"
 
 #include <algorithm>
-#include <cstddef>
 
-#include "asset/mesh.h"
 #include "asset/shader.h"
 #include "asset/shader_program.h"
 #include "render/frame_context.h"
@@ -33,22 +31,10 @@ namespace kpengine::render
             fragment_artifact_ == fragment->data)
             return true;
 
-        graphics::PipelineDesc desc{};
-        desc.vert_shader = vertex->data.get();
-        desc.frag_shader = fragment->data.get();
+        auto desc = FullscreenPassResources::DescribePipeline(*vertex->data, *fragment->data);
         desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA16F,
                                          TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
                                          TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM};
-        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
-        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
-        desc.attri_descs = {
-            {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
-             offsetof(data::Vertex, position)},
-            {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
-             offsetof(data::Vertex, tex_coord)},
-        };
-        desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
-        desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
         desc.descriptor_binding_descs = {{
             {0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
@@ -242,5 +228,17 @@ namespace kpengine::render
     RenderTarget *TemporalAaPass::HistoryTarget(uint32_t index) noexcept
     {
         return index < history_targets_.size() ? history_targets_[index].get() : nullptr;
+    }
+
+    TextureFootprint TemporalAaPass::HistoryFootprint() const
+    {
+        TextureFootprint footprint;
+        for (const auto &target : history_targets_)
+        {
+            if (!target || !target->IsValid())
+                return {0, std::nullopt};
+            footprint += target->GetColorFootprint();
+        }
+        return footprint;
     }
 }

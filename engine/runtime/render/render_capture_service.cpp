@@ -29,6 +29,7 @@ namespace kpengine::render
             case CaptureView::ScreenSpaceAoRaw:
             case CaptureView::ScreenSpaceAoFiltered:
             case CaptureView::MotionVectors:
+            case CaptureView::FogTransmittance:
             case CaptureView::HostOutput:
                 return true;
             case CaptureView::EngineWindow:

@@ -358,7 +358,7 @@ details and stage checklists belong in the linked submodule documents.
       [concrete plan](.plan/R6.md) ·
   [journal](../../.spec/journal/2026-09-29-r6-implementation.md)
 
-## R7 — Raster image quality (R7.3 complete; SSAO and core acceptance open)
+## R7 — Raster image quality (R7.4 complete; SSAO and core acceptance open)
 
 R7.0 baseline scenes, captures, and budgets are marked complete at the user’s direction. Expanded R5 correctness validation remains open and is not represented as passed. Canonical [stage plan](.plan/R7.md),
 [execution spec](../../.spec/specs/render-r7-raster-image-quality.md), and
@@ -408,11 +408,13 @@ validation; R5/R6 and R7.1 acceptance remain independent. See the
   cover camera/rigid-object motion, invalid surfaces, cuts, and rejected frames.
 - [x] **R7.3:** native-resolution TAA quality, cross-backend orientation,
   history lifecycle, PT exclusion, and GPU/memory acceptance complete (2026-10-22).
-- [ ] **R7.4:** integrated exponential height fog; accept numerical limits,
-  sky policy, HDR/TAA ordering, zero-density identity, and terrain/indoor fixtures.
+- [x] **R7.4:** integrated exponential height fog; Vulkan/OpenGL numerical,
+  sky, HDR/TAA, zero-density identity and terrain/indoor checks passed.
+  Vulkan fog p95 is 0.024 ms. → [review](.review/R7.4.md)
 - [ ] **R7.5:** combined core acceptance and explicit subsequent decisions for
-  reflection probes, SSR, and volumetric fog. These follow-ups do not block
-  core completion and require separate concrete designs before implementation.
+  reflection probes, SSR, and volumetric fog. Resolve combined active Vulkan
+  storage of 36.29 MiB against the 32 MiB cap before closing the gate.
+  The follow-up effects require separate designs and do not block core completion.
 
 ## Document ownership
 

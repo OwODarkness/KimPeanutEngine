@@ -13,6 +13,7 @@ below are stable built-ins today.
 | `window.resize` | Resize the active window's client area. | [`window.resize`](#windowresize) |
 | `render.screen_space_ao_settings` | Set raster screen-space AO enable, radius, bias, strength, and quality. | [`render.screen_space_ao_settings`](#renderscreen_space_ao_settings) |
 | `render.temporal_aa_settings` | Set raster temporal anti-aliasing and history weight. | [`render.temporal_aa_settings`](#rendertemporal_aa_settings) |
+| `render.height_fog_settings` | Set opaque raster exponential height fog. | [`render.height_fog_settings`](#renderheight_fog_settings) |
 | `actor.list` | List and filter live Gameplay Actors by authored name and generational handle. | [`actor.list`](#actorlist) |
 | `actor.query` | Read one Actor's state and root transform by handle. | [`actor.query`](#actorquery) |
 | `actor.control` | Set an Actor root's local position and rotation. | [`actor.control`](#actorcontrol) |
@@ -204,9 +205,28 @@ requested/effective state, submitted history validity/reset reason, jitter UV,
 `r7_active_texture_payload_bytes`, and optional
 `r7_active_texture_allocation_bytes`. Allocation bytes measure Vulkan allocator
 ranges; unsupported backends return no native measurement.
+Active raster guides and AO remain accounted when TAA is disabled; inactive
+history targets are excluded from these active-feature totals.
 
 ```json
 {"op":"execute","command":"render.temporal_aa_settings","arguments":{"enabled":true,"history_weight":0.9}}
+```
+
+## `render.height_fog_settings`
+
+Schedule copied fog settings at the next frame boundary. Height is world +Y.
+Density and falloff are inverse world units. `affect_sky` opts into integrating
+sky rays to `max_distance`; by default sky is unchanged. Color is scene linear.
+Disabled fog or zero density bypasses the graph pass. Full path tracing ignores
+fog. `stats` reports requested/effective state and `pass.height_fog` metrics;
+`capture.screenshot` accepts `fog_transmittance` (white means no attenuation).
+
+All fields are required and finite. Density and falloff are in `[0, 100]`,
+reference height in `[-1000000, 1000000]`, max distance in `[0.001, 1000000]`,
+and color components in `[0, 65504]`.
+
+```json
+{"op":"execute","command":"render.height_fog_settings","arguments":{"enabled":true,"affect_sky":false,"density":0.04,"reference_height":1.5,"height_falloff":0.12,"max_distance":120,"red":0.45,"green":0.55,"blue":0.65}}
 ```
 
 ## `capture.glfw_window`

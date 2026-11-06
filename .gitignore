@@ -79,6 +79,8 @@ deprecated/
 !/asset/shader/gbuffer_debug_view.shader
 !/asset/shader/temporal_aa.frag
 !/asset/shader/temporal_aa.shader
+!/asset/shader/height_fog.frag
+!/asset/shader/height_fog.shader
 !/asset/shader/screen_space_ao_estimate.shader
 !/asset/shader/screen_space_ao_estimate.frag
 !/asset/shader/screen_space_ao_filter.shader

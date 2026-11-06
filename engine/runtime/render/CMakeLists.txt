@@ -8,6 +8,7 @@ passes/screen_space_ao_pass.cpp
 passes/environment_bindings_owner.cpp
 passes/tone_map_pass.cpp
 passes/temporal_aa_pass.cpp
+passes/height_fog_pass.cpp
 passes/capture_view_pass.cpp
 passes/path_tracing_pass.cpp
 passes/fullscreen_pass_resources.cpp
