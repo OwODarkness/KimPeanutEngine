@@ -1,11 +1,15 @@
 # Signal processing and oscilloscope lab
 
-**Status: SG1 CPU foundation with optional lab module (2026-11-08).**
+**Status: SG1–SG3 accepted; SG4 filtering is next (2026-11-08).**
 The always-available `Signal` target owns channel-major `SampleBlock` storage,
 constant/impulse/sine/seeded-uniform generators, periodic harmonic distortion,
 additive seeded noise and scalar measurements; the
-standalone `signal-lab` ImGui shell is optional. Acquisition and GPU processing
-remain open. Start from
+standalone `signal-lab` ImGui shell is optional. The bounded scalar complex DFT,
+radix-2 FFT, periodic Hann/rectangular windows and one-sided amplitude/PSD
+measurements and sample-aligned two-signal mixing live beside these operations.
+SG3 includes alias/leakage fixtures, a selected-signal Spectrum view, naive
+sawtooth/triangle sources, an A+B mix view and an XY/Lissajous phase view.
+Start from
 [SG1](.plan/SG1.md), then [SG2](.plan/SG2.md). The [roadmap](TODO.md) owns
 stage acceptance; [references.md](references.md) records source studies;
 the [spec](../../.spec/specs/signal-processing-lab.md) owns execution scope.
@@ -201,12 +205,13 @@ the first scope; clipped draw-list geometry is appropriate for traces.
 | Top controls | Run/Pause, Step Block, Reset, experiment preset, capture state |
 | Left inspector | Source parameters; sample rate and block size; processing chain later |
 | Center scope | Time/amplitude axes, two traces, trigger marker, cursors, fit and zoom |
-| Secondary tab from SG3 | Spectrum; window, observation length, bin spacing, amplitude/PSD mode |
+| SG3 views | Selected-signal spectrum with amplitude/PSD controls; pair mix A+B; XY/Lissajous phase plot with selectable, sample-aligned inputs |
 | Right readouts | Mean, RMS, min/max, peak-to-peak, cursor deltas; frequency validity |
 | Bottom evidence/status | Expected vs measured error, acquisition count, epoch, gaps, lag; later CPU/GPU timing |
 
-SG2 has a single-source capture and trigger. Add channel B with mixing/filter
-comparisons in SG3/SG4. Acquisition ring and pre/post-trigger records belong
+SG2 has a single-source capture and trigger. SG3 mixes generated sample blocks
+and compares their phase; captured channel B plus filter comparisons follow in
+SG4. Acquisition ring and pre/post-trigger records belong
 to SignalLab; UI only selects views. Trigger supports rising/falling edge,
 threshold, hysteresis and holdoff; auto/normal/single behavior is defined in
 [SG2](.plan/SG2.md). Horizontal labels use seconds/division and vertical labels

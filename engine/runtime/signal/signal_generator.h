@@ -17,6 +17,8 @@ namespace kpengine::signal
         Sine,
         Cosine,
         Square,
+        Sawtooth,
+        Triangle,
         UniformNoise
     };
 

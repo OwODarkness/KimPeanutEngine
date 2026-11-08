@@ -45,6 +45,8 @@ namespace kpengine::signal
             case SignalKind::Sine:
             case SignalKind::Cosine:
             case SignalKind::Square:
+            case SignalKind::Sawtooth:
+            case SignalKind::Triangle:
             case SignalKind::UniformNoise:
                 return true;
             }
@@ -160,6 +162,25 @@ namespace kpengine::signal
             case SignalKind::Square:
                 sample = config_.offset + (next_phase < std::numbers::pi_v<double>
                     ? config_.amplitude : -config_.amplitude);
+                next_phase += phase_step;
+                if (next_phase >= kTwoPi)
+                {
+                    next_phase -= kTwoPi;
+                }
+                break;
+            case SignalKind::Sawtooth:
+                sample = config_.offset + config_.amplitude *
+                    (next_phase / std::numbers::pi_v<double> - 1.0);
+                next_phase += phase_step;
+                if (next_phase >= kTwoPi)
+                {
+                    next_phase -= kTwoPi;
+                }
+                break;
+            case SignalKind::Triangle:
+                sample = config_.offset + config_.amplitude *
+                    (1.0 - 2.0 * std::abs(next_phase /
+                        std::numbers::pi_v<double> - 1.0));
                 next_phase += phase_step;
                 if (next_phase >= kTwoPi)
                 {

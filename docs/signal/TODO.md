@@ -1,6 +1,6 @@
 # Signal roadmap and acceptance ledger
 
-**SG1 complete; SG2 implementation in progress and acceptance remains.** [Architecture](PLANS.md) · [Local rules](AGENTS.md) ·
+**SG1–SG3 complete; SG4 filtering is next.** [Architecture](PLANS.md) · [Local rules](AGENTS.md) ·
 [Spec](../../.spec/specs/signal-processing-lab.md) ·
 [Planning evidence](../../.spec/journal/2026-11-08-signal-processing-plan.md)
 
@@ -18,8 +18,8 @@ evidence. Complete correctness gates before optimizing that operation.
 - [x] Complete SG1 source generation/statistics and display a generated sine
   block in Signal Lab; proceed to SG2 acquisition.
 - [x] Expand Signal Lab into a bounded multi-signal workspace: generate
-  sine/cosine/square blocks, select entries by name/color, show/hide traces,
-  inspect details, and switch between colored overlays and their summed
+  sine/cosine/square/sawtooth/triangle blocks, select entries by name/color,
+  show/hide traces, inspect details, and switch between colored overlays and their summed
   time-domain composite. DFT spectrum remains a separate SG3 operation.
 
 | ID | Learn by implementing | Visible experiment / acceptance |
@@ -49,29 +49,38 @@ evidence. Complete correctness gates before optimizing that operation.
 - [x] Generate reproducible composite sources from a periodic base, normalized
   second/third harmonics, and seeded additive noise; feed the same source
   configuration to the sample list and Scope.
-- [ ] Verify launch-help and mode isolation through the global host registry.
+- [x] Verify launch-help and mode isolation through the global host registry.
 - [x] Implement bounded acquisition and auto/normal/single triggers across blocks.
 - [x] Show source/timebase/trigger controls, units, readouts and capture validity.
-- [ ] Verify visible Vulkan/OpenGL captures, pause/step/reset, resize, DPI and
-  orderly shutdown; headless correctness remains independently runnable.
+- [x] Verify visible Vulkan/OpenGL captures, pause/step/reset, 1000×650 resize
+  and orderly shutdown; headless correctness remains independently runnable.
+- [ ] Verify a live DPI transition; acceptance covers window resize but not
+  movement between monitors with different scale factors.
 
 ## SG3 — frequency and sampling experiments
 
-- [ ] Write scalar complex DFT/inverse with sign, ordering and normalization tests.
-- [ ] Implement radix-2 FFT and compare every complex bin against DFT for
+- [x] Write bounded scalar complex DFT/inverse with independent sign, ordering,
+  normalization, analytic fixtures and invalid-input tests. [Journal](../../.spec/journal/2026-11-08-signal-sg3-dft.md)
+- [x] Implement radix-2 FFT/IFFT and compare every complex bin against DFT for
   N=8,16,32,64,128,256 and seeded inputs. Initial fp64 target: normalized L2
   <=1e-10; max error <=1e-10*max(1,N*max_abs_input) for these bounded fixtures.
-- [ ] Add periodic Hann/rectangular windows, coherent-gain amplitude and PSD;
+  [FFT journal](../../.spec/journal/2026-11-08-signal-sg3-fft.md)
+- [x] Add periodic Hann/rectangular windows, coherent-gain amplitude and PSD;
   verify DC/Nyquist endpoint handling and Parseval independently of round trip.
-- [ ] Check a 1 V-peak on-bin tone at 48 kHz/N=4800 has 1 V amplitude and
+- [x] Check a 1 V-peak coherent tone at 48 kHz has 1 V amplitude and
   0.5 V² integrated rectangular-window PSD (DFT oracle may use smaller N).
   Use a coherent power-of-two fixture for FFT and compare both conventions.
-- [ ] Demonstrate 7 kHz sampled at 8 kHz appearing at 1 kHz; contrast deliberate
-  aliasing with the generator's optional band-limited sources added later.
-- [ ] Add square, saw and triangle sources with explicit naive/unbandlimited
-  labels; inspect harmonics and aliasing. Add two-source mixing and phase view.
-- [ ] Explain off-bin leakage and window tradeoffs; zero padding must not be
-  presented as improved observation resolution. Save expected/measured results.
+  [Spectrum journal](../../.spec/journal/2026-11-08-signal-sg3-spectrum.md)
+- [x] Verify 7 kHz sampled at 8 kHz aliases to 1 kHz, and verify periodic Hann
+  reduces far off-bin sidelobes versus rectangular. Zero padding changes bin
+  spacing but not observation resolution. [Spectrum journal](../../.spec/journal/2026-11-08-signal-sg3-spectrum.md)
+- [x] Add the Signal Lab Spectrum view for the selected signal with frequency
+  and amplitude/PSD axes, rectangular/periodic-Hann choice, 512–4096 FFT size,
+  hover-bin values, and a measurement inspector.
+- [x] Add naive unbandlimited sawtooth and triangle generators; verify discrete
+  samples, partition continuity, expected harmonic structure and above-Nyquist
+  alias bins. Add sample-aligned two-signal mixing and an XY/Lissajous phase
+  view with selectable inputs. [SG3 journal](../../.spec/journal/2026-11-08-signal-sg3-spectrum.md)
 
 ## SG4 — filtering and systems
 

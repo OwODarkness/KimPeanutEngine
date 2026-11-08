@@ -6,7 +6,7 @@
   build passes.
   → [host architecture](engine/PLANS.md), [roadmap](engine/TODO.md)
 
-- **Signal processing lab (2026-11-08; SG1 complete, SG2 implementation in progress)** — Added the
+- **Signal processing lab (2026-11-08; SG1–SG3 accepted)** — Added the
   always-available headless Runtime `Signal` target, validated channel-major
   `SampleBlock` storage and borrowed read-only `SampleBlockView`, constant,
   impulse, sine, cosine, square and seeded uniform noise generation, composite
@@ -20,11 +20,25 @@
   captures, sample-clocked Auto/Normal/Single modes, adjustable timebase and
   holdoff, measured frequency with timing uncertainty, commands and scope UI.
   Headless checks cover capture values, edge modes, ring wrap and 30/60/144 Hz
-  scheduling. Visible Vulkan/OpenGL acceptance is still open. Spectrum,
-  filtering and compute dispatch remain future stages. →
+  scheduling. SG2 passes 28/28 signal tests and visible Vulkan/OpenGL checks;
+  `signal-sg2-final-opengl.png` records the OpenGL UI. A 1000×650 resize keeps
+  generator controls, signal list, waveform, readouts and bottom log visible.
+  DPI transition testing remains open. SG3 has bounded scalar DFT and radix-2
+  FFT/IFFT references; seeded 8–256 point outputs match within declared error
+  bounds. Periodic Hann/rectangular windows, coherent peak amplitude, one-sided
+  PSD, DC/Nyquist scaling, Parseval, 7 kHz→1 kHz aliasing, and reduced off-bin
+  Hann sidelobes are verified. Signal Lab now renders the selected signal's
+  spectrum with an amplitude/PSD scale, window and FFT-size controls, and
+  frequency-bin inspection. Naive unbandlimited sawtooth/triangle generation,
+  expected harmonics and above-Nyquist aliases are verified; the lab provides
+  selectable pair mixing and an XY/Lissajous phase view. SG3 is accepted.
+  Filtering and compute dispatch remain future stages. →
   [architecture](signal/PLANS.md), [roadmap](signal/TODO.md),
   [SG1](signal/.plan/SG1.md), [SG2](signal/.plan/SG2.md),
-  [journal](../.spec/journal/2026-11-08-signal-sg2.md)
+  [SG2 journal](../.spec/journal/2026-11-08-signal-sg2.md),
+  [SG3 DFT journal](../.spec/journal/2026-11-08-signal-sg3-dft.md),
+  [SG3 FFT journal](../.spec/journal/2026-11-08-signal-sg3-fft.md),
+  [SG3 spectrum journal](../.spec/journal/2026-11-08-signal-sg3-spectrum.md)
 
 - **R7.5 combined raster checkpoint (2026-11-06)** — Fog now loads and
   blends into SceneHdr, removing a second HDR allocation. Vulkan combined

@@ -1,6 +1,6 @@
 # Signal processing lab execution contract
 
-- Status: SG1 complete; SG2 acquisition open
+- Status: SG1–SG3 accepted; SG4 filtering open
 - Owner: Runtime Signal subsystem and Signal Lab module / Amadeus
 - Parent TODO: [Signal roadmap](../../docs/signal/TODO.md)
 - Architecture: [PLANS.md](../../docs/signal/PLANS.md)
@@ -16,9 +16,12 @@ correctness first, then CPU performance and measured GPU parallel execution.
 
 The planning baseline was HEAD `8a86bf1b3cc22014704a932e317b1d8603f4ac73`.
 The current working tree adds an always-available headless Runtime `Signal`
-subsystem with contiguous channel-major `SampleBlock` storage, constant,
-impulse, sine and seeded uniform noise generation, scalar statistics, plus an
-optional module providing the host-presented `signal-lab` ImGui shell. Application hosts register
+subsystem with contiguous channel-major `SampleBlock` storage, deterministic
+constant, impulse, sine, cosine, square, naive sawtooth/triangle and seeded
+uniform-noise generation, scalar statistics, bounded DFT/FFT, windowed spectrum
+measurements, and aligned pair mixing. The optional module provides the
+host-presented `signal-lab` ImGui shell with scope, spectrum, pair-mix and phase
+views. Application hosts register
 descriptors in a process-global registry. Audio Player still owns its local
 waveform reduction and small FFT display. Common CommandRecorder still has no
 general compute dispatch contract.
@@ -26,9 +29,10 @@ general compute dispatch contract.
 ## Scope and non-goals
 
 SG1 establishes sampled storage, deterministic source generation and scalar
-statistics with headless numeric fixtures. SG2–SG8 acquisition, advanced
-numerical processing, performance and GPU acceptance remain open; the current
-lab waveform is a static generated block, not a captured live stream.
+statistics. SG2 establishes simulated capture; SG3 establishes CPU frequency,
+aliasing, mixing and phase experiments. SG4–SG8 filtering, streaming, CPU
+optimization and GPU acceptance remain open. Signal Lab generator samples are
+static observations; the scope path owns its separately simulated capture.
 
 The planned implementation begins with 1D sampled real CPU signals and a
 dedicated simulated scope. Hardware acquisition, analog circuit simulation,
