@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools/validation/r6"))
@@ -24,6 +24,9 @@ def main():
     parser.add_argument("--fixture", choices=("sponza", "indoor", "terrain"), required=True)
     parser.add_argument("--measure", action="store_true", help="Collect three Vulkan RelWithDebInfo windows")
     parser.add_argument("--regenerate", action="store_true", help="Publish a seeded Terrain Viewer preview first")
+    parser.add_argument("--matrix", action="store_true", help="Capture the baseline and independent raster effects")
+    parser.add_argument("--shadow-mode", choices=("maps", "query"), default="maps")
+    parser.add_argument("--reference-prefix", help="Compare scene and diagnostic captures against an existing run")
     args = parser.parse_args()
     if args.regenerate and args.fixture != "terrain":
         parser.error("--regenerate requires the terrain fixture")
@@ -64,7 +67,8 @@ def main():
         path = f"save/screenshots/validation/{args.prefix}-{tag}.png"
         if (ROOT / path).exists():
             raise FileExistsError(path)
-        data = command("capture.screenshot", {"view": view, "path": path})["data"]
+        data = (command("capture.screenshot", {"view": view, "path": path}) if view else
+                command("capture.glfw_window", {"path": path}))["data"]
         result["captures"][tag] = data["output_path"]
         return ROOT / data["output_path"]
 
@@ -78,8 +82,17 @@ def main():
     def taa(enabled):
         command("render.temporal_aa_settings", {"enabled": enabled, "history_weight": 0.9})
 
+    def ao(enabled):
+        command("render.screen_space_ao_settings", {
+            "enabled": enabled, "radius": 0.65, "bias": 0.025, "strength": 1.0, "quality": "medium",
+        })
+
+    def effects(sample):
+        return tuple(sample[f"{effect}_effective"]
+                     for effect in ("screen_space_ao", "temporal_aa", "height_fog"))
+
     path_settings = json.loads((ROOT / "tools/validation/r6/sponza_motion_fixture.json").read_text())["path_tracing"]
-    path_settings.update(enabled=False, hybrid_ray_query_shadows=False)
+    path_settings.update(enabled=False, hybrid_ray_query_shadows=args.shadow_mode == "query")
     try:
         if args.regenerate:
             def preview():
@@ -113,8 +126,35 @@ def main():
             if time.monotonic() >= deadline:
                 raise TimeoutError("texture residency did not settle")
             before = settle()
+        if args.matrix:
+            independent_captures = {}
+            for name, enabled in (("all-off", (False, False, False)), ("ao-only", (True, False, False)),
+                                  ("taa-only", (False, True, False)), ("fog-only", (False, False, True))):
+                ao(enabled[0])
+                taa(enabled[1])
+                sample = fog(enabled=enabled[2])
+                result["stats"][name] = sample
+                checks[name] = (effects(sample) == enabled and not sample["path_trace_active"] and
+                    sample["ray_query_shadows_active"] == path_settings["hybrid_ray_query_shadows"])
+                independent_captures[name] = capture(name)
+                if name == "ao-only" and args.fixture == "indoor":
+                    capture("ao-raw", "screen_space_ao_raw")
+                    capture("ao-filtered", "screen_space_ao_filtered")
+            if args.fixture == "indoor":
+                ao(False)
+                fog(enabled=False)
+                checks["ao_off_restores_baseline"] = (
+                    independent_captures["all-off"].read_bytes() == capture("ao-off-restored").read_bytes())
+                checks["ao_changes_scene"] = (
+                    independent_captures["all-off"].read_bytes() != independent_captures["ao-only"].read_bytes())
+                with Image.open(capture("ao-off-filtered", "screen_space_ao_filtered")) as visibility:
+                    checks["ao_off_visibility_is_white"] = visibility.convert("L").getextrema() == (255, 255)
+        if args.matrix or args.measure:
+            ao(True)
+            taa(False)
+            fog(enabled=False)
         baseline = capture("off")
-        capture("albedo", "base_color")
+        albedo = capture("albedo", "base_color")
         zero = fog(density=0.0)
         checks["zero_bypass"] = not zero["height_fog_effective"] and zero["height_fog_requested"]
         checks["zero_pixel_identity"] = baseline.read_bytes() == capture("zero").read_bytes()
@@ -122,15 +162,32 @@ def main():
         result["stats"]["on"] = on
         checks["fog_executes"] = (on["height_fog_effective"] and
                                   on["pass.height_fog.outcome"] == "executed")
-        checks["fog_changes_scene"] = baseline.read_bytes() != capture("on").read_bytes()
-        capture("transmittance", "fog_transmittance")
+        fogged = capture("on")
+        checks["fog_changes_scene"] = baseline.read_bytes() != fogged.read_bytes()
+        transmittance = capture("transmittance", "fog_transmittance")
+        if args.reference_prefix:
+            for tag, actual, tolerance in (("off", baseline, 0), ("albedo", albedo, 0),
+                                           ("on", fogged, 2), ("transmittance", transmittance, 0)):
+                reference = actual.with_name(f"{args.reference_prefix}-{tag}.png")
+                with Image.open(reference) as expected, Image.open(actual) as observed:
+                    if expected.size != observed.size:
+                        raise ValueError(f"{tag} extent differs from reference")
+                    error = max(high for _, high in ImageChops.difference(
+                        expected.convert("RGB"), observed.convert("RGB")).getextrema())
+                result.setdefault("reference_max_channel_error", {})[tag] = error
+                checks[f"{tag}_reference"] = error <= tolerance
         taa(True)
         prior = settle()
         combined = fog(density=settings["density"] * 1.5)
         result["stats"]["combined"] = combined
         checks["taa_recovers_after_edit"] = (combined["temporal_aa_history_valid"] and
             combined["temporal_aa_reset_count"] > prior["temporal_aa_reset_count"])
+        if args.matrix or args.measure:
+            checks["combined_active"] = (effects(combined) == (True, True, True) and
+                combined["ray_query_shadows_active"] == path_settings["hybrid_ray_query_shadows"])
         capture("with-taa")
+        if args.matrix and args.fixture != "terrain" and not args.measure:
+            capture("window", view=None)
         if args.measure:
             if args.fixture != "sponza" or on["graphics_api"] != "vulkan":
                 raise ValueError("measurement requires the Vulkan Sponza fixture")
@@ -145,12 +202,45 @@ def main():
                     sample = stats()
                 result["performance"].append(sample)
             checks["fog_gpu_budget"] = all(
-                sample["pass.height_fog.gpu_p95_ms"] <= 0.5 for sample in result["performance"])
+                0.0 < sample["pass.height_fog.gpu_p95_ms"] <= 0.5 for sample in result["performance"])
+            checks["combined_gpu_budget"] = all(
+                0.0 < sample["summary_total_gpu_p95_ms"] <= 8.5 for sample in result["performance"])
+            checks["combined_texture_budget"] = all(
+                0 < sample["r7_active_texture_allocation_bytes"] <= 32 * 1024**2
+                for sample in result["performance"])
+            checks["matched_windows"] = all(
+                (sample["viewport_width"], sample["viewport_height"]) == (1094, 631) and
+                sample["summary_warmup_frames_completed"] == 120 and sample["summary_samples_collected"] == 300 and
+                sample["textures_tracked_residency_complete"] and not sample["path_trace_active"] and
+                effects(sample) == (True, True, True) and
+                sample["ray_query_shadows_active"] == path_settings["hybrid_ray_query_shadows"]
+                for sample in result["performance"])
         if on["graphics_api"] == "vulkan" and args.fixture == "sponza":
             command("render.path_trace_settings", path_settings | {"enabled": True})
             pt = settle()
             checks["pt_bypasses_fog"] = pt["path_trace_active"] and not pt["height_fog_effective"]
+            if args.matrix:
+                result["stats"]["pt_before_effect_toggles"] = pt
+                ao(False)
+                taa(False)
+                fog(enabled=False)
+                ao(True)
+                taa(True)
+                pt_after = fog(density=settings["density"] * 1.5)
+                result["stats"]["pt_after_effect_toggles"] = pt_after
+                checks["pt_excludes_raster_effects"] = (
+                    pt_after["path_trace_active"] and effects(pt_after) == (False, False, False))
+                checks["pt_accumulation_continues"] = (
+                    pt["path_trace_samples"] > 0 and pt_after["path_trace_samples"] > pt["path_trace_samples"])
+                capture("pt")
             command("render.path_trace_settings", path_settings)
+            if args.matrix:
+                restored = settle()
+                result["stats"]["restored"] = restored
+                checks["raster_recovers_from_pt"] = (
+                    not restored["path_trace_active"] and effects(restored) == (True, True, True) and
+                    restored["temporal_aa_history_valid"] and
+                    restored["ray_query_shadows_active"] == path_settings["hybrid_ray_query_shadows"])
         if args.fixture == "indoor":
             taa(False)
             rows = flatten_actor_page(command("actor.list", {

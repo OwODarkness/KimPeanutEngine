@@ -1,11 +1,18 @@
 # Project Status
 
+- **R7.5 combined raster checkpoint (2026-11-06)** — Fog now loads and
+  blends into SceneHdr, removing a second HDR allocation. Vulkan combined
+  storage is 30.94 MiB at 1094×631 and worst GPU p95 is 3.45 ms across
+  shadow maps and hybrid ray queries. Vulkan/OpenGL image and terrain
+  checks pass. R7.1 focused SSAO acceptance remains open. →
+  [R7.5 review](render/.review/R7.5.md)
+
 - **R7.4 exponential height fog (2026-11-06; accepted)** — A graph pass
   integrates opaque raster fog before TAA and tone mapping. Vulkan/OpenGL
   Sponza, indoor and terrain preview checks pass, including zero-density pixel
   identity, analytic sky transmittance and TAA recovery. Render/Graphics tests
   pass 260/260. Vulkan fog p95 is 0.024 ms; combined GPU p95 is 3.36–3.38 ms.
-  Combined allocations reach 36.29 MiB at 1094×631, above the 32 MiB R7.5 cap.
+  The original combined allocation was 36.29 MiB at 1094×631.
   R7.1 focused SSAO acceptance remains separate. → [R7.4 review](render/.review/R7.4.md)
 
 - **Sponza authored materials restored (2026-10-08)** — Canonical

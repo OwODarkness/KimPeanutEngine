@@ -43,12 +43,15 @@ namespace kpengine::render
             return false;
         auto desc = FullscreenPassResources::DescribePipeline(*vertex->data, *fragment->data);
         desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA16F};
+        // Blend fog with the loaded scene and store transmittance in alpha for capture.
+        auto &blend = desc.blend_attachment_state;
+        blend.blend_enabled = true;
+        blend.src_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend.dst_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_SRC_ALPHA;
         desc.descriptor_binding_descs = {{
             {0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
-            {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
-             ShaderStage::SHADER_STAGE_FRAGMENT},
-            {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
+            {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
         }};
         pipeline_ = backend.CreatePipelineResource(desc);
         return pipeline_.IsValid();
@@ -62,13 +65,12 @@ namespace kpengine::render
     }
 
     bool HeightFogPass::Record(FrameContext &frame, const RenderCamera &camera, Vector2f jitter,
-                               const HeightFogSettings &settings, const RenderTarget &hdr,
+                               const HeightFogSettings &settings,
                                const RenderTarget &gbuffer, const FullscreenPassResources &fullscreen,
                                graphics::CommandRecorder &recorder) const
     {
-        const auto scene = hdr.GetColorAttachmentTexture(0);
         const auto depth = gbuffer.GetSampledDepthTexture();
-        if (!pipeline_.IsValid() || !scene.IsValid() || !depth.IsValid() || !fullscreen.IsReady())
+        if (!pipeline_.IsValid() || !depth.IsValid() || !fullscreen.IsReady())
             return false;
         const HeightFogGpuData data{
             ApplyTemporalJitter(camera.GetViewProjectionMatrix(), jitter).Inverse().Transpose(),
@@ -82,9 +84,8 @@ namespace kpengine::render
             return false;
         const auto sampler = fullscreen.LinearSampler();
         const auto bindings = frame.AllocateResourceBindingSet(pipeline_, {0, {
-            graphics::SampledTextureBinding{0, 0, scene, sampler},
-            graphics::SampledTextureBinding{0, 1, depth, sampler},
-            graphics::UniformBufferBinding{0, 2, uniform.buffer, uniform.offset, uniform.range},
+            graphics::SampledTextureBinding{0, 0, depth, sampler},
+            graphics::UniformBufferBinding{0, 1, uniform.buffer, uniform.offset, uniform.range},
         }});
         if (!bindings.IsValid())
             return false;

@@ -702,12 +702,8 @@ namespace kpengine::render
                     ao += target ? target->GetColorFootprint() : TextureFootprint{0, std::nullopt};
                 }
             }
-            const RenderTarget *const fog = frame_mode_.height_fog
-                ? graph_executor_.ResolveTransient(static_cast<uint64_t>(RenderFrameTransient::FoggedHdr))
-                : nullptr;
             RecordRasterTextureFootprints(profile_, frame_targets_.TemporalGuideFootprint(),
-                frame_mode_.temporal_aa ? temporal_aa_pass_.HistoryFootprint() : TextureFootprint{}, ao,
-                fog ? fog->GetColorFootprint() : TextureFootprint{});
+                frame_mode_.temporal_aa ? temporal_aa_pass_.HistoryFootprint() : TextureFootprint{}, ao);
         }
         graphics::CommandRecorder *const graph_recorder = backend_->GetCommandRecorder();
         if (graph_recorder == nullptr)
@@ -1123,10 +1119,6 @@ namespace kpengine::render
                                  : graph_executor_.ResolveTransient(
                                        static_cast<uint64_t>(RenderFrameTransient::SceneHdr));
                     break;
-                case RenderFrameResourceRole::FoggedHdr:
-                    target = graph_executor_.ResolveTransient(
-                        static_cast<uint64_t>(RenderFrameTransient::FoggedHdr));
-                    break;
                 case RenderFrameResourceRole::ScreenSpaceAoRaw:
                     target = graph_executor_.ResolveTransient(
                         static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoRaw));
@@ -1290,8 +1282,7 @@ namespace kpengine::render
     std::optional<graphics::RenderTargetDesc> DeferredRenderer::DescribeFrameTransient(
         uint64_t key, const graphics::Extent2D &extent) const
     {
-        if (key == static_cast<uint64_t>(RenderFrameTransient::SceneHdr) ||
-            key == static_cast<uint64_t>(RenderFrameTransient::FoggedHdr))
+        if (key == static_cast<uint64_t>(RenderFrameTransient::SceneHdr))
         {
             return RendererFrameTargets::DescribeSceneHdr(extent.width, extent.height);
         }
@@ -1530,13 +1521,12 @@ namespace kpengine::render
 
     bool DeferredRenderer::RecordHeightFogPass()
     {
-        const auto *hdr = ResolveFrameTexture(RenderFrameResourceRole::SceneHdr);
         const auto *gbuffer = ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
-        if (!active_frame_context_ || !active_pass_context_ || !hdr || !gbuffer)
+        if (!active_frame_context_ || !active_pass_context_ || !gbuffer)
             return false;
         const bool recorded = height_fog_pass_.Record(
             *active_frame_context_, scene_camera_, current_temporal_jitter_, height_fog_settings_,
-            *hdr, *gbuffer, fullscreen_pass_resources_, active_pass_context_->GetRecorder());
+            *gbuffer, fullscreen_pass_resources_, active_pass_context_->GetRecorder());
         if (recorded)
             AddProfileDraws(1, 1);
         return recorded;
@@ -1547,8 +1537,7 @@ namespace kpengine::render
         if (active_frame_context_ == nullptr || active_pass_context_ == nullptr ||
             backend_ == nullptr)
             return false;
-        RenderTarget *const hdr_target = ResolveFrameTexture(
-            frame_mode_.height_fog ? RenderFrameResourceRole::FoggedHdr : RenderFrameResourceRole::SceneHdr);
+        RenderTarget *const hdr_target = ResolveFrameTexture(RenderFrameResourceRole::SceneHdr);
         RenderTarget *const gbuffer_target = ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
         RenderTarget *const output = ResolveFrameTexture(
             RenderFrameResourceRole::TemporalAaOutput, RenderGraphAccess::Write);
@@ -1610,8 +1599,7 @@ namespace kpengine::render
             ? ResolveFrameTexture(RenderFrameResourceRole::SceneHdr)
             : (profile_.temporal_aa_effective
                    ? ResolveFrameTexture(RenderFrameResourceRole::TemporalAaOutput)
-                   : ResolveFrameTexture(frame_mode_.height_fog ? RenderFrameResourceRole::FoggedHdr
-                                                               : RenderFrameResourceRole::SceneHdr));
+                   : ResolveFrameTexture(RenderFrameResourceRole::SceneHdr));
         RenderTarget *const gbuffer_target = path_tracing_pass_.Active()
             ? nullptr : ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
         RenderTarget *const guide_target = path_tracing_pass_.Active()
@@ -1670,7 +1658,7 @@ namespace kpengine::render
             return false;
 
         const RenderTarget *const diagnostic = view == CaptureView::FogTransmittance && frame_mode_.height_fog
-            ? ResolveFrameTexture(RenderFrameResourceRole::FoggedHdr) : screen_space_ao;
+            ? ResolveFrameTexture(RenderFrameResourceRole::SceneHdr) : screen_space_ao;
         const CaptureViewFrameInputs inputs{
             *output, *gbuffer, *directional, *spot, *point,
             shadow_pass_.DirectionalFrame() ? &*shadow_pass_.DirectionalFrame() : nullptr,

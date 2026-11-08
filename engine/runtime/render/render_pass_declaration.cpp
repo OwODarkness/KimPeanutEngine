@@ -18,7 +18,7 @@ namespace kpengine::render
             "SceneColor", "SceneHdr", "GBuffer", "DirectionalShadow", "SpotShadow",
             "PointShadow", "CaptureOutput", "DebugViewOutput", "PathTraceHistory",
             "PathTraceGuide", "ScreenSpaceAoRaw", "ScreenSpaceAoFiltered",
-            "TemporalAaHistoryRead", "TemporalAaOutput", "FoggedHdr",
+            "TemporalAaHistoryRead", "TemporalAaOutput",
         };
 
         constexpr std::array<RenderFrameResourceRole, kResourceCount> kTextureRoles{
@@ -36,7 +36,6 @@ namespace kpengine::render
             RenderFrameResourceRole::ScreenSpaceAoFiltered,
             RenderFrameResourceRole::TemporalAaHistoryRead,
             RenderFrameResourceRole::TemporalAaOutput,
-            RenderFrameResourceRole::FoggedHdr,
         };
 
         template <typename Handle>
@@ -92,12 +91,6 @@ namespace kpengine::render
                 return !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
             case RenderPassCondition::HeightFogEnabled:
                 return conditions.height_fog && !conditions.ray_tracing_path_trace;
-            case RenderPassCondition::HeightFogDisabled:
-                return !conditions.height_fog && !conditions.ray_tracing_path_trace;
-            case RenderPassCondition::RasterToneMapFogged:
-                return conditions.height_fog && !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
-            case RenderPassCondition::RasterToneMapUnfogged:
-                return !conditions.height_fog && !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
             }
             return false;
         }
@@ -157,16 +150,13 @@ namespace kpengine::render
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterFrame, false},
                 {FixedRenderPassId::HeightFog, "HeightFogPass",
-                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read, RenderGraphUsage::Sampled},
-                  {RenderPassResource::GBuffer, RenderPassAccess::Read,
+                 {{RenderPassResource::GBuffer, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0u, true)},
-                  {RenderPassResource::FoggedHdr, RenderPassAccess::Write, RenderGraphUsage::ColorAttachment}},
+                  {RenderPassResource::SceneHdr, RenderPassAccess::Write, RenderGraphUsage::ColorAttachment,
+                   {}, RenderPassCondition::Always, RenderGraphAttachmentOp::Load}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::HeightFogEnabled, false},
                 {FixedRenderPassId::TemporalAaResolve, "TemporalAaResolvePass",
-                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled, {}, RenderPassCondition::HeightFogDisabled},
-                  {RenderPassResource::FoggedHdr, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled, {}, RenderPassCondition::HeightFogEnabled},
+                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read, RenderGraphUsage::Sampled},
                   {RenderPassResource::GBuffer, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b110010U)},
                   {RenderPassResource::TemporalAaHistoryRead, RenderPassAccess::Read,
@@ -185,9 +175,7 @@ namespace kpengine::render
                  false},
                 {FixedRenderPassId::ToneMap, "ToneMapPass",
                  {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled, {}, RenderPassCondition::RasterToneMapUnfogged},
-                  {RenderPassResource::FoggedHdr, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled, {}, RenderPassCondition::RasterToneMapFogged},
+                   RenderGraphUsage::Sampled, {}, RenderPassCondition::TemporalAaDisabled},
                   {RenderPassResource::TemporalAaOutput, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, {}, RenderPassCondition::TemporalAaEnabled},
                   // The selection mask. This read was unstated until subresource
@@ -226,7 +214,7 @@ namespace kpengine::render
                   {RenderPassResource::ScreenSpaceAoFiltered, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, {},
                    RenderPassCondition::ScreenSpaceAoDiagnosticRequested},
-                  {RenderPassResource::FoggedHdr, RenderPassAccess::Read,
+                  {RenderPassResource::SceneHdr, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, {}, RenderPassCondition::HeightFogEnabled},
                   {RenderPassResource::CaptureOutput, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
@@ -247,7 +235,7 @@ namespace kpengine::render
                   {RenderPassResource::ScreenSpaceAoFiltered, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, {},
                    RenderPassCondition::ScreenSpaceAoDiagnosticRequested},
-                  {RenderPassResource::FoggedHdr, RenderPassAccess::Read,
+                  {RenderPassResource::SceneHdr, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, {}, RenderPassCondition::HeightFogEnabled},
                   {RenderPassResource::DebugViewOutput, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
@@ -340,14 +328,10 @@ namespace kpengine::render
             {
                 continue;
             }
-            const bool fog_resource = resource_index == static_cast<std::size_t>(RenderPassResource::FoggedHdr);
-            if (fog_resource && (!conditions.height_fog || conditions.ray_tracing_path_trace))
-                continue;
             const bool temporal_aa_resource =
                 resource_index == static_cast<std::size_t>(RenderPassResource::TemporalAaHistoryRead) ||
                 resource_index == static_cast<std::size_t>(RenderPassResource::TemporalAaOutput);
-            const bool pooled = fog_resource ||
-                resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr) ||
+            const bool pooled = resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr) ||
                 resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoRaw) ||
                 resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoFiltered);
             uint64_t transient_key = static_cast<uint64_t>(RenderFrameTransient::SceneHdr);
@@ -355,8 +339,6 @@ namespace kpengine::render
                 transient_key = static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoRaw);
             else if (resource_index == static_cast<std::size_t>(RenderPassResource::ScreenSpaceAoFiltered))
                 transient_key = static_cast<uint64_t>(RenderFrameTransient::ScreenSpaceAoFiltered);
-            if (fog_resource)
-                transient_key = static_cast<uint64_t>(RenderFrameTransient::FoggedHdr);
             if (conditions.temporal_aa && !conditions.ray_tracing_path_trace &&
                 temporal_aa_resource)
                 resources[resource_index] = graph.ImportTexture(kResourceNames[resource_index]);
@@ -417,7 +399,7 @@ namespace kpengine::render
                 }
                 else
                 {
-                    pass.Write(resource, use.usage, RenderGraphAttachmentOp::None, use.scope);
+                    pass.Write(resource, use.usage, use.attachment_op, use.scope);
                 }
             }
             if (entry.id == FixedRenderPassId::DeferredLighting)

@@ -79,6 +79,7 @@ namespace kpengine::graphics
         explicit OpenglCommandRecorder(Services services);
 
         bool BeginRenderTarget(RenderTargetHandle target) override;
+        bool BeginRenderTargetWithColorLoad(RenderTargetHandle target, RenderTargetLoadOp load) override;
         bool BeginPresentation(const std::array<float, 4> *clear_color = nullptr) override;
         void EndRenderTarget() override;
         bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage,
@@ -101,6 +102,7 @@ namespace kpengine::graphics
         }
 
     private:
+        bool BeginRenderTarget(RenderTargetHandle target, std::optional<RenderTargetLoadOp> color_load);
         void ResetStateCache() noexcept;
 
         Services services_;

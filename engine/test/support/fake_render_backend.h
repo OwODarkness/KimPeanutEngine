@@ -78,6 +78,8 @@ namespace kpengine::test
         int transient_acquire_count = 0;
         int transient_release_count = 0;
         int render_target_begin_count = 0;
+        std::vector<graphics::RenderTargetHandle> begun_targets;
+        std::vector<std::pair<graphics::RenderTargetHandle, graphics::RenderTargetLoadOp>> color_load_overrides;
         int render_target_end_count = 0;
         int descriptor_set_create_count = 0;
         std::vector<graphics::ResourceBindingSetDesc> resource_binding_snapshots;
@@ -145,6 +147,8 @@ namespace kpengine::test
         explicit FakeCommandRecorder(FakeBackend &backend) : backend_(backend) {}
 
         bool BeginRenderTarget(graphics::RenderTargetHandle target) override;
+        bool BeginRenderTargetWithColorLoad(graphics::RenderTargetHandle target,
+                                            graphics::RenderTargetLoadOp load) override;
         bool BeginPresentation(const std::array<float, 4> *) override { return true; }
         void EndRenderTarget() override;
         bool RequireRenderTargetUsage(graphics::RenderTargetHandle target,
@@ -535,7 +539,15 @@ namespace kpengine::test
 
     inline bool FakeCommandRecorder::BeginRenderTarget(graphics::RenderTargetHandle target)
     {
+        backend_.Probe().begun_targets.push_back(target);
         return backend_.RecordBeginTarget(target);
+    }
+
+    inline bool FakeCommandRecorder::BeginRenderTargetWithColorLoad(
+        graphics::RenderTargetHandle target, graphics::RenderTargetLoadOp load)
+    {
+        backend_.Probe().color_load_overrides.emplace_back(target, load);
+        return BeginRenderTarget(target);
     }
 
     inline void FakeCommandRecorder::EndRenderTarget() { backend_.RecordEndTarget(); }

@@ -30,7 +30,7 @@ namespace kpengine::render
                               const PreparedRenderAssetCatalog &assets);
         void Cleanup(graphics::RenderBackend &backend);
         bool Record(FrameContext &frame, const RenderCamera &camera, Vector2f jitter,
-                    const HeightFogSettings &settings, const RenderTarget &hdr,
+                    const HeightFogSettings &settings,
                     const RenderTarget &gbuffer, const FullscreenPassResources &fullscreen,
                     graphics::CommandRecorder &recorder) const;
 

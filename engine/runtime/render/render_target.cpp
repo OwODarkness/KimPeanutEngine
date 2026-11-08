@@ -148,13 +148,16 @@ namespace kpengine::render
         }
     }
 
-    bool RenderTarget::BeginRecording(graphics::CommandRecorder &recorder) const
+    bool RenderTarget::BeginRecording(
+        graphics::CommandRecorder &recorder,
+        std::optional<graphics::RenderTargetLoadOp> color_load) const
     {
         if (!IsValid())
         {
             return false;
         }
-        return recorder.BeginRenderTarget(impl_->handle);
+        return color_load ? recorder.BeginRenderTargetWithColorLoad(impl_->handle, *color_load)
+                          : recorder.BeginRenderTarget(impl_->handle);
     }
 
     void RenderTarget::EndRecording(graphics::CommandRecorder &recorder) const

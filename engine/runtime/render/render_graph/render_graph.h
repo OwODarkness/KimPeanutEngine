@@ -117,9 +117,8 @@ namespace kpengine::render
     };
 
     // What an attachment use does to its contents. Load and Clear are the
-    // authored intent; the persistent raster targets currently fix their load
-    // operation at creation, so no authored entry sets this yet -- it exists for
-    // the transient consumer, which will describe attachments it owns.
+    // authored intent. The renderer executor honors explicit operations on
+    // single-color targets. None uses the target's configured load operation.
     enum class RenderGraphAttachmentOp : uint8_t
     {
         None,

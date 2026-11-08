@@ -370,8 +370,9 @@ imports; no separate post-process schedule is introduced.
 R7.1 implementation is complete: graph-driven full-resolution estimate/filter
 passes, ambient-diffuse integration, settings, and raw/filtered capture views.
 RelWithDebInfo Vulkan Sponza evidence confirms enabled/disabled graph behavior
-and measures the High AO passes within budget. OpenGL, AO-material overlap, and
-focused silhouette/planar-darkening acceptance remain open.
+and measures the High AO passes within budget. R7.5 verified OpenGL runtime
+and disabled parity on both APIs. AO-material overlap and focused
+silhouette/planar-darkening acceptance remain open.
 
 R7.2 carries previous submitted camera/object transforms into the GBuffer,
 writes motion UV, view depth, and validity in a fifth attachment, and provides a
@@ -411,10 +412,10 @@ validation; R5/R6 and R7.1 acceptance remain independent. See the
 - [x] **R7.4:** integrated exponential height fog; Vulkan/OpenGL numerical,
   sky, HDR/TAA, zero-density identity and terrain/indoor checks passed.
   Vulkan fog p95 is 0.024 ms. → [review](.review/R7.4.md)
-- [ ] **R7.5:** combined core acceptance and explicit subsequent decisions for
-  reflection probes, SSR, and volumetric fog. Resolve combined active Vulkan
-  storage of 36.29 MiB against the 32 MiB cap before closing the gate.
-  The follow-up effects require separate designs and do not block core completion.
+- [ ] **R7.5:** the combined runtime and budget checks pass at 30.94 MiB and
+  3.45 ms worst Vulkan GPU p95. Core sign-off still requires R7.1 focused
+  acceptance. Reflection probes, SSR, and volumetric fog have separate design
+  gates. → [review](.review/R7.5.md)
 
 ## Document ownership
 

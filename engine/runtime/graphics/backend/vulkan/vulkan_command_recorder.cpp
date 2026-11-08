@@ -70,6 +70,18 @@ namespace kpengine::graphics
 
     bool VulkanCommandRecorder::BeginRenderTarget(RenderTargetHandle target)
     {
+        return BeginRenderTarget(target, std::nullopt);
+    }
+
+    bool VulkanCommandRecorder::BeginRenderTargetWithColorLoad(RenderTargetHandle target,
+                                                               RenderTargetLoadOp load)
+    {
+        return BeginRenderTarget(target, load);
+    }
+
+    bool VulkanCommandRecorder::BeginRenderTarget(
+        RenderTargetHandle target, std::optional<RenderTargetLoadOp> color_load)
+    {
         if (command_buffer_ == VK_NULL_HANDLE || !render_target_manager_ ||
             active_target_.IsValid() || presentation_active_)
         {
@@ -78,7 +90,7 @@ namespace kpengine::graphics
         }
 
         draws_suppressed_ = false;
-        if (!render_target_manager_->BeginRendering(command_buffer_, target))
+        if (!render_target_manager_->BeginRendering(command_buffer_, target, color_load))
         {
             draws_suppressed_ = true;
             return false;

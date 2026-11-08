@@ -43,6 +43,18 @@ namespace kpengine::graphics
 
     bool OpenglCommandRecorder::BeginRenderTarget(RenderTargetHandle target)
     {
+        return BeginRenderTarget(target, std::nullopt);
+    }
+
+    bool OpenglCommandRecorder::BeginRenderTargetWithColorLoad(RenderTargetHandle target,
+                                                               RenderTargetLoadOp load)
+    {
+        return BeginRenderTarget(target, load);
+    }
+
+    bool OpenglCommandRecorder::BeginRenderTarget(
+        RenderTargetHandle target, std::optional<RenderTargetLoadOp> color_load)
+    {
         if (active_render_target_.IsValid() || presentation_active_ ||
             !services_.render_target_handles ||
             !services_.render_targets || !services_.render_target_framebuffers)
@@ -67,6 +79,11 @@ namespace kpengine::graphics
         }
 
         const RenderTargetResource &resource = (*services_.render_targets)[index];
+        if (color_load && resource.desc.color_attachments.size() != 1)
+        {
+            draws_suppressed_ = true;
+            return false;
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
         glViewport(0, 0, static_cast<GLsizei>(resource.desc.width),
                    static_cast<GLsizei>(resource.desc.height));
@@ -108,7 +125,7 @@ namespace kpengine::graphics
         }
         for (uint32_t i = 0; i < color_count; ++i)
         {
-            if (resource.desc.color_attachments[i].load_op == RenderTargetLoadOp::Clear)
+            if (color_load.value_or(resource.desc.color_attachments[i].load_op) == RenderTargetLoadOp::Clear)
             {
                 glClearBufferfv(GL_COLOR, static_cast<GLint>(i),
                                 resource.desc.color_attachments[i].clear_color.data());

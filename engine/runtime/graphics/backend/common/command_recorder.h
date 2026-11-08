@@ -62,6 +62,11 @@ namespace kpengine::graphics
         // Begins an offscreen render pass. The target must be ended before
         // beginning another target or ending the frame.
         virtual bool BeginRenderTarget(RenderTargetHandle target) = 0;
+        // Overrides the load operation for a target with one color attachment.
+        virtual bool BeginRenderTargetWithColorLoad(RenderTargetHandle, RenderTargetLoadOp)
+        {
+            return false;
+        }
         // A null color preserves the backend's presentation default. A
         // supplied color is authored in display-space and is used for the
         // presentation attachment clear.

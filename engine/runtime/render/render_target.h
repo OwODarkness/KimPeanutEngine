@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "graphics/backend/common/render_target.h"
 #include "render/texture_footprint.h"
@@ -58,7 +59,8 @@ namespace kpengine::render
         void Adopt(graphics::RenderBackend &backend, graphics::RenderTargetHandle handle,
                    const graphics::RenderTargetDesc &desc);
         void Cleanup();
-        bool BeginRecording(graphics::CommandRecorder &recorder) const;
+        bool BeginRecording(graphics::CommandRecorder &recorder,
+                            std::optional<graphics::RenderTargetLoadOp> color_load = std::nullopt) const;
         void EndRecording(graphics::CommandRecorder &recorder) const;
 
     private:

@@ -318,7 +318,7 @@ namespace kpengine::render
 
     void RecordRasterTextureFootprints(RenderProfileSnapshot &profile,
                                       TextureFootprint guides, TextureFootprint history,
-                                      TextureFootprint ao, TextureFootprint fog = {});
+                                      TextureFootprint ao);
 
     struct RenderProfileScenario
     {

@@ -109,6 +109,17 @@ TEST(RenderGraphTest, CompilesTypedBufferVersions)
                             }));
 }
 
+TEST(RenderGraphTest, RejectsLoadingAnUnproducedAttachment)
+{
+    using kpengine::render::RenderGraphAttachmentOp;
+    using kpengine::render::RenderGraphUsage;
+    RenderGraphBuilder graph;
+    const auto color = graph.CreateTexture("Color");
+    graph.AddPass({"Load", RenderGraphPassCondition::Always, true, true})
+        .Write(color, RenderGraphUsage::ColorAttachment, RenderGraphAttachmentOp::Load);
+    EXPECT_TRUE(HasDiagnostic(graph.Compile(), RenderGraphDiagnosticCode::MissingProducer));
+}
+
 TEST(RenderGraphTest, RejectsMissingProducersCyclesAndConditionalDependencies)
 {
     RenderGraphBuilder missing_builder;

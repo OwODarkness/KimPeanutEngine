@@ -699,6 +699,13 @@ namespace kpengine::render
                         // read. Clear is the explicit discard form.
                         const TextureVersion &previous =
                             textures_[texture->resource].versions[texture->version - 1];
+                        if (use.attachment_op == RenderGraphAttachmentOp::Load &&
+                            !previous.imported && !previous.producer.has_value())
+                        {
+                            result.diagnostics.push_back(
+                                {RenderGraphDiagnosticCode::MissingProducer,
+                                 "A render graph attachment loads an unproduced texture version."});
+                        }
                         add_producer_edge(previous.producer, pass);
                     }
                 }

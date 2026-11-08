@@ -43,7 +43,8 @@ namespace kpengine::graphics
         const RenderTargetDesc *GetDesc(RenderTargetHandle handle) const;
         bool SetTransientLeaseDesc(RenderTargetHandle handle, const RenderTargetDesc &desc);
 
-        bool BeginRendering(VkCommandBuffer command_buffer, RenderTargetHandle handle);
+        bool BeginRendering(VkCommandBuffer command_buffer, RenderTargetHandle handle,
+                            std::optional<RenderTargetLoadOp> color_load);
         void EndRendering(VkCommandBuffer command_buffer);
         // Moves the target's attachments to the native state the portable usage
         // requires, emitting a barrier only for attachments whose tracked layout

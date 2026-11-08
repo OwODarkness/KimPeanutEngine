@@ -88,12 +88,6 @@ namespace
             return !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
         case RenderPassCondition::HeightFogEnabled:
             return conditions.height_fog && !conditions.ray_tracing_path_trace;
-        case RenderPassCondition::HeightFogDisabled:
-            return !conditions.height_fog && !conditions.ray_tracing_path_trace;
-        case RenderPassCondition::RasterToneMapFogged:
-            return conditions.height_fog && !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
-        case RenderPassCondition::RasterToneMapUnfogged:
-            return !conditions.height_fog && !conditions.temporal_aa && !conditions.ray_tracing_path_trace;
         default:
             return true;
         }
@@ -586,6 +580,7 @@ TEST(RenderGraphCompatibilityTest, FogFeedsTheFirstHdrConsumerAndIsPrunedForPath
     using namespace kpengine::render;
     RenderFrameConditions conditions{};
     conditions.height_fog = true;
+    conditions.screen_space_ao = false;
     for (bool taa : {false, true})
     {
         conditions.temporal_aa = taa;
@@ -604,18 +599,24 @@ TEST(RenderGraphCompatibilityTest, FogFeedsTheFirstHdrConsumerAndIsPrunedForPath
         ASSERT_NE(consumer, passes.end());
         EXPECT_LT(find(FixedRenderPassId::DeferredLighting), fog);
         EXPECT_LT(fog, consumer);
-        const auto reads_fog = [&](const auto &use) {
-            return use.access == RenderGraphAccess::Read &&
-                std::any_of(plan.resources.begin(), plan.resources.end(), [&](const auto &resource) {
-                    return resource.handle == use.handle && resource.role == RenderFrameResourceRole::FoggedHdr;
-                });
-        };
-        EXPECT_TRUE(std::any_of(consumer->uses.begin(), consumer->uses.end(), reads_fog));
+        const auto fogged_hdr = std::find_if(fog->uses.begin(), fog->uses.end(), [](const auto &use) {
+            return use.access == RenderGraphAccess::Write && use.usage == RenderGraphUsage::ColorAttachment;
+        });
+        ASSERT_NE(fogged_hdr, fog->uses.end());
+        EXPECT_EQ(fogged_hdr->attachment_op, RenderGraphAttachmentOp::Load);
+        EXPECT_TRUE(std::any_of(plan.resources.begin(), plan.resources.end(), [&](const auto &resource) {
+            return resource.handle == fogged_hdr->handle && resource.role == RenderFrameResourceRole::SceneHdr;
+        }));
+        EXPECT_TRUE(std::any_of(consumer->uses.begin(), consumer->uses.end(), [&](const auto &use) {
+            return use.access == RenderGraphAccess::Read && use.handle == fogged_hdr->handle;
+        }));
+        EXPECT_EQ(graph.Transients().size(), 1u);
     }
     conditions.ray_tracing_path_trace = true;
     const auto pt = CompileRenderFramePlan(conditions);
     ASSERT_TRUE(pt.Succeeded());
-    EXPECT_FALSE(std::any_of(pt.resources.begin(), pt.resources.end(), [](const auto &resource) {
-        return resource.role == RenderFrameResourceRole::FoggedHdr;
+    const auto &passes = pt.compilation.graph->Passes();
+    EXPECT_FALSE(std::any_of(passes.begin(), passes.end(), [](const auto &pass) {
+        return pass.user_key == static_cast<uint64_t>(FixedRenderPassId::HeightFog);
     }));
 }

@@ -1892,14 +1892,19 @@ TEST(RenderSystemLifecycleTest, HeightFogPrunesZeroDensityAndInvalidatesHistoryO
     EXPECT_FALSE(zero.height_fog_effective);
     EXPECT_TRUE(zero.temporal_aa_history_valid);
     EXPECT_EQ(zero.r7_active_texture_payload_bytes, baseline.r7_active_texture_payload_bytes);
+    EXPECT_TRUE(probe->color_load_overrides.empty());
+    probe->begun_targets.clear();
     settings.density = 0.02f;
     ASSERT_TRUE(system.RequestHeightFogSettings(settings));
     const auto enabled = frame();
     EXPECT_TRUE(enabled.height_fog_effective);
     EXPECT_FALSE(enabled.temporal_aa_history_valid);
     EXPECT_EQ(enabled.temporal_aa_reset_reason, "height_fog_changed");
-    EXPECT_EQ(enabled.r7_active_texture_payload_bytes,
-              baseline.r7_active_texture_payload_bytes + 320U * 200U * 8U);
+    EXPECT_EQ(enabled.r7_active_texture_payload_bytes, baseline.r7_active_texture_payload_bytes);
+    ASSERT_EQ(probe->color_load_overrides.size(), 1u);
+    const auto &[target, load] = probe->color_load_overrides.front();
+    EXPECT_EQ(load, graphics::RenderTargetLoadOp::Load);
+    EXPECT_EQ(std::count(probe->begun_targets.begin(), probe->begun_targets.end(), target), 2);
     ASSERT_TRUE(system.RequestHeightFogSettings(settings));
     EXPECT_TRUE(frame().temporal_aa_history_valid);
     system.Shutdown();

@@ -1,8 +1,7 @@
 #version 450
 
-layout(binding = 0) uniform sampler2D scene_hdr;
-layout(binding = 1) uniform sampler2D gbuffer_depth;
-layout(binding = 2, std140) uniform HeightFogData {
+layout(binding = 0) uniform sampler2D gbuffer_depth;
+layout(binding = 1, std140) uniform HeightFogData {
     mat4 inverse_view_projection;
     vec4 camera_and_orthographic;
     vec4 forward_and_affect_sky;
@@ -33,13 +32,11 @@ float Transmittance(float start_y, float height_change, float distance)
 
 void main()
 {
-    // The HDR input and output share framebuffer coordinates on both APIs.
-    vec3 surface = texelFetch(scene_hdr, ivec2(gl_FragCoord.xy), 0).rgb;
     float depth = texture(gbuffer_depth, frag_texcoord).r;
     bool sky = depth >= 0.999999;
     if (sky && fog.forward_and_affect_sky.w < 0.5)
     {
-        out_color = vec4(surface, 1.0);
+        out_color = vec4(0.0, 0.0, 0.0, 1.0);
         return;
     }
     vec2 ndc = frag_texcoord * 2.0 - 1.0;
@@ -59,5 +56,5 @@ void main()
     float max_distance = fog.density_height_falloff_distance.w;
     float distance = sky ? max_distance : min(length_to_surface, max_distance);
     float t = Transmittance(origin.y, distance * direction.y, distance);
-    out_color = vec4(mix(fog.color.rgb, surface, t), t);
+    out_color = vec4(fog.color.rgb, t);
 }

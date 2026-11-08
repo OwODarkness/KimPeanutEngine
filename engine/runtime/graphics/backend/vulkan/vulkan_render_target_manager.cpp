@@ -289,8 +289,9 @@ namespace kpengine::graphics
         return true;
     }
 
-    bool VulkanRenderTargetManager::BeginRendering(VkCommandBuffer command_buffer,
-                                                    RenderTargetHandle handle)
+    bool VulkanRenderTargetManager::BeginRendering(
+        VkCommandBuffer command_buffer, RenderTargetHandle handle,
+        std::optional<RenderTargetLoadOp> color_load)
     {
         const auto reject = [&handle](const char *reason)
         {
@@ -308,7 +309,14 @@ namespace kpengine::graphics
             return reject("target has no attachments");
         }
 
+        if (color_load && target.color_attachments.size() != 1)
+            return reject("color load override requires one color attachment");
+
         TargetState &state = states_[index];
+        if (color_load == RenderTargetLoadOp::Load &&
+            state.color_layouts[0] == VK_IMAGE_LAYOUT_UNDEFINED)
+            return reject("cannot load an undefined color attachment");
+
         std::vector<VkRenderingAttachmentInfo> color_attachments;
         color_attachments.reserve(target.color_attachments.size());
         for (uint32_t i = 0; i < target.color_attachments.size(); ++i)
@@ -321,17 +329,23 @@ namespace kpengine::graphics
             {
                 return reject("color attachment has no Vulkan image or view");
             }
+            const RenderTargetColorAttachment &attachment = target.desc.color_attachments[i];
+            const auto load = color_load.value_or(attachment.load_op);
+            const bool preserves_color = load == RenderTargetLoadOp::Load;
+            // The load and blend read previous attachment writes even when the layout is unchanged.
+            const VkAccessFlags2 src_access = state.color_layouts[i] == VK_IMAGE_LAYOUT_UNDEFINED
+                ? 0 : VK_ACCESS_2_MEMORY_READ_BIT | (preserves_color ? VK_ACCESS_2_MEMORY_WRITE_BIT : 0);
+            const VkAccessFlags2 dst_access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+                (preserves_color ? VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT : 0);
             frame_context_->TransitionImageLayout(command_buffer, color.image,
                 state.color_layouts[i], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                state.color_layouts[i] == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
-                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+                src_access, dst_access, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
             state.color_layouts[i] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            const RenderTargetColorAttachment &attachment = target.desc.color_attachments[i];
             VkRenderingAttachmentInfo info{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
             info.imageView = color.view;
             info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            info.loadOp = ToLoadOp(attachment.load_op);
+            info.loadOp = ToLoadOp(load);
             info.storeOp = ToStoreOp(attachment.store_op);
             VkClearValue clear{};
             clear.color = {{attachment.clear_color[0], attachment.clear_color[1],

@@ -34,6 +34,7 @@ namespace kpengine::graphics
                    VulkanAccelerationStructureOwner *acceleration_structure_owner);
 
         bool BeginRenderTarget(RenderTargetHandle target) override;
+        bool BeginRenderTargetWithColorLoad(RenderTargetHandle target, RenderTargetLoadOp load) override;
         bool BeginPresentation(const std::array<float, 4> *clear_color = nullptr) override;
         void EndRenderTarget() override;
         bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage,
@@ -74,6 +75,7 @@ namespace kpengine::graphics
         }
 
     private:
+        bool BeginRenderTarget(RenderTargetHandle target, std::optional<RenderTargetLoadOp> color_load);
         void ResetStateCache() noexcept;
 
         VkCommandBuffer command_buffer_ = VK_NULL_HANDLE;

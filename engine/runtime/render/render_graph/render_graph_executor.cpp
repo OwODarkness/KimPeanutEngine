@@ -206,6 +206,19 @@ namespace kpengine::render
             if (has_attachment_write && attachment == nullptr)
                 return false;
 
+            std::optional<graphics::RenderTargetLoadOp> color_load;
+            for (const RenderGraphResourceUse &use : pass.uses)
+            {
+                if (use.usage == RenderGraphUsage::ColorAttachment &&
+                    use.attachment_op != RenderGraphAttachmentOp::None)
+                {
+                    if (attachment->GetColorAttachmentCount() != 1 || color_load)
+                        return false;
+                    color_load = use.attachment_op == RenderGraphAttachmentOp::Load
+                        ? graphics::RenderTargetLoadOp::Load : graphics::RenderTargetLoadOp::Clear;
+                }
+            }
+
             const uint64_t profile_key = pass.user_key.value_or(0);
             if (begin_profile)
                 begin_profile(profile_key);
@@ -213,7 +226,7 @@ namespace kpengine::render
             bool succeeded = true;
             if (attachment != nullptr)
             {
-                attachment_open = attachment->BeginRecording(*recorder_);
+                attachment_open = attachment->BeginRecording(*recorder_, color_load);
                 succeeded = attachment_open;
             }
             if (succeeded)

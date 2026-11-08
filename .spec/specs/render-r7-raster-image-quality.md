@@ -1,6 +1,6 @@
 # Render R7 raster image quality
 
-- Status: active overall; R7.0 and R7.2–R7.4 complete. R7.1 focused acceptance and R7.5 combined acceptance remain open.
+- Status: R7.0 and R7.2–R7.4 are complete. The R7.5 combined budgets pass. Core sign-off still requires R7.1 focused acceptance.
 - Owner: Render module.
 - Parent TODO: [R7 roadmap](../../docs/render/TODO.md).
 - Canonical design: [R7 stage plan](../../docs/render/.plan/R7.md).
@@ -30,9 +30,9 @@ composition, Low/Medium/High tap-count settings, requested/effective runtime
 stats, and settings-off graph pruning. PT skips the raster AO producers.
 RelWithDebInfo Vulkan Sponza runtime captures verified enabled and disabled
 behavior, and raw/filtered semantic views were inspected. High quality measured
-0.434 ms combined AO GPU time at 1094x631. OpenGL runtime, AO-material overlap,
-and focused silhouette/planar-darkening checks remain unverified; R7.1 stage
-acceptance is therefore open.
+0.434 ms combined AO GPU time at 1094×631. R7.5 verified OpenGL runtime and
+AO-off parity on both APIs. Material overlap and focused silhouette and planar
+checks remain open.
 
 R7.2 adds previous-submitted camera and rigid-object transforms, a fifth GBuffer
 attachment carrying previous-minus-current UV motion, positive view depth, and
@@ -73,8 +73,13 @@ HDR before TAA/tone mapping. Vulkan/OpenGL agree with the analytic sky cases
 within 0.003 linear transmittance at the measured pixel, and zero density
 preserves byte-identical captures. Debug Sponza, indoor, and procedural terrain
 preview checks pass; Vulkan PT bypasses fog. RelWithDebInfo Vulkan fog p95 is
-0.024 ms. Combined active allocation is 36.29 MiB at 1094×631, above the
-32 MiB R7.5 ceiling. See [R7.4 evidence](../journal/2026-11-06-render-r7-4-height-fog.md).
+0.024 ms in the R7.4 build. See [R7.4 evidence](../journal/2026-11-06-render-r7-4-height-fog.md).
+
+R7.5 reuses the lit HDR target for fog, reducing combined active Vulkan
+storage from 36.29 MiB to 30.94 MiB at 1094×631. Independent and combined
+effect captures, shadow modes, PT bypass and return, and combined performance
+have evidence. The R7.1 focused material and artifact checks remain open.
+See the [R7.5 review](../../docs/render/.review/R7.5.md).
 
 ## Scope and non-goals
 
@@ -118,8 +123,8 @@ the [R7 plan](../../docs/render/.plan/R7.md).
 - [ ] Motion/disocclusion/cuts, edits, resize/reload/toggle, injected failure,
   rejected submission, and safe teardown have evidence.
 - [ ] Combined effects preserve selection/UI and semantic diagnostic capture.
-- [ ] Matched RelWithDebInfo results satisfy the frozen budgets.
-- [ ] R7.5 records subsequent design decisions without claiming implementation.
+- [x] Matched RelWithDebInfo results satisfy the combined GPU and texture budgets.
+- [x] R7.5 records subsequent design decisions without claiming implementation.
 
 ## Validation plan
 

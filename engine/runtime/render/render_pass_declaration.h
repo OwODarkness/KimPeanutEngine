@@ -29,7 +29,6 @@ namespace kpengine::render
         ScreenSpaceAoFiltered,
         TemporalAaHistoryRead,
         TemporalAaOutput,
-        FoggedHdr,
         Count,
     };
 
@@ -52,7 +51,6 @@ namespace kpengine::render
         ScreenSpaceAoFiltered,
         TemporalAaHistoryRead,
         TemporalAaOutput,
-        FoggedHdr,
         SceneGeometry,
         SceneInstances,
         SceneScratch,
@@ -129,9 +127,6 @@ namespace kpengine::render
         TemporalAaEnabled,
         TemporalAaDisabled,
         HeightFogEnabled,
-        HeightFogDisabled,
-        RasterToneMapFogged,
-        RasterToneMapUnfogged,
     };
 
     struct RenderPassResourceUse
@@ -148,6 +143,7 @@ namespace kpengine::render
         // are not needed and describe reads that do not happen.
         RenderGraphAttachmentScope scope{};
         RenderPassCondition condition = RenderPassCondition::Always;
+        RenderGraphAttachmentOp attachment_op = RenderGraphAttachmentOp::None;
     };
 
     struct FixedRenderPassEntry
@@ -214,7 +210,6 @@ namespace kpengine::render
         SceneHdr = 1,
         ScreenSpaceAoRaw = 2,
         ScreenSpaceAoFiltered = 3,
-        FoggedHdr = 4,
     };
 
     // The one authored raster declaration. The compiled plan is derived from it
