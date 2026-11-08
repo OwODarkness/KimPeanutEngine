@@ -2,7 +2,8 @@
 
 **Status: SG1 CPU foundation with optional lab module (2026-11-08).**
 The always-available `Signal` target owns channel-major `SampleBlock` storage,
-constant/impulse/sine/seeded-uniform generators and scalar measurements; the
+constant/impulse/sine/seeded-uniform generators, periodic harmonic distortion,
+additive seeded noise and scalar measurements; the
 standalone `signal-lab` ImGui shell is optional. Acquisition and GPU processing
 remain open. Start from
 [SG1](.plan/SG1.md), then [SG2](.plan/SG2.md). The [roadmap](TODO.md) owns
@@ -113,6 +114,10 @@ ExperimentConfig + source state + integer sample clock
   requested integer count; do not integrate `delta_time` to advance signal
   phase. Keep oscillator phase bounded with an explicit update rule. A change
   of sample rate starts a new epoch; reset or explicitly migrate state.
+- A composite source adds normalized second/third harmonic components to its
+  periodic base and deterministic uniform noise with an explicit RMS level.
+  Its seed and parameters are part of `SignalGeneratorConfig`, so generated
+  blocks and scope acquisition reproduce the same source model.
 - Generic samples start as dimensionless quantities. A synthetic voltage
   source may declare volts; audio PCM is normalized full-scale data. Never
   silently relabel normalized audio as volts. Frequency uses Hz, phase radians,

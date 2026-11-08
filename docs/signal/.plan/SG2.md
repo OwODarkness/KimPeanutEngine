@@ -1,6 +1,6 @@
 # SG2 — first simulated oscilloscope
 
-**Status: proposed; depends on SG1.** [Roadmap](../TODO.md) ·
+**Status: implementation in progress; depends on SG1.** [Roadmap](../TODO.md) ·
 [Architecture](../PLANS.md). Deliver a one-source instrument with trustworthy
 acquisition, triggering, readouts, and replay. Spectrum begins in SG3.
 
@@ -12,25 +12,21 @@ Generate fixed blocks of 256 samples; display a 480-sample (10 ms) capture with
 number of periods, and 1 ms period. Trigger capture does not have to be aligned
 to a block boundary. The first 120 samples prime the pre-trigger history.
 
-## Host integration
+## Host integration and ownership
 
-Use the Audio Player/Terrain application-host and EditorUILib presentation
-pattern. Add `ApplicationMode::SignalLab`, `signal-lab` parser/help text,
-module-owned registration and an option-gated host factory. Inspect and update
-the fixed-size host factory array, invalid index sentinel, mode-name mappings,
-`UsesHostPresentation`, and launch/startup guards together. Test enabled and
-disabled mode selection and keep the existing modes working.
+Use Runtime's global `ApplicationHostRegistry`: the module registers
+`signal-lab` with its factory and shared-window layout. Do not add a Runtime
+enum, mode switch, fixed host-table slot, or mode-name mapping. Runtime already
+calls the generic host `Tick` on the game thread and `RenderPresentation` on
+its render thread; Signal Lab composes those existing hooks.
 
-Compose SignalLabMode -> SignalLab/SignalCore; RuntimeLib does not link back
-to the module. The host can use existing shared presentation initialization
-even if it currently requires minimal scene-service setup; do not undertake
-a broad host-service extraction solely for this tool.
-
-SG2 uses game-thread simulation and render-thread immutable snapshots, no
-worker. The host owns session lifetime. GUI and command mutations pass through
-the session owner using the existing command scheduling pattern. The published
-snapshot has copied statistics and shared immutable capture storage; render
-does not retain a view into a ring the game thread may overwrite.
+Simulated acquisition belongs to `SignalScopeSession` in the Signal Lab module.
+Runtime `Signal` owns reusable sample data, generators and statistics; it does
+not own trigger, ring, capture or scope state. The host owns one session and
+shares it with the UI. A mutex serializes short session mutations; the ring
+remains private and each published snapshot owns immutable capture storage. No
+worker is needed for deterministic 48 kHz software input. Host commands execute
+on Runtime's existing game-thread command lane.
 
 ## Acquisition and trigger semantics
 

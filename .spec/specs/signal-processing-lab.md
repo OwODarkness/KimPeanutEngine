@@ -142,8 +142,9 @@ seed zero, golden samples, reset replay and partition invariance are covered.
 Constant and unit-impulse fixtures verify analytic statistics. See the
 [SG1 implementation journal](../journal/2026-11-08-signal-sg1-generators.md).
 
-Validation: Debug `SignalUnitTest` builds and signal-labeled CTest passes 13/13.
-SG2 acquisition remains open.
+Validation: SG1's Debug `SignalUnitTest` passed 13/13. SG2 implementation now
+passes 25/25 direct GoogleTest cases and builds the Debug application. Vulkan
+visual and live status checks are recorded in the [SG2 implementation journal](../journal/2026-11-08-signal-sg2.md); OpenGL and lifecycle acceptance remain open.
 
 ## Validation plan
 

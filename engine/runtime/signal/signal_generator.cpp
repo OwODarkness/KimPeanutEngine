@@ -80,9 +80,13 @@ namespace kpengine::signal
         }
         if (!std::isfinite(config.amplitude) || config.amplitude < 0.0 ||
             !std::isfinite(config.offset) || !std::isfinite(config.constant_value) ||
-            !std::isfinite(config.phase_radians))
+            !std::isfinite(config.phase_radians) ||
+            !std::isfinite(config.harmonic_distortion) ||
+            config.harmonic_distortion < 0.0 || config.harmonic_distortion > 1.0 ||
+            !std::isfinite(config.noise_rms) || config.noise_rms < 0.0)
         {
-            diagnostic = "signal amplitude must be non-negative and all values must be finite";
+            diagnostic = "signal values must be finite; noise must be non-negative and "
+                         "harmonic distortion must be in [0, 1]";
             return std::nullopt;
         }
         return SignalGenerator{std::move(config)};
@@ -124,6 +128,7 @@ namespace kpengine::signal
         std::span<double> samples = block->MutableChannelSamples(0);
         for (std::size_t index = 0; index < sample_count; ++index)
         {
+            const double sample_phase = next_phase;
             double sample = 0.0;
             switch (config_.kind)
             {
@@ -170,6 +175,34 @@ namespace kpengine::signal
                          (2.0 * unit_interval - 1.0);
                 break;
             }
+            }
+
+            if (config_.harmonic_distortion > 0.0 &&
+                (config_.kind == SignalKind::Sine || config_.kind == SignalKind::Cosine ||
+                 config_.kind == SignalKind::Square))
+            {
+                constexpr double kSecondHarmonicWeight = 0.65;
+                constexpr double kThirdHarmonicWeight = 0.35;
+                constexpr double kHarmonicWeightNorm = 0.73824115301167;
+                const auto periodic = [this](const double phase)
+                {
+                    return config_.kind == SignalKind::Cosine
+                        ? std::cos(phase) : std::sin(phase);
+                };
+                sample += config_.amplitude * config_.harmonic_distortion *
+                    (kSecondHarmonicWeight * periodic(2.0 * sample_phase) +
+                     kThirdHarmonicWeight * periodic(3.0 * sample_phase)) /
+                    kHarmonicWeightNorm;
+            }
+
+            if (config_.noise_rms > 0.0)
+            {
+                const std::uint64_t random_bits = NextSplitMix64(next_random_state);
+                const double unit_interval = static_cast<double>(random_bits >> 11) *
+                                             kUnit53Scale;
+                constexpr double kUniformRmsScale = 1.7320508075688772;
+                sample += config_.noise_rms * kUniformRmsScale *
+                          (2.0 * unit_interval - 1.0);
             }
 
             if (!std::isfinite(sample))

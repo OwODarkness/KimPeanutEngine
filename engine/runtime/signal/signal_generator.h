@@ -29,6 +29,10 @@ namespace kpengine::signal
         double offset = 0.0;
         double constant_value = 0.0;
         double phase_radians = 0.0;
+        // RMS ratio of the added 2nd/3rd harmonics to a periodic fundamental.
+        double harmonic_distortion = 0.0;
+        // Deterministic uniform noise RMS, expressed in the signal's unit.
+        double noise_rms = 0.0;
         std::uint64_t impulse_sample_index = 0;
         std::uint64_t seed = 0;
         SampleUnit unit = SampleUnit::Dimensionless;

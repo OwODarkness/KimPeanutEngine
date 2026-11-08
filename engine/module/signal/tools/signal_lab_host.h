@@ -11,6 +11,7 @@
 namespace kpengine::signal
 {
     class SignalLabEditor;
+    class SignalScopeSession;
 
     class SignalLabHost final : public runtime::IApplicationHost
     {
@@ -34,6 +35,8 @@ namespace kpengine::signal
         void Shutdown() noexcept override;
 
     private:
+        std::shared_ptr<SignalScopeSession> scope_session_;
+        std::vector<runtime::command::CommandRegistration> command_registrations_;
         std::unique_ptr<SignalLabEditor> editor_;
         std::vector<asset::AssetID> render_asset_roots_;
         bool initialized_ = false;

@@ -25,6 +25,8 @@ namespace kpengine::runtime
 
 namespace kpengine::signal
 {
+    class SignalScopeSession;
+
     struct SignalLabSignal
     {
         SignalLabSignal(std::string signal_name,
@@ -54,13 +56,16 @@ namespace kpengine::signal
         SignalLabEditor();
         ~SignalLabEditor();
 
-        bool Initialize(runtime::Engine &engine, std::string &diagnostic);
+        bool Initialize(runtime::Engine &engine,
+                        std::shared_ptr<SignalScopeSession> scope_session,
+                        std::string &diagnostic);
         bool Render(std::string &diagnostic);
         void Shutdown() noexcept;
 
     private:
         enum class DisplayMode : std::uint8_t
         {
+            Scope,
             Overlay,
             Composite
         };
@@ -71,14 +76,19 @@ namespace kpengine::signal
 
         std::unique_ptr<editor::EditorUI> ui_;
         std::unique_ptr<editor::EditorLogComponent> log_component_;
+        std::shared_ptr<SignalScopeSession> scope_session_;
         std::vector<SignalLabSignal> signals_;
         std::vector<double> composite_samples_;
         SignalStatistics composite_statistics_{};
-        DisplayMode display_mode_ = DisplayMode::Overlay;
+        DisplayMode display_mode_ = DisplayMode::Scope;
         bool composite_valid_ = true;
         SignalKind generator_kind_ = SignalKind::Sine;
+        bool generator_realistic_ = true;
+        double generator_sample_rate_hz_ = 48'000.0;
         double generator_frequency_hz_ = 1'000.0;
         double generator_amplitude_ = 1.0;
+        double generator_harmonic_distortion_percent_ = 18.0;
+        double generator_noise_rms_ = 0.04;
         double generator_phase_degrees_ = 0.0;
         double generator_offset_ = 0.0;
         std::size_t selected_signal_ = 0;

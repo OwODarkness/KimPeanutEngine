@@ -1,6 +1,6 @@
 # Signal roadmap and acceptance ledger
 
-**SG1 CPU foundation complete; SG2 acquisition is next.** [Architecture](PLANS.md) · [Local rules](AGENTS.md) ·
+**SG1 complete; SG2 implementation in progress and acceptance remains.** [Architecture](PLANS.md) · [Local rules](AGENTS.md) ·
 [Spec](../../.spec/specs/signal-processing-lab.md) ·
 [Planning evidence](../../.spec/journal/2026-11-08-signal-processing-plan.md)
 
@@ -46,9 +46,12 @@ evidence. Complete correctness gates before optimizing that operation.
 
 ## SG2 — first useful oscilloscope
 
-- [ ] Add launch-help and mode-isolation coverage for the global host registry.
-- [ ] Implement bounded acquisition and auto/normal/single triggers across blocks.
-- [ ] Show source/timebase/trigger controls, units, readouts and data validity.
+- [x] Generate reproducible composite sources from a periodic base, normalized
+  second/third harmonics, and seeded additive noise; feed the same source
+  configuration to the sample list and Scope.
+- [ ] Verify launch-help and mode isolation through the global host registry.
+- [x] Implement bounded acquisition and auto/normal/single triggers across blocks.
+- [x] Show source/timebase/trigger controls, units, readouts and capture validity.
 - [ ] Verify visible Vulkan/OpenGL captures, pause/step/reset, resize, DPI and
   orderly shutdown; headless correctness remains independently runnable.
 

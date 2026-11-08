@@ -1,4 +1,5 @@
 add_library(SignalLabMode STATIC
+    tools/signal_scope_session.cpp
     tools/signal_lab_editor.cpp
     tools/signal_lab_host.cpp)
 target_include_directories(SignalLabMode PUBLIC

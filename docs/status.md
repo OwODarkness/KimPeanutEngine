@@ -6,20 +6,25 @@
   build passes.
   → [host architecture](engine/PLANS.md), [roadmap](engine/TODO.md)
 
-- **Signal processing lab (2026-11-08; SG1 CPU foundation complete)** — Added the
+- **Signal processing lab (2026-11-08; SG1 complete, SG2 implementation in progress)** — Added the
   always-available headless Runtime `Signal` target, validated channel-major
   `SampleBlock` storage and borrowed read-only `SampleBlockView`, constant,
-  impulse, sine, cosine, square and seeded uniform noise generation, scalar
-  statistics, and a Signal Lab multi-signal workspace with colored overlays and
+  impulse, sine, cosine, square and seeded uniform noise generation, composite
+  periodic sources with harmonic distortion and reproducible additive noise,
+  scalar statistics, and a Signal Lab multi-signal workspace with colored overlays and
   selected-signal measurements. The `signal-lab` shell stays behind
   `KPENGINE_ENABLE_SIGNAL` (OFF by default). Application hosts register by
   string ID in a global registry with declared presentation layout; Runtime
   provides the built-in `scene3d` host and optional modes register from modules.
-  Acquisition, spectrum, filtering and compute dispatch remain open.
-  SignalUnitTest passes 13/13 and the
-  Debug executable builds with the optional lab enabled. →
+  SG2 now adds a bounded simulated acquisition ring, triggered immutable
+  captures, sample-clocked Auto/Normal/Single modes, adjustable timebase and
+  holdoff, measured frequency with timing uncertainty, commands and scope UI.
+  Headless checks cover capture values, edge modes, ring wrap and 30/60/144 Hz
+  scheduling. Visible Vulkan/OpenGL acceptance is still open. Spectrum,
+  filtering and compute dispatch remain future stages. →
   [architecture](signal/PLANS.md), [roadmap](signal/TODO.md),
-  [SG1](signal/.plan/SG1.md), [SG2](signal/.plan/SG2.md)
+  [SG1](signal/.plan/SG1.md), [SG2](signal/.plan/SG2.md),
+  [journal](../.spec/journal/2026-11-08-signal-sg2.md)
 
 - **R7.5 combined raster checkpoint (2026-11-06)** — Fog now loads and
   blends into SceneHdr, removing a second HDR allocation. Vulkan combined

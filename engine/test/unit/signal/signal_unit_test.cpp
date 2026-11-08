@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -13,10 +14,248 @@
 #include "signal/sample_block.h"
 #include "signal/signal_statistics.h"
 #include "signal/signal_generator.h"
+#include "signal_scope_session.h"
 
 namespace
 {
     using namespace kpengine::signal;
+
+    TEST(SignalScopeSessionTest, DefaultCaptureMatchesOneKilohertzSine)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        session.Pause();
+        ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        const auto snapshot = session.Snapshot();
+        ASSERT_NE(snapshot, nullptr);
+        ASSERT_NE(snapshot->capture, nullptr);
+        ASSERT_EQ(snapshot->capture->size(), SignalScopeSession::kCaptureSize);
+        ASSERT_TRUE(snapshot->trigger_sample.has_value());
+        EXPECT_EQ(snapshot->first_sample, *snapshot->trigger_sample -
+            SignalScopeSession::kPretriggerSamples);
+        EXPECT_NEAR(snapshot->measurements.peak_to_peak, 2.0, 1.0e-12);
+        EXPECT_NEAR(snapshot->measurements.rms, std::sqrt(0.5), 1.0e-12);
+        ASSERT_TRUE(snapshot->frequency_available);
+        EXPECT_NEAR(snapshot->measured_frequency_hz, 1'000.0, 1.0e-9);
+    }
+
+    TEST(SignalScopeSessionTest, AutoPublishesAnUntriggeredWindowWithoutInventingEdge)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        SignalGeneratorConfig constant;
+        constant.kind = SignalKind::Constant;
+        constant.constant_value = 0.25;
+        ASSERT_TRUE(session.SetSource(constant, diagnostic)) << diagnostic;
+        ASSERT_TRUE(session.SetTrigger(1.0, 0.0, ScopeTriggerEdge::Rising,
+                                      ScopeTriggerMode::Auto, diagnostic)) << diagnostic;
+        session.Pause();
+        for (int i = 0; i < 19; ++i)
+        {
+            ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        }
+        const auto snapshot = session.Snapshot();
+        ASSERT_NE(snapshot, nullptr);
+        ASSERT_NE(snapshot->capture, nullptr);
+        EXPECT_FALSE(snapshot->trigger_sample.has_value());
+        EXPECT_EQ(snapshot->state_label, "Auto / no trigger / stale");
+        EXPECT_TRUE(snapshot->stale);
+        EXPECT_EQ(snapshot->measurements.sample_count, SignalScopeSession::kCaptureSize);
+        EXPECT_DOUBLE_EQ(snapshot->measurements.minimum, 0.25);
+        EXPECT_DOUBLE_EQ(snapshot->measurements.maximum, 0.25);
+    }
+
+    TEST(SignalScopeSessionTest, PauseAndStepKeepTheSampleClockExplicit)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        session.Pause();
+        ASSERT_TRUE(session.Tick(3.0, diagnostic)) << diagnostic;
+        EXPECT_EQ(session.Snapshot()->sample_position, 0u);
+        ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        EXPECT_EQ(session.Snapshot()->sample_position, SignalScopeSession::kBlockSize);
+        session.Run();
+        ASSERT_TRUE(session.Tick(1.0 / 60.0, diagnostic)) << diagnostic;
+        EXPECT_EQ(session.Snapshot()->sample_position, 1'024u);
+    }
+
+    TEST(SignalScopeSessionTest, SingleCaptureStopsAndRequiresExplicitArm)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        ASSERT_TRUE(session.SetTrigger(0.0, 0.01, ScopeTriggerEdge::Rising,
+                                      ScopeTriggerMode::Single, diagnostic)) << diagnostic;
+        session.Pause();
+        for (int i = 0; i < 4 &&
+             session.Snapshot()->transport != ScopeTransport::Stopped; ++i)
+        {
+            ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        }
+        const auto captured = session.Snapshot();
+        ASSERT_NE(captured->capture, nullptr);
+        EXPECT_EQ(captured->transport, ScopeTransport::Stopped);
+        const auto position = captured->sample_position;
+        ASSERT_TRUE(session.Tick(1.0, diagnostic)) << diagnostic;
+        EXPECT_EQ(session.Snapshot()->sample_position, position);
+        ASSERT_TRUE(session.Arm(diagnostic)) << diagnostic;
+        EXPECT_EQ(session.Snapshot()->transport, ScopeTransport::Running);
+    }
+
+    TEST(SignalScopeSessionTest, RejectsInvalidSourceAndTriggerWithoutMutatingSource)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        const auto before = session.Snapshot();
+        SignalGeneratorConfig invalid = before->source;
+        invalid.sample_rate_hz = 0.0;
+        EXPECT_FALSE(session.SetSource(invalid, diagnostic));
+        EXPECT_FALSE(diagnostic.empty());
+        EXPECT_FALSE(session.SetTrigger(0.0, -1.0, ScopeTriggerEdge::Rising,
+                                       ScopeTriggerMode::Auto, diagnostic));
+        EXPECT_DOUBLE_EQ(session.Snapshot()->source.sample_rate_hz, 48'000.0);
+    }
+
+    TEST(SignalScopeSessionTest, DetectsRisingTriggerAcrossGenerationBlockBoundary)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        SignalGeneratorConfig source;
+        source.frequency_hz = 100.0;
+        source.phase_radians = -2.0 * std::numbers::pi_v<double> *
+            source.frequency_hz / source.sample_rate_hz * 255.5;
+        ASSERT_TRUE(session.SetSource(source, diagnostic)) << diagnostic;
+        ASSERT_TRUE(session.SetTrigger(0.0, 0.01, ScopeTriggerEdge::Rising,
+                                      ScopeTriggerMode::Normal, diagnostic)) << diagnostic;
+        session.Pause();
+        for (int i = 0; i < 3; ++i)
+        {
+            ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        }
+        const auto snapshot = session.Snapshot();
+        ASSERT_TRUE(snapshot->trigger_sample.has_value());
+        EXPECT_EQ(*snapshot->trigger_sample, 256u);
+        EXPECT_EQ(snapshot->first_sample, 136u);
+    }
+
+    TEST(SignalScopeSessionTest, FallingTriggerUsesTheDownwardCrossing)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        SignalGeneratorConfig source;
+        source.phase_radians = std::numbers::pi_v<double> / 2.0;
+        ASSERT_TRUE(session.SetSource(source, diagnostic)) << diagnostic;
+        ASSERT_TRUE(session.SetTrigger(0.0, 0.01, ScopeTriggerEdge::Falling,
+                                      ScopeTriggerMode::Normal, diagnostic)) << diagnostic;
+        session.Pause();
+        for (int i = 0; i < 3; ++i)
+        {
+            ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        }
+        const auto snapshot = session.Snapshot();
+        ASSERT_TRUE(snapshot->trigger_sample.has_value());
+        ASSERT_NE(snapshot->capture, nullptr);
+        const auto trigger_offset = SignalScopeSession::kPretriggerSamples;
+        EXPECT_GT((*snapshot->capture)[trigger_offset - 1], 0.0);
+        EXPECT_LE((*snapshot->capture)[trigger_offset], 0.0);
+    }
+
+    TEST(SignalScopeSessionTest, CaptureStorageSurvivesAcquisitionRingWrap)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        ASSERT_TRUE(session.SetTrigger(0.0, 0.01, ScopeTriggerEdge::Rising,
+                                      ScopeTriggerMode::Normal, diagnostic)) << diagnostic;
+        session.Pause();
+        for (std::size_t i = 0; i <
+             SignalScopeSession::kRingCapacity / SignalScopeSession::kBlockSize + 4; ++i)
+        {
+            ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        }
+        const auto snapshot = session.Snapshot();
+        ASSERT_TRUE(snapshot->trigger_sample.has_value());
+        ASSERT_NE(snapshot->capture, nullptr);
+        EXPECT_GT(*snapshot->trigger_sample, SignalScopeSession::kRingCapacity);
+        EXPECT_EQ(snapshot->capture->size(), SignalScopeSession::kCaptureSize);
+    }
+
+    TEST(SignalScopeSessionTest, EqualElapsedTimeHasTheSameAcquiredCountAtDifferentUiRates)
+    {
+        std::array<std::uint64_t, 3> positions{};
+        constexpr std::array<int, 3> frame_rates{30, 60, 144};
+        for (std::size_t rate_index = 0; rate_index < frame_rates.size(); ++rate_index)
+        {
+            SignalScopeSession session;
+            std::string diagnostic;
+            for (int frame = 0; frame < frame_rates[rate_index]; ++frame)
+            {
+                ASSERT_TRUE(session.Tick(1.0 / frame_rates[rate_index], diagnostic))
+                    << diagnostic;
+            }
+            positions[rate_index] = session.Snapshot()->sample_position;
+        }
+        EXPECT_EQ(positions[0], positions[1]);
+        EXPECT_EQ(positions[1], positions[2]);
+        EXPECT_EQ(positions[0], (48'000 / SignalScopeSession::kBlockSize) *
+                                 SignalScopeSession::kBlockSize);
+    }
+
+    TEST(SignalScopeSessionTest, TimebaseChangesCaptureWindowWithoutChangingSampleClock)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        session.Pause();
+        ASSERT_TRUE(session.SetTimebaseMs(5.0, diagnostic)) << diagnostic;
+        ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        const auto snapshot = session.Snapshot();
+        ASSERT_NE(snapshot->capture, nullptr);
+        EXPECT_DOUBLE_EQ(snapshot->timebase_ms, 5.0);
+        EXPECT_EQ(snapshot->capture_size, 240u);
+        EXPECT_EQ(snapshot->pretrigger_samples, 60u);
+        EXPECT_EQ(snapshot->sample_position, 512u);
+        EXPECT_NEAR(snapshot->measurements.rms, std::sqrt(0.5), 1.0e-12);
+
+        EXPECT_FALSE(session.SetTimebaseMs(2'000.0, diagnostic));
+        EXPECT_DOUBLE_EQ(session.Snapshot()->timebase_ms, 5.0);
+    }
+
+    TEST(SignalScopeSessionTest, HoldoffPreventsEarlyRetriggering)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        ASSERT_TRUE(session.SetTrigger(0.0, 0.01, ScopeTriggerEdge::Rising,
+                                      ScopeTriggerMode::Normal, diagnostic)) << diagnostic;
+        ASSERT_TRUE(session.SetHoldoffSamples(1'000, diagnostic)) << diagnostic;
+        session.Pause();
+        for (int i = 0; i < 10; ++i)
+        {
+            ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        }
+        const auto snapshot = session.Snapshot();
+        ASSERT_TRUE(snapshot->trigger_sample.has_value());
+        EXPECT_GE(*snapshot->trigger_sample, 1'145u);
+        EXPECT_EQ(snapshot->holdoff_samples, 1'000u);
+    }
+
+    TEST(SignalScopeSessionTest, ConstantAtThresholdDoesNotProduceAnEdge)
+    {
+        SignalScopeSession session;
+        std::string diagnostic;
+        SignalGeneratorConfig source;
+        source.kind = SignalKind::Constant;
+        source.constant_value = 1.0;
+        ASSERT_TRUE(session.SetSource(source, diagnostic)) << diagnostic;
+        ASSERT_TRUE(session.SetTrigger(1.0, 0.0, ScopeTriggerEdge::Rising,
+                                      ScopeTriggerMode::Normal, diagnostic)) << diagnostic;
+        session.Pause();
+        for (int i = 0; i < 20; ++i)
+        {
+            ASSERT_TRUE(session.Step(diagnostic)) << diagnostic;
+        }
+        EXPECT_EQ(session.Snapshot()->capture, nullptr);
+        EXPECT_FALSE(session.Snapshot()->trigger_sample.has_value());
+    }
 
     SignalGenerator MakeSineGenerator()
     {
