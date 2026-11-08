@@ -1,12 +1,12 @@
-#ifndef KPENGINE_RUNTIME_HOST_SCENE_3D_HOST_H
-#define KPENGINE_RUNTIME_HOST_SCENE_3D_HOST_H
+#ifndef KPENGINE_RUNTIME_APPLICATION_SCENE_3D_HOST_H
+#define KPENGINE_RUNTIME_APPLICATION_SCENE_3D_HOST_H
 
 #include <atomic>
 #include <string>
 
 #include "host/application_host.h"
 
-namespace kpengine::runtime
+namespace kpengine::runtime::application
 {
     class Scene3DHost final : public IApplicationHost
     {
@@ -22,4 +22,4 @@ namespace kpengine::runtime
     };
 }
 
-#endif // KPENGINE_RUNTIME_HOST_SCENE_3D_HOST_H
+#endif // KPENGINE_RUNTIME_APPLICATION_SCENE_3D_HOST_H

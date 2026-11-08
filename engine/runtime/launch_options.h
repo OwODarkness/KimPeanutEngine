@@ -33,7 +33,7 @@ namespace kpengine::runtime
 
     struct RuntimeLaunchOptions
     {
-        ApplicationMode application_mode = ApplicationMode::Scene3D;
+        std::string application_mode = "scene3d";
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         bool ray_tracing_enabled = true;
         bool path_tracing_enabled = true;

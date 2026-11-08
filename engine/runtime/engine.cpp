@@ -17,7 +17,6 @@
 #include "gameplay/world/gameplay_world.h"
 #include "editor/editor.h"
 #include "module/engine_module.h"
-#include "host/scene_3d_host.h"
 
 // [reconstruction] The legacy render/world systems are still being reconstructed;
 // the editor is back (minimal — a single ImGui window). The render module remains
@@ -66,17 +65,7 @@ namespace kpengine
 
         constexpr float fps_alpha = 0.1f;
 
-        Engine::Engine() : editor_(std::make_unique<editor::Editor>())
-        {
-            std::string diagnostic;
-            if (!application_host_registry_.Register(
-                    ApplicationMode::Scene3D,
-                    [](Engine &) { return std::make_unique<Scene3DHost>(); },
-                    diagnostic))
-            {
-                throw std::logic_error("Could not register built-in 3D scene host: " + diagnostic);
-            }
-        }
+        Engine::Engine() : editor_(std::make_unique<editor::Editor>()) {}
 
         Engine::~Engine()
         {
@@ -116,28 +105,23 @@ namespace kpengine
             command_transport_config_ = std::move(config);
         }
 
-        void Engine::SetApplicationMode(const ApplicationMode mode)
+        void Engine::SetApplicationMode(std::string application_id)
         {
             if (initialization_started_ || render_thread_.joinable() || cleared_)
             {
                 throw std::runtime_error(
                     "application mode must be set before Engine::Initialize");
             }
-            application_mode_ = mode;
-        }
-
-        bool Engine::RegisterApplicationHostProvider(
-            const ApplicationMode mode,
-            ApplicationHostFactory factory,
-            std::string &diagnostic)
-        {
-            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            const std::optional<ApplicationHostDescriptor> descriptor =
+                ApplicationHostRegistry::Global().Find(application_id);
+            if (!descriptor.has_value())
             {
-                diagnostic =
-                    "application host providers must be registered before Engine::Initialize";
-                return false;
+                throw std::invalid_argument("application id '" + application_id +
+                                            "' is not registered");
             }
-            return application_host_registry_.Register(mode, std::move(factory), diagnostic);
+            application_mode_ = std::move(application_id);
+            application_host_layout_ = descriptor->layout;
+            ticks_gameplay_world_ = descriptor->ticks_gameplay_world;
         }
 
         void Engine::SetGraphicsAPI(GraphicsAPIType api_type)
@@ -203,7 +187,7 @@ namespace kpengine
                 throw std::runtime_error(
                     "Live2D model override must be set before Engine::Initialize");
             }
-            if (application_mode_ != ApplicationMode::Live2DViewer)
+            if (application_mode_ != "live2d-viewer")
             {
                 throw std::runtime_error(
                     "Live2D model override is only valid in live2d-viewer mode");
@@ -220,8 +204,8 @@ namespace kpengine
             }
             // Both viewer modes accept it: the panel renders it, and the Live2D
             // viewer's speech bubble uses it as its text.
-            if (application_mode_ != ApplicationMode::PanelViewer &&
-                application_mode_ != ApplicationMode::Live2DViewer)
+            if (application_mode_ != "panel-viewer" &&
+                application_mode_ != "live2d-viewer")
             {
                 throw std::runtime_error(
                     "Panel glyph product is only valid in a viewer mode");
@@ -238,8 +222,8 @@ namespace kpengine
             }
             // Both viewer modes accept it, for the same reason the glyph product
             // does: a bubble's content is a panel's content.
-            if (application_mode_ != ApplicationMode::PanelViewer &&
-                application_mode_ != ApplicationMode::Live2DViewer)
+            if (application_mode_ != "panel-viewer" &&
+                application_mode_ != "live2d-viewer")
             {
                 throw std::runtime_error("Panel text is only valid in a viewer mode");
             }
@@ -253,7 +237,7 @@ namespace kpengine
                 throw std::runtime_error(
                     "Panel dot colour must be set before Engine::Initialize");
             }
-            if (application_mode_ != ApplicationMode::PanelViewer)
+            if (application_mode_ != "panel-viewer")
             {
                 throw std::runtime_error(
                     "Panel dot colour is only valid in panel-viewer mode");
@@ -268,7 +252,7 @@ namespace kpengine
                 throw std::runtime_error(
                     "Panel accent colour must be set before Engine::Initialize");
             }
-            if (application_mode_ != ApplicationMode::PanelViewer)
+            if (application_mode_ != "panel-viewer")
             {
                 throw std::runtime_error(
                     "Panel accent colour is only valid in panel-viewer mode");
@@ -283,7 +267,7 @@ namespace kpengine
                 throw std::runtime_error(
                     "Panel gradient must be set before Engine::Initialize");
             }
-            if (application_mode_ != ApplicationMode::PanelViewer)
+            if (application_mode_ != "panel-viewer")
             {
                 throw std::runtime_error(
                     "Panel gradient is only valid in panel-viewer mode");
@@ -304,8 +288,8 @@ namespace kpengine
             }
             // The startup capture belongs to whichever standalone host is
             // running, not to Live2D, so both viewer modes accept it.
-            if (application_mode_ != ApplicationMode::Live2DViewer &&
-                application_mode_ != ApplicationMode::PanelViewer)
+            if (application_mode_ != "live2d-viewer" &&
+                application_mode_ != "panel-viewer")
             {
                 throw std::runtime_error(
                     "startup capture override is only valid in a viewer mode");
@@ -331,16 +315,9 @@ namespace kpengine
             }
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initializing...");
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Application mode: %s",
-                   ApplicationModeName(application_mode_));
-            if (application_mode_ != ApplicationMode::Scene3D &&
-                !application_host_registry_.Contains(application_mode_))
-            {
-                throw std::runtime_error(
-                    std::string("application mode '") + ApplicationModeName(application_mode_) +
-                    "' has no registered host provider");
-            }
+                   application_mode_.c_str());
             std::string host_diagnostic;
-            application_host_ = application_host_registry_.Create(
+            application_host_ = ApplicationHostRegistry::Global().Create(
                 application_mode_, *this, host_diagnostic);
             if (!application_host_)
             {
@@ -364,7 +341,7 @@ namespace kpengine
                                ? application_host_->RegisterHostCommands(registry, diagnostic)
                                : true;
                 });
-            if ((application_mode_ == ApplicationMode::Scene3D || UsesHostPresentation()) &&
+            if (!IsStandaloneViewerMode() &&
                 !application_host_->Initialize(*this, host_diagnostic))
             {
                 application_host_->Shutdown();
@@ -994,8 +971,7 @@ namespace kpengine
                 global_runtime_context.command_registry_->PumpGameThread();
             }
 
-            if ((application_mode_ == ApplicationMode::Scene3D ||
-                 application_mode_ == ApplicationMode::TerrainViewer) &&
+            if (TicksGameplayWorld() &&
                 global_runtime_context.gameplay_world_)
             {
                 global_runtime_context.TickGameplay(1.0f / target_fps);

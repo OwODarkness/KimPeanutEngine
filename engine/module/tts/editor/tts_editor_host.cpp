@@ -22,7 +22,7 @@ namespace kpengine::tts_editor
     bool TtsEditorHost::Initialize(runtime::Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
-        if (engine.GetApplicationMode() != runtime::ApplicationMode::TtsEditor)
+        if (engine.GetApplicationMode() != "tts")
         {
             diagnostic = "TtsEditorHost requires tts mode";
             return false;

@@ -10,6 +10,13 @@ target_include_directories(ModuleBootstrap PUBLIC
 target_link_libraries(ModuleBootstrap PRIVATE RuntimeLib)
 target_link_libraries(Module INTERFACE ModuleBootstrap)
 
+option(KPENGINE_ENABLE_SIGNAL "Build the standalone Signal Lab module" OFF)
+if(KPENGINE_ENABLE_SIGNAL)
+    add_subdirectory(signal)
+    target_link_libraries(Module INTERFACE SignalLabMode)
+    target_sources(Module INTERFACE $<TARGET_OBJECTS:SignalLabRegistration>)
+endif()
+
 add_library(AudioPlayerRegistration OBJECT
     "${CMAKE_SOURCE_DIR}/engine/runtime/audio/editor/audio_player_registration.cpp")
 target_include_directories(AudioPlayerRegistration PRIVATE

@@ -58,7 +58,7 @@ namespace kpengine::panel
     bool PanelViewerHost::Initialize(runtime::Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
-        if (engine.GetApplicationMode() != runtime::ApplicationMode::PanelViewer)
+        if (engine.GetApplicationMode() != "panel-viewer")
         {
             diagnostic = "panel viewer host can only initialize in panel-viewer mode";
             return false;

@@ -1,6 +1,6 @@
 # Engine Host Mode Plans
 
-**Status: proposed.** This document defines the engine-level composition
+**Status: core Scene3D host in Runtime.** This document defines the engine-level composition
 boundary for a traditional 3D scene host and a standalone Live2D viewer host.
 It does not redesign the deferred renderer or implement a general editor
 framework.
@@ -16,7 +16,7 @@ scene or preview policy, while low-level services remain shared.
              selects exactly one application host
                     /                         \
                    /                           \
-        3DSceneHost                    Live2DViewerHost
+        Runtime Scene3DHost             Live2DViewerHost
              |                               |
       GameplayWorld                      Live2DSystem
       RenderWorld                         Live2DRenderer
@@ -35,19 +35,16 @@ objects merely to reuse the frame loop.
 
 ## Module placement
 
-The hosts are runtime execution contexts, not application-owned feature
-objects. The application layer only selects a mode and registers optional host
-providers:
+Runtime owns the neutral host lifecycle, descriptor, and global registry.
+The built-in 3D scene host belongs to Runtime's core application composition.
+Optional application modes are registered by the module that provides them:
 
 ```text
-engine/application/          thin startup/composition boundary
-  application_mode.*          mode parsing/selection
-  host_registration.*         host/factory registration only
-
 engine/runtime/               RuntimeLib
-  neutral host lifecycle and shared runtime services
-  3d_scene_host.*             built-in traditional scene host
-  no Live2D dependency
+  host/application_host.*     neutral lifecycle and global registry
+  application/scene_3d_host.* built-in 3D scene application host
+  shared runtime services
+  no optional feature-host implementations
 
 engine/runtime/render/        Render
   traditional scene renderer and RenderWorld policy
@@ -61,30 +58,31 @@ engine/module/                ModuleBootstrap
   optional-module registration adapter used by the application boundary
 ```
 
-The application boundary may depend on `RuntimeLib`, `EditorLib`, and optional
-feature modules, but it does not own host implementations. The dependency
-direction is therefore:
+The core registry installs the built-in `scene3d` host. Optional modules add
+their registrations to the same registry. Runtime does not depend on optional
+feature modules. The dependency direction is:
 
 ```text
-Application startup → host registry / mode selection
-RuntimeLib      → 3DSceneHost / Render / Gameplay / Graphics
-Live2D feature  → Live2DViewerHost / Live2DRender → Render
-Render          -/→ Live2D
+Application startup → Runtime registry + linked optional-module registrations
+Runtime core → Gameplay / Render / Graphics / Scene3DHost
+Live2D feature → Runtime / Live2DViewerHost / Live2DRender → Render
+Runtime        -/→ Live2D optional module
+Render         -/→ Live2D
 ```
 
-The neutral host contract lives under Runtime. The shared service view is
-still represented by the existing Runtime-owned services during MODE1.1 and
-will be extracted only when a second host needs the same lifecycle. The
-optional `Live2DViewerHost` is registered by the Live2D module through that
-contract; Runtime does not include or link Live2D. A separate `Runtime/Service`
-target may be extracted later for genuinely shared frame/device services, but
-it is not the owner of either host.
+The shared service view is still represented by Runtime-owned services. The
+`Scene3DHost` is a built-in Runtime application; `Live2DViewerHost` is
+registered by the Live2D module through Runtime's neutral contract. Runtime
+does not include or link optional feature modules. A separate `Runtime/Service` target may be
+extracted later for genuinely shared frame/device services, but it is not the
+owner of either host.
 
 ## Host responsibilities
 
-### `3DSceneHost`
+### `Scene3DHost`
 
-`3DSceneHost` is the current game/editor scene path. It owns or coordinates:
+`Scene3DHost` is the current built-in game/editor scene path and belongs to
+`engine/runtime/application`. It owns or coordinates:
 
 - Gameplay world and authored level startup;
 - Render source handoff and `RenderWorld`;
@@ -124,7 +122,7 @@ EngineHost
   -> EngineServices
   -> selected IApplicationHost
 
-3DSceneHost
+Scene3DHost
   -> Gameplay / RenderSystem / Editor scene adapter
 
 Live2DViewerHost
@@ -143,7 +141,7 @@ final host is `Live2DViewerHost`, not a `RenderSystem` extension.
 
 The startup mode and an editor asset session are different concepts:
 
-- `3DSceneHost` and `Live2DViewerHost` are process-level startup hosts. They
+- `Scene3DHost` and `Live2DViewerHost` are process-level startup hosts. They
   are mutually exclusive in the first implementation.
 - A future Live2D asset editor may run inside the editor process as a separate
   preview session. It may reuse `Live2DRenderer` and shared Graphics services,

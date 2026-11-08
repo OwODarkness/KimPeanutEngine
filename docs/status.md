@@ -1,5 +1,26 @@
 # Project Status
 
+- **Core Scene3D host ownership (2026-11-08)** — The built-in `Scene3DHost`
+  lives in `engine/runtime/application`; Runtime's global registry installs
+  it as core, while optional modes register from their modules. Debug editor
+  build passes.
+  → [host architecture](engine/PLANS.md), [roadmap](engine/TODO.md)
+
+- **Signal processing lab (2026-11-08; SG1 CPU foundation complete)** — Added the
+  always-available headless Runtime `Signal` target, validated channel-major
+  `SampleBlock` storage and borrowed read-only `SampleBlockView`, constant,
+  impulse, sine, cosine, square and seeded uniform noise generation, scalar
+  statistics, and a Signal Lab multi-signal workspace with colored overlays and
+  selected-signal measurements. The `signal-lab` shell stays behind
+  `KPENGINE_ENABLE_SIGNAL` (OFF by default). Application hosts register by
+  string ID in a global registry with declared presentation layout; Runtime
+  provides the built-in `scene3d` host and optional modes register from modules.
+  Acquisition, spectrum, filtering and compute dispatch remain open.
+  SignalUnitTest passes 13/13 and the
+  Debug executable builds with the optional lab enabled. →
+  [architecture](signal/PLANS.md), [roadmap](signal/TODO.md),
+  [SG1](signal/.plan/SG1.md), [SG2](signal/.plan/SG2.md)
+
 - **R7.5 combined raster checkpoint (2026-11-06)** — Fog now loads and
   blends into SceneHdr, removing a second HDR allocation. Vulkan combined
   storage is 30.94 MiB at 1094×631 and worst GPU p95 is 3.45 ms across

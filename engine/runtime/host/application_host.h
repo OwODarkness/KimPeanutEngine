@@ -1,12 +1,13 @@
 #ifndef KPENGINE_RUNTIME_HOST_APPLICATION_HOST_H
 #define KPENGINE_RUNTIME_HOST_APPLICATION_HOST_H
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,18 +29,12 @@ namespace kpengine::runtime
         class CommandRegistry;
     }
 
-    enum class ApplicationMode : uint8_t
+    enum class ApplicationHostLayout : std::uint8_t
     {
-        Scene3D,
-        Live2DViewer,
-        PanelViewer,
-        TerrainViewer,
-        AudioPlayer,
-        TtsEditor,
+        SceneEditor,
+        SharedWindowPresentation,
+        OwnedWindow,
     };
-
-    const char *ApplicationModeName(ApplicationMode mode) noexcept;
-    std::optional<ApplicationMode> ParseApplicationMode(std::string_view value) noexcept;
 
     class IApplicationHost
     {
@@ -100,30 +95,40 @@ namespace kpengine::runtime
     using ApplicationHostFactory =
         std::function<std::unique_ptr<IApplicationHost>(Engine &engine)>;
 
+    struct ApplicationHostDescriptor
+    {
+        std::string id;
+        ApplicationHostFactory factory;
+        ApplicationHostLayout layout = ApplicationHostLayout::SceneEditor;
+        bool ticks_gameplay_world = false;
+    };
+
     class ApplicationHostRegistry final
     {
     public:
         ApplicationHostRegistry() = default;
-
         ApplicationHostRegistry(const ApplicationHostRegistry &) = delete;
         ApplicationHostRegistry &operator=(const ApplicationHostRegistry &) = delete;
-        ApplicationHostRegistry(ApplicationHostRegistry &&) noexcept = default;
-        ApplicationHostRegistry &operator=(ApplicationHostRegistry &&) noexcept = default;
 
-        bool Register(ApplicationMode mode,
-                      ApplicationHostFactory factory,
+        static ApplicationHostRegistry &Global();
+
+        bool Register(ApplicationHostDescriptor descriptor,
                       std::string &diagnostic);
-        bool Contains(ApplicationMode mode) const noexcept;
-        std::unique_ptr<IApplicationHost> Create(ApplicationMode mode,
+        bool Contains(std::string_view id) const;
+        std::optional<ApplicationHostDescriptor> Find(std::string_view id) const;
+        std::unique_ptr<IApplicationHost> Create(std::string_view id,
                                                   Engine &engine,
                                                   std::string &diagnostic) const;
 
     private:
-        static constexpr std::size_t kModeCount = 6;
+        mutable std::mutex mutex_;
+        std::map<std::string, ApplicationHostDescriptor, std::less<>> descriptors_;
+    };
 
-        static std::size_t ModeIndex(ApplicationMode mode) noexcept;
-
-        std::array<ApplicationHostFactory, kModeCount> factories_{};
+    class ApplicationHostRegistration final
+    {
+    public:
+        explicit ApplicationHostRegistration(ApplicationHostDescriptor descriptor);
     };
 }
 

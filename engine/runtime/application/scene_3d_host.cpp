@@ -1,14 +1,14 @@
-#include "host/scene_3d_host.h"
+#include "scene_3d_host.h"
 
 #include "engine.h"
 #include "runtime_global_context.h"
 
-namespace kpengine::runtime
+namespace kpengine::runtime::application
 {
     bool Scene3DHost::Initialize(Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
-        if (engine.GetApplicationMode() != ApplicationMode::Scene3D)
+        if (engine.GetApplicationMode() != "scene3d")
         {
             diagnostic = "3DSceneHost can only initialize in scene3d mode";
             return false;

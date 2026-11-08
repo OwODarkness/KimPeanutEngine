@@ -44,6 +44,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    if (!ApplicationHostRegistry::Global().Contains(
+            launch_options.options.application_mode))
+    {
+        std::fprintf(stderr, "KimPeanut Engine application id '%s' is not registered in this build\n",
+                     launch_options.options.application_mode.c_str());
+        return 1;
+    }
+
     Engine engine;
     engine.SetApplicationMode(launch_options.options.application_mode);
     kpengine::module::RegisterModules(engine);

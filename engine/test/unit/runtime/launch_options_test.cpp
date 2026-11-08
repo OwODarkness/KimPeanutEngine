@@ -7,7 +7,6 @@
 #include <gtest/gtest.h>
 
 #include "engine.h"
-#include "host/scene_3d_host.h"
 #include "launch_options.h"
 
 namespace
@@ -39,8 +38,7 @@ TEST(RuntimeLaunchOptionsTest, DefaultsPreserveExistingLaunchBehavior)
     const auto result = Parse({});
 
     ASSERT_TRUE(result) << result.diagnostic;
-    EXPECT_EQ(result.options.application_mode,
-              kpengine::runtime::ApplicationMode::Scene3D);
+    EXPECT_EQ(result.options.application_mode, "scene3d");
     EXPECT_EQ(result.options.graphics_api_type,
               kpengine::GraphicsAPIType::GRAPHICS_API_UNKNOW);
     EXPECT_FALSE(result.options.command_transport_config.enabled);
@@ -73,8 +71,7 @@ TEST(RuntimeLaunchOptionsTest, ParsesOptionsInAnyOrderAndNormalizesLevel)
                                "--mode", "scene3d"});
 
     ASSERT_TRUE(result) << result.diagnostic;
-    EXPECT_EQ(result.options.application_mode,
-              kpengine::runtime::ApplicationMode::Scene3D);
+    EXPECT_EQ(result.options.application_mode, "scene3d");
     EXPECT_EQ(result.options.graphics_api_type,
               kpengine::GraphicsAPIType::GRAPHICS_API_VULKAN);
     ASSERT_TRUE(result.options.command_transport_config.enabled);
@@ -542,35 +539,18 @@ TEST(RuntimeLaunchOptionsTest, AcceptsCaptureOptionsInPanelViewerMode)
     EXPECT_NE(capture_in_scene.diagnostic.find("--capture"), std::string::npos);
 }
 
-TEST(RuntimeLaunchOptionsTest, NamesAndParsesThePanelViewerMode)
+TEST(RuntimeLaunchOptionsTest, ParsesThePanelViewerApplicationId)
 {
-    namespace rt = kpengine::runtime;
-
-    EXPECT_STREQ(rt::ApplicationModeName(rt::ApplicationMode::PanelViewer),
-                 "panel-viewer");
-    const auto parsed = rt::ParseApplicationMode("panel-viewer");
-    ASSERT_TRUE(parsed.has_value());
-    EXPECT_EQ(*parsed, rt::ApplicationMode::PanelViewer);
-
-    // The three modes are distinct, so a host cannot be registered under another
-    // one's index.
-    EXPECT_NE(rt::ApplicationModeName(rt::ApplicationMode::Scene3D),
-              rt::ApplicationModeName(rt::ApplicationMode::PanelViewer));
-    EXPECT_NE(rt::ApplicationModeName(rt::ApplicationMode::Live2DViewer),
-              rt::ApplicationModeName(rt::ApplicationMode::PanelViewer));
+    const auto parsed = Parse({"--mode", "panel-viewer"});
+    ASSERT_TRUE(parsed) << parsed.diagnostic;
+    EXPECT_EQ(parsed.options.application_mode, "panel-viewer");
 }
 
-TEST(RuntimeLaunchOptionsTest, NamesAndParsesTheStandaloneAudioPlayerMode)
+TEST(RuntimeLaunchOptionsTest, ParsesTheStandaloneAudioPlayerId)
 {
-    namespace rt = kpengine::runtime;
-
-    EXPECT_STREQ(rt::ApplicationModeName(rt::ApplicationMode::AudioPlayer),
-                 "audio-player");
-    const auto parsed = rt::ParseApplicationMode("audio-player");
-    ASSERT_TRUE(parsed.has_value());
-    EXPECT_EQ(*parsed, rt::ApplicationMode::AudioPlayer);
-    EXPECT_EQ(Parse({"--mode", "audio-player"}).options.application_mode,
-              rt::ApplicationMode::AudioPlayer);
+    const auto parsed = Parse({"--mode", "audio-player"});
+    ASSERT_TRUE(parsed) << parsed.diagnostic;
+    EXPECT_EQ(parsed.options.application_mode, "audio-player");
 
     const auto level = Parse({"--mode", "audio-player", "--startup-level",
                               "level/pbr_showcase.level"});
@@ -578,13 +558,11 @@ TEST(RuntimeLaunchOptionsTest, NamesAndParsesTheStandaloneAudioPlayerMode)
     EXPECT_NE(level.diagnostic.find("--startup-level"), std::string::npos);
 }
 
-TEST(RuntimeLaunchOptionsTest, NamesAndParsesTheStandaloneTtsMode)
+TEST(RuntimeLaunchOptionsTest, ParsesTheStandaloneTtsId)
 {
-    namespace rt = kpengine::runtime;
-    EXPECT_STREQ(rt::ApplicationModeName(rt::ApplicationMode::TtsEditor), "tts");
-    EXPECT_EQ(rt::ParseApplicationMode("tts"), rt::ApplicationMode::TtsEditor);
-    EXPECT_EQ(Parse({"--mode", "tts"}).options.application_mode,
-              rt::ApplicationMode::TtsEditor);
+    const auto parsed = Parse({"--mode", "tts"});
+    ASSERT_TRUE(parsed) << parsed.diagnostic;
+    EXPECT_EQ(parsed.options.application_mode, "tts");
     const auto level = Parse({"--mode", "tts", "--startup-level", "level/a.level"});
     EXPECT_FALSE(level);
     EXPECT_NE(level.diagnostic.find("--startup-level"), std::string::npos);
@@ -607,7 +585,7 @@ TEST(RuntimeLaunchOptionsTest, RejectsMissingAndInvalidValues)
         {"--graphics-api"},
         {"--graphics-api", "metal"},
         {"--mode"},
-        {"--mode", "editor"},
+        {"--mode", "Editor"},
         {"--startup-level"},
         {"--startup-level", "level/pbr_showcase.json"},
     };
@@ -667,26 +645,28 @@ TEST(ApplicationHostRegistryTest, RegistersAndCreatesOneProviderPerMode)
     kpengine::runtime::ApplicationHostRegistry registry;
     std::string diagnostic;
     const bool registered = registry.Register(
-        kpengine::runtime::ApplicationMode::Live2DViewer,
+        {"test-viewer",
         [](kpengine::runtime::Engine &) {
             return std::make_unique<TestApplicationHost>();
         },
-        diagnostic);
+        kpengine::runtime::ApplicationHostLayout::OwnedWindow,
+        false}, diagnostic);
 
     ASSERT_TRUE(registered) << diagnostic;
-    EXPECT_TRUE(registry.Contains(kpengine::runtime::ApplicationMode::Live2DViewer));
-    EXPECT_FALSE(registry.Contains(kpengine::runtime::ApplicationMode::Scene3D));
+    EXPECT_TRUE(registry.Contains("test-viewer"));
+    EXPECT_FALSE(registry.Contains("scene3d"));
     kpengine::runtime::Engine engine;
     const std::unique_ptr<kpengine::runtime::IApplicationHost> host = registry.Create(
-        kpengine::runtime::ApplicationMode::Live2DViewer, engine, diagnostic);
+        "test-viewer", engine, diagnostic);
     ASSERT_NE(host, nullptr) << diagnostic;
     EXPECT_STREQ(host->Name(), "test");
     EXPECT_FALSE(registry.Register(
-        kpengine::runtime::ApplicationMode::Live2DViewer,
+        {"test-viewer",
         [](kpengine::runtime::Engine &) {
             return std::make_unique<TestApplicationHost>();
         },
-        diagnostic));
+        kpengine::runtime::ApplicationHostLayout::OwnedWindow,
+        false}, diagnostic));
     EXPECT_NE(diagnostic.find("already registered"), std::string::npos);
 }
 
@@ -695,37 +675,13 @@ TEST(ApplicationHostRegistryTest, AudioPlayerHasAnIndependentHostSlot)
     kpengine::runtime::ApplicationHostRegistry registry;
     std::string diagnostic;
     ASSERT_TRUE(registry.Register(
-        kpengine::runtime::ApplicationMode::AudioPlayer,
+        {"audio-player",
         [](kpengine::runtime::Engine &) {
             return std::make_unique<TestApplicationHost>();
         },
-        diagnostic)) << diagnostic;
-    EXPECT_TRUE(registry.Contains(kpengine::runtime::ApplicationMode::AudioPlayer));
-    EXPECT_FALSE(registry.Contains(kpengine::runtime::ApplicationMode::TerrainViewer));
-    EXPECT_FALSE(registry.Contains(kpengine::runtime::ApplicationMode::Scene3D));
-}
-
-TEST(Scene3DHostTest, OwnsOnlySceneModeLifecycle)
-{
-    kpengine::runtime::Engine engine;
-    kpengine::runtime::Scene3DHost host;
-    std::string diagnostic;
-
-    EXPECT_TRUE(host.Initialize(engine, diagnostic)) << diagnostic;
-    EXPECT_TRUE(host.Tick(1.0f / 60.0f, diagnostic)) << diagnostic;
-    EXPECT_TRUE(host.RecordFrame(diagnostic)) << diagnostic;
-    host.Shutdown();
-    EXPECT_FALSE(host.RecordFrame(diagnostic));
-    EXPECT_EQ(diagnostic, "3DSceneHost is not initialized");
-}
-
-TEST(Scene3DHostTest, RejectsViewerMode)
-{
-    kpengine::runtime::Engine engine;
-    engine.SetApplicationMode(kpengine::runtime::ApplicationMode::Live2DViewer);
-    kpengine::runtime::Scene3DHost host;
-    std::string diagnostic;
-
-    EXPECT_FALSE(host.Initialize(engine, diagnostic));
-    EXPECT_EQ(diagnostic, "3DSceneHost can only initialize in scene3d mode");
+        kpengine::runtime::ApplicationHostLayout::SharedWindowPresentation,
+        false}, diagnostic) << diagnostic;
+    EXPECT_TRUE(registry.Contains("audio-player"));
+    EXPECT_FALSE(registry.Contains("terrain-viewer"));
+    EXPECT_FALSE(registry.Contains("scene3d"));
 }

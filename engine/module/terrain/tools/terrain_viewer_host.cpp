@@ -457,7 +457,7 @@ namespace kpengine::terrain
     bool TerrainViewerHost::Initialize(runtime::Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
-        if (engine.GetApplicationMode() != runtime::ApplicationMode::TerrainViewer)
+        if (engine.GetApplicationMode() != "terrain-viewer")
         {
             diagnostic = "TerrainViewerHost can only initialize in terrain-viewer mode";
             return false;

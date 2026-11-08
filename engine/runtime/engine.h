@@ -64,8 +64,8 @@ namespace kpengine
             void Clear();
             void Run();
             void SetCommandTransportConfig(command::LocalCommandTransportConfig config);
-            void SetApplicationMode(ApplicationMode mode);
-            ApplicationMode GetApplicationMode() const noexcept { return application_mode_; }
+            void SetApplicationMode(std::string application_id);
+            const std::string &GetApplicationMode() const noexcept { return application_mode_; }
             // True for the hosts that own their own window and backend and run
             // their own render thread, as opposed to the scene host that Runtime
             // presents around. Every mode-conditional startup branch means this,
@@ -74,18 +74,14 @@ namespace kpengine
             // run time.
             bool IsStandaloneViewerMode() const noexcept
             {
-                return application_mode_ == ApplicationMode::Live2DViewer ||
-                       application_mode_ == ApplicationMode::PanelViewer;
+                return application_host_layout_ == ApplicationHostLayout::OwnedWindow;
             }
             bool UsesHostPresentation() const noexcept
             {
-                return application_mode_ == ApplicationMode::TerrainViewer ||
-                       application_mode_ == ApplicationMode::AudioPlayer ||
-                       application_mode_ == ApplicationMode::TtsEditor;
+                return application_host_layout_ ==
+                       ApplicationHostLayout::SharedWindowPresentation;
             }
-            bool RegisterApplicationHostProvider(ApplicationMode mode,
-                                                 ApplicationHostFactory factory,
-                                                 std::string &diagnostic);
+            bool TicksGameplayWorld() const noexcept { return ticks_gameplay_world_; }
             void SetGraphicsAPI(GraphicsAPIType api_type);
             GraphicsAPIType GetGraphicsAPI() const noexcept { return graphics_api_type_; }
             // Must be called before initialization; it reaches the window's
@@ -322,9 +318,11 @@ namespace kpengine
             std::unique_ptr<command::CommandLocalTransport> command_transport_;
             PerformanceStatsCommandRegistrationResult performance_stats_commands_{};
 
-            ApplicationMode application_mode_ = ApplicationMode::Scene3D;
+            std::string application_mode_ = "scene3d";
+            ApplicationHostLayout application_host_layout_ =
+                ApplicationHostLayout::SceneEditor;
+            bool ticks_gameplay_world_ = true;
             GraphicsAPIType graphics_api_type_ = GraphicsAPIType::GRAPHICS_API_VULKAN;
-            ApplicationHostRegistry application_host_registry_{};
             std::unique_ptr<IApplicationHost> application_host_;
 
             std::vector<std::unique_ptr<module::EngineModule>> modules_;

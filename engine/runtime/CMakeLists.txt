@@ -10,6 +10,7 @@ add_subdirectory(gameplay)
 add_subdirectory(image_io)
 add_subdirectory(asset)
 add_subdirectory(audio)
+add_subdirectory(signal)
 add_subdirectory(bootstrap)
 add_subdirectory(command)
 add_subdirectory(gameplay_command)
@@ -20,8 +21,9 @@ add_subdirectory(stats)
 
 add_library(RuntimeLib STATIC
     engine.cpp
+    application/scene_3d_host.cpp
+    application/scene_3d_registration.cpp
     host/application_host.cpp
-    host/scene_3d_host.cpp
     launch_options.cpp
     runtime_global_context.cpp
     runtime_startup.cpp
@@ -33,4 +35,4 @@ target_include_directories(RuntimeLib PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE EditorLib Window Input Render Gameplay GameplayReflection GameplayEditorBridge RuntimeLevel Bootstrap Platform ImageIO RuntimeScreenshot RuntimeCommand RuntimeScreenshotCommand RuntimeWindowCommand RuntimePerformanceStatsCommand RuntimeGameplayCommand)
+target_link_libraries(RuntimeLib PUBLIC Core Graphics Script Signal PRIVATE EditorLib Window Input Render Gameplay GameplayReflection GameplayEditorBridge RuntimeLevel Bootstrap Platform ImageIO RuntimeScreenshot RuntimeCommand RuntimeScreenshotCommand RuntimeWindowCommand RuntimePerformanceStatsCommand RuntimeGameplayCommand)

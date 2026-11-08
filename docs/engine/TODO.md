@@ -1,6 +1,6 @@
 # Engine Host Mode Roadmap
 
-**Status: MODE1.5 landed.** Detailed ownership and migration rules are in
+**Status: core Scene3D host ownership established.** Detailed ownership and migration rules are in
 [MODE1](.plan/MODE1.md). This roadmap covers only the first two hosts.
 
 - [x] **MODE1.1 — host contracts:** define `ApplicationMode`, the neutral
@@ -24,6 +24,10 @@
 - [x] **MODE1.5 — extension retirement:** remove the temporary Live2D
   registration seam from the scene `RenderSystem`; the standalone viewer now
   owns the renderer directly. → [MODE1.5 journal](../../.spec/journal/2026-09-11-engine-mode1-5.md)
+- [x] **MODE1.6 — core scene host ownership:** keep the built-in `Scene3DHost`
+  in Runtime's application composition and install it in the core registry;
+  optional mode hosts remain module-owned. →
+  [ownership correction](../../.spec/journal/2026-11-08-scene3d-core-ownership.md)
 
 ## Acceptance ledger
 

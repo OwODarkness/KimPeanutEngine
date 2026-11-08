@@ -112,7 +112,7 @@ namespace kpengine::live2d
     bool Live2DViewerHost::Initialize(runtime::Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
-        if (engine.GetApplicationMode() != runtime::ApplicationMode::Live2DViewer)
+        if (engine.GetApplicationMode() != "live2d-viewer")
         {
             diagnostic = "Live2D viewer host can only initialize in live2d-viewer mode";
             return false;

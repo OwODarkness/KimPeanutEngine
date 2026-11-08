@@ -202,6 +202,20 @@ namespace kpengine::runtime
             return true;
         }
 
+        bool IsValidApplicationId(const std::string_view value)
+        {
+            if (value.empty() || value.front() < 'a' || value.front() > 'z' ||
+                value.back() == '-')
+            {
+                return false;
+            }
+            return std::all_of(value.begin(), value.end(), [](const char character)
+            {
+                return (character >= 'a' && character <= 'z') ||
+                       (character >= '0' && character <= '9') || character == '-';
+            });
+        }
+
         // A panel colour is a "#RRGGBB" literal. Checked here so a typo fails at
         // launch with a clear message instead of at the first drawn frame.
         bool IsPanelColorLiteral(const std::string_view value)
@@ -256,17 +270,16 @@ namespace kpengine::runtime
                     }
                     if (HasMissingValue(arguments, index))
                     {
-                        return Failure("--mode requires scene3d, live2d-viewer, panel-viewer, terrain-viewer, or audio-player");
+                        return Failure("--mode requires a lowercase application id");
                     }
 
                     const std::string_view value = arguments[++index];
-                    const std::optional<ApplicationMode> mode = ParseApplicationMode(value);
-                    if (!mode.has_value())
+                    if (!IsValidApplicationId(value))
                     {
-                        return Failure("--mode requires scene3d, live2d-viewer, panel-viewer, terrain-viewer, or audio-player (got '" +
+                        return Failure("--mode requires a lowercase application id (got '" +
                                        std::string{value} + "')");
                     }
-                    result.options.application_mode = *mode;
+                    result.options.application_mode = value;
                     has_mode = true;
                 }
                 else if (argument == "--agent-port")
@@ -632,12 +645,13 @@ namespace kpengine::runtime
                 }
             }
 
-            const ApplicationMode mode = result.options.application_mode;
-            const bool live2d_viewer = mode == ApplicationMode::Live2DViewer;
-            const bool panel_viewer = mode == ApplicationMode::PanelViewer;
-            const bool terrain_viewer = mode == ApplicationMode::TerrainViewer;
-            const bool audio_player = mode == ApplicationMode::AudioPlayer;
-            const bool tts_editor = mode == ApplicationMode::TtsEditor;
+            const std::string &mode = result.options.application_mode;
+            const bool live2d_viewer = mode == "live2d-viewer";
+            const bool panel_viewer = mode == "panel-viewer";
+            const bool terrain_viewer = mode == "terrain-viewer";
+            const bool audio_player = mode == "audio-player";
+            const bool tts_editor = mode == "tts";
+            const bool signal_lab = mode == "signal-lab";
 
             if (terrain_viewer && result.options.startup_level_override.has_value())
             {
@@ -650,6 +664,10 @@ namespace kpengine::runtime
             if (tts_editor && result.options.startup_level_override.has_value())
             {
                 return Failure("--startup-level is not valid in tts mode");
+            }
+            if (signal_lab && result.options.startup_level_override.has_value())
+            {
+                return Failure("--startup-level is not valid in signal-lab mode");
             }
 
             // The capture, resize, and exit options are owned by whichever

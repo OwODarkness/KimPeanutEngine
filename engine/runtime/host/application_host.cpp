@@ -1,157 +1,117 @@
 #include "host/application_host.h"
 
 #include <exception>
+#include <stdexcept>
 #include <utility>
+
+namespace kpengine::runtime::application
+{
+    void RegisterBuiltInHosts(ApplicationHostRegistry &registry);
+}
 
 namespace kpengine::runtime
 {
-    namespace
+    ApplicationHostRegistry &ApplicationHostRegistry::Global()
     {
-        constexpr std::size_t InvalidModeIndex() noexcept
+        static ApplicationHostRegistry registry;
+        static const bool built_ins_registered = []
         {
-            return 6;
-        }
+            application::RegisterBuiltInHosts(registry);
+            return true;
+        }();
+        (void)built_ins_registered;
+        return registry;
     }
 
-    const char *ApplicationModeName(const ApplicationMode mode) noexcept
-    {
-        switch (mode)
-        {
-        case ApplicationMode::Scene3D:
-            return "scene3d";
-        case ApplicationMode::Live2DViewer:
-            return "live2d-viewer";
-        case ApplicationMode::PanelViewer:
-            return "panel-viewer";
-        case ApplicationMode::TerrainViewer:
-            return "terrain-viewer";
-        case ApplicationMode::AudioPlayer:
-            return "audio-player";
-        case ApplicationMode::TtsEditor:
-            return "tts";
-        }
-        return "unknown";
-    }
-
-    std::optional<ApplicationMode> ParseApplicationMode(
-        const std::string_view value) noexcept
-    {
-        if (value == "scene3d")
-        {
-            return ApplicationMode::Scene3D;
-        }
-        if (value == "live2d-viewer")
-        {
-            return ApplicationMode::Live2DViewer;
-        }
-        if (value == "panel-viewer")
-        {
-            return ApplicationMode::PanelViewer;
-        }
-        if (value == "terrain-viewer")
-        {
-            return ApplicationMode::TerrainViewer;
-        }
-        if (value == "audio-player")
-        {
-            return ApplicationMode::AudioPlayer;
-        }
-        if (value == "tts")
-        {
-            return ApplicationMode::TtsEditor;
-        }
-        return std::nullopt;
-    }
-
-    std::size_t ApplicationHostRegistry::ModeIndex(const ApplicationMode mode) noexcept
-    {
-        switch (mode)
-        {
-        case ApplicationMode::Scene3D:
-            return 0;
-        case ApplicationMode::Live2DViewer:
-            return 1;
-        case ApplicationMode::PanelViewer:
-            return 2;
-        case ApplicationMode::TerrainViewer:
-            return 3;
-        case ApplicationMode::AudioPlayer:
-            return 4;
-        case ApplicationMode::TtsEditor:
-            return 5;
-        }
-        return InvalidModeIndex();
-    }
-
-    bool ApplicationHostRegistry::Register(const ApplicationMode mode,
-                                            ApplicationHostFactory factory,
-                                            std::string &diagnostic)
+    bool ApplicationHostRegistry::Register(ApplicationHostDescriptor descriptor,
+                                           std::string &diagnostic)
     {
         diagnostic.clear();
-        const std::size_t index = ModeIndex(mode);
-        if (index >= factories_.size())
+        if (descriptor.id.empty())
         {
-            diagnostic = "cannot register an unknown application mode";
+            diagnostic = "application host id cannot be empty";
             return false;
         }
-        if (!factory)
+        if (!descriptor.factory)
         {
-            diagnostic = std::string("application host provider for '") +
-                         ApplicationModeName(mode) + "' is empty";
-            return false;
-        }
-        if (factories_[index])
-        {
-            diagnostic = std::string("application host provider for '") +
-                         ApplicationModeName(mode) + "' is already registered";
+            diagnostic = "application host factory for '" + descriptor.id + "' is empty";
             return false;
         }
 
-        factories_[index] = std::move(factory);
+        const std::lock_guard lock(mutex_);
+        const std::string id = descriptor.id;
+        const auto [entry, inserted] = descriptors_.emplace(id, std::move(descriptor));
+        if (!inserted)
+        {
+            diagnostic = "application host for '" + entry->first + "' is already registered";
+            return false;
+        }
         return true;
     }
 
-    bool ApplicationHostRegistry::Contains(const ApplicationMode mode) const noexcept
+    bool ApplicationHostRegistry::Contains(const std::string_view id) const
     {
-        const std::size_t index = ModeIndex(mode);
-        return index < factories_.size() && static_cast<bool>(factories_[index]);
+        const std::lock_guard lock(mutex_);
+        return descriptors_.find(id) != descriptors_.end();
+    }
+
+    std::optional<ApplicationHostDescriptor> ApplicationHostRegistry::Find(
+        const std::string_view id) const
+    {
+        const std::lock_guard lock(mutex_);
+        const auto entry = descriptors_.find(id);
+        if (entry == descriptors_.end())
+        {
+            return std::nullopt;
+        }
+        return entry->second;
     }
 
     std::unique_ptr<IApplicationHost> ApplicationHostRegistry::Create(
-        const ApplicationMode mode,
+        const std::string_view id,
         Engine &engine,
         std::string &diagnostic) const
     {
         diagnostic.clear();
-        const std::size_t index = ModeIndex(mode);
-        if (index >= factories_.size() || !factories_[index])
+        const std::optional<ApplicationHostDescriptor> descriptor = Find(id);
+        if (!descriptor.has_value())
         {
-            diagnostic = std::string("no application host provider is registered for '") +
-                         ApplicationModeName(mode) + "'";
+            diagnostic = "no application host is registered for '" + std::string{id} + "'";
             return nullptr;
         }
 
         try
         {
-            std::unique_ptr<IApplicationHost> host = factories_[index](engine);
+            std::unique_ptr<IApplicationHost> host = descriptor->factory(engine);
             if (!host)
             {
-                diagnostic = std::string("application host provider for '") +
-                             ApplicationModeName(mode) + "' returned null";
+                diagnostic = "application host factory for '" + descriptor->id +
+                             "' returned null";
             }
             return host;
         }
         catch (const std::exception &error)
         {
-            diagnostic = std::string("application host provider for '") +
-                         ApplicationModeName(mode) + "' threw: " + error.what();
+            diagnostic = "application host factory for '" + descriptor->id +
+                         "' threw: " + error.what();
             return nullptr;
         }
         catch (...)
         {
-            diagnostic = std::string("application host provider for '") +
-                         ApplicationModeName(mode) + "' threw an unknown exception";
+            diagnostic = "application host factory for '" + descriptor->id +
+                         "' threw an unknown exception";
             return nullptr;
         }
     }
+
+    ApplicationHostRegistration::ApplicationHostRegistration(
+        ApplicationHostDescriptor descriptor)
+    {
+        std::string diagnostic;
+        if (!ApplicationHostRegistry::Global().Register(std::move(descriptor), diagnostic))
+        {
+            throw std::runtime_error("Application host registration failed: " + diagnostic);
+        }
+    }
+
 }

@@ -26,7 +26,7 @@ namespace kpengine::audio_player
     bool AudioPlayerHost::Initialize(runtime::Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
-        if (engine.GetApplicationMode() != runtime::ApplicationMode::AudioPlayer)
+        if (engine.GetApplicationMode() != "audio-player")
         {
             diagnostic = "AudioPlayerHost can only initialize in audio-player mode";
             return false;
