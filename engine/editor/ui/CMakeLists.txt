@@ -8,3 +8,4 @@ target_sources(EditorUILib PRIVATE
 )
 
 add_subdirectory(component)
+add_subdirectory(api)

@@ -23,6 +23,22 @@ add_custom_command(TARGET EditorUILifecycleTest POST_BUILD
 include(GoogleTest)
 gtest_discover_tests(EditorUILifecycleTest PROPERTIES LABELS "editor")
 
+add_executable(UiRecordingContractTest
+    ui_recording_contract_test.cpp
+)
+target_include_directories(UiRecordingContractTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui_poison
+    ${CMAKE_SOURCE_DIR}/engine/editor/ui/api
+)
+target_include_directories(UiRecordingContractTest BEFORE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui_poison
+)
+target_link_libraries(UiRecordingContractTest PRIVATE
+    UIWidgets UIPresentation UIRecordingBackend KP::GoogleTest
+)
+include(GoogleTest)
+gtest_discover_tests(UiRecordingContractTest PROPERTIES LABELS "editor;ui")
+
 add_executable(EditorLoadingIcosahedronTest
     editor_loading_icosahedron_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_loading_icosahedron.cpp
