@@ -144,6 +144,11 @@ cohesive pass-family methods/state/struct extraction. The graph remains the
 single dependency/execution authority; pass owners retain persistent caches and
 record through typed graph context.
 
+The [owner-boundary follow-up](../../.spec/specs/render-owner-boundaries.md)
+applies submitted-only progress, one resolved frame mode, common environment
+ownership and owner-reported texture footprints. The durable flow is described
+in [design](design.md#frame-preparation-and-submitted-progress).
+
 ## Rectangular PT emitters
 
 Scene-authored rectangular PT emitters reuse the local-light source lifecycle

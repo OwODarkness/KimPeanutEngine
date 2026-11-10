@@ -16,7 +16,6 @@
 #include "base/type.h"
 #include "command/command_local_transport.h"
 #include "host/application_host.h"
-#include "launch_options.h"
 #include "runtime_startup.h"
 #include "stats/performance_stats_command_provider.h"
 
@@ -65,6 +64,7 @@ namespace kpengine
             void Run();
             void SetCommandTransportConfig(command::LocalCommandTransportConfig config);
             void SetApplicationMode(std::string application_id);
+            void SetApplicationHost(std::unique_ptr<IApplicationHost> application_host);
             const std::string &GetApplicationMode() const noexcept { return application_mode_; }
             // True for the hosts that own their own window and backend and run
             // their own render thread, as opposed to the scene host that Runtime
@@ -90,86 +90,6 @@ namespace kpengine
             void SetRayTracingEnabled(bool enabled);
             void SetPathTracingEnabled(bool enabled);
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
-            // Selects the Live2D product a standalone viewer loads for this run.
-            // Empty leaves the host on the product named by config/live2d.json.
-            void SetLive2DModelOverride(std::string asset_relative_path);
-            const std::optional<std::string> &GetLive2DModelOverride() const noexcept
-            {
-                return live2d_model_override_;
-            }
-            // Selects the baked glyph product the panel viewer loads. It is
-            // Asset-root-relative like the Live2D override, because a product
-            // derived from a licensed face belongs in the git-ignored asset tree
-            // rather than in a tracked config.
-            void SetPanelGlyphProduct(std::string asset_relative_path);
-            const std::optional<std::string> &GetPanelGlyphProduct() const noexcept
-            {
-                return panel_glyph_product_;
-            }
-            // Optional text the panel shows on its first row, so a capture run
-            // has something to display with no authoring step.
-            void SetPanelText(std::string text);
-            const std::optional<std::string> &GetPanelText() const noexcept
-            {
-                return panel_text_;
-            }
-            // Optional dot colour the panel starts with, as a "#RRGGBB" literal
-            // in display space.
-            void SetPanelDotColor(std::string color);
-            const std::optional<std::string> &GetPanelDotColor() const noexcept
-            {
-                return panel_dot_color_;
-            }
-            // The ramp's far colour, as a "#RRGGBB" literal.
-            void SetPanelAccentColor(std::string color);
-            const std::optional<std::string> &GetPanelAccentColor() const noexcept
-            {
-                return panel_accent_color_;
-            }
-            // How far the ramp runs toward the accent colour, 0 to 1. Zero is
-            // off, which is also the default, so unset and off are the same state
-            // and this needs no optional.
-            void SetPanelGradient(float amount);
-            float GetPanelGradient() const noexcept { return panel_gradient_; }
-            void SetStartupCaptureOverride(std::string output_path);
-            void SetStartupCaptureView(StartupCaptureView view) noexcept
-            {
-                startup_capture_view_ = view;
-            }
-            StartupCaptureView GetStartupCaptureView() const noexcept
-            {
-                return startup_capture_view_;
-            }
-            void SetStartupCaptureTransparentClear(bool enabled) noexcept
-            {
-                startup_capture_transparent_clear_ = enabled;
-            }
-            bool GetStartupCaptureTransparentClear() const noexcept
-            {
-                return startup_capture_transparent_clear_;
-            }
-            void SetStartupExitAfterCapture(bool enabled) noexcept
-            {
-                startup_exit_after_capture_ = enabled;
-            }
-            bool GetStartupExitAfterCapture() const noexcept
-            {
-                return startup_exit_after_capture_;
-            }
-            const std::optional<std::string> &GetStartupCaptureOverride() const noexcept
-            {
-                return startup_capture_override_;
-            }
-            // One-shot standalone-host resize requested at launch. The host
-            // applies it after its first recorded frame.
-            const std::optional<RuntimeResizeRequest> &GetStartupResize() const noexcept
-            {
-                return startup_resize_;
-            }
-            void SetStartupResize(RuntimeResizeRequest resize) noexcept
-            {
-                startup_resize_ = resize;
-            }
             StartupSnapshot GetStartupSnapshot() const;
 
             struct FrameLoopMetrics
@@ -306,17 +226,6 @@ namespace kpengine
             // Immutable for one Engine lifetime. The entry point supplies the
             // parser-normalized Asset-root-relative path before Initialize().
             std::optional<std::string> startup_level_override_;
-            std::optional<std::string> startup_capture_override_;
-            std::optional<std::string> live2d_model_override_;
-            std::optional<std::string> panel_glyph_product_;
-            std::optional<std::string> panel_text_;
-            std::optional<std::string> panel_dot_color_;
-            std::optional<std::string> panel_accent_color_;
-            float panel_gradient_ = 0.0f;
-            std::optional<RuntimeResizeRequest> startup_resize_;
-            StartupCaptureView startup_capture_view_ = StartupCaptureView::Presentation;
-            bool startup_capture_transparent_clear_ = false;
-            bool startup_exit_after_capture_ = false;
             std::optional<asset::AssetLoadSession> startup_asset_session_;
             StartupCoordinator startup_coordinator_;
 

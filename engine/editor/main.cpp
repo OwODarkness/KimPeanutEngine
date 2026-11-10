@@ -4,6 +4,9 @@
 
 #include <cstdio>
 #include <exception>
+#include <memory>
+#include <string>
+#include <utility>
 
 // [old design] The entry point used to run one-off example tests, switched by
 // uncommenting calls in main(). The engine boot now owns main(); the test
@@ -55,6 +58,19 @@ int main(int argc, char **argv)
     Engine engine;
     engine.SetApplicationMode(launch_options.options.application_mode);
     kpengine::module::RegisterModules(engine);
+    std::string host_diagnostic;
+    std::unique_ptr<IApplicationHost> application_host =
+        ApplicationHostRegistry::Global().Create(
+            launch_options.options.application_mode,
+            launch_options.options,
+            host_diagnostic);
+    if (!application_host)
+    {
+        std::fprintf(stderr, "KimPeanut Engine host composition failed: %s\n",
+                     host_diagnostic.c_str());
+        return 1;
+    }
+    engine.SetApplicationHost(std::move(application_host));
     engine.SetCommandTransportConfig(launch_options.options.command_transport_config);
     engine.SetGraphicsAPI(launch_options.options.graphics_api_type);
     engine.SetVSync(launch_options.options.vsync);
@@ -63,43 +79,6 @@ int main(int argc, char **argv)
     if (launch_options.options.startup_level_override.has_value())
     {
         engine.SetStartupLevelOverride(*launch_options.options.startup_level_override);
-    }
-    if (launch_options.options.startup_capture_override.has_value())
-    {
-        engine.SetStartupCaptureOverride(*launch_options.options.startup_capture_override);
-        engine.SetStartupCaptureView(launch_options.options.startup_capture_view);
-        engine.SetStartupCaptureTransparentClear(
-            launch_options.options.startup_capture_transparent_clear);
-        engine.SetStartupExitAfterCapture(
-            launch_options.options.startup_exit_after_capture);
-    }
-    if (launch_options.options.startup_resize.has_value())
-    {
-        engine.SetStartupResize(*launch_options.options.startup_resize);
-    }
-    if (launch_options.options.live2d_model_override.has_value())
-    {
-        engine.SetLive2DModelOverride(*launch_options.options.live2d_model_override);
-    }
-    if (launch_options.options.panel_glyph_product.has_value())
-    {
-        engine.SetPanelGlyphProduct(*launch_options.options.panel_glyph_product);
-    }
-    if (launch_options.options.panel_text.has_value())
-    {
-        engine.SetPanelText(*launch_options.options.panel_text);
-    }
-    if (launch_options.options.panel_dot_color.has_value())
-    {
-        engine.SetPanelDotColor(*launch_options.options.panel_dot_color);
-    }
-    if (launch_options.options.panel_accent_color.has_value())
-    {
-        engine.SetPanelAccentColor(*launch_options.options.panel_accent_color);
-    }
-    if (launch_options.options.panel_gradient.has_value())
-    {
-        engine.SetPanelGradient(*launch_options.options.panel_gradient);
     }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the

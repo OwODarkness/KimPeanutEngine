@@ -2,6 +2,7 @@
 #include <stdexcept>
 
 #include "host/application_host.h"
+#include "launch_options.h"
 #include "scene_3d_host.h"
 
 namespace kpengine::runtime::application
@@ -11,7 +12,7 @@ namespace kpengine::runtime::application
         std::string diagnostic;
         const bool registered = registry.Register(
             {"scene3d",
-             [](Engine &) { return std::make_unique<Scene3DHost>(); },
+             [](const RuntimeLaunchOptions &) { return std::make_unique<Scene3DHost>(); },
              ApplicationHostLayout::SceneEditor,
              true},
             diagnostic);

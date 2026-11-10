@@ -2,6 +2,7 @@
 
 #include "audio_player_host.h"
 #include "runtime/host/application_host.h"
+#include "runtime/launch_options.h"
 
 namespace kpengine::audio_player
 {
@@ -9,7 +10,7 @@ namespace kpengine::audio_player
     {
         const runtime::ApplicationHostRegistration registration{
             {"audio-player",
-             [](runtime::Engine &) { return std::make_unique<AudioPlayerHost>(); },
+             [](const runtime::RuntimeLaunchOptions &) { return std::make_unique<AudioPlayerHost>(); },
              runtime::ApplicationHostLayout::SharedWindowPresentation,
              false}};
     }

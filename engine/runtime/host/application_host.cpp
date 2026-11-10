@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "launch_options.h"
+
 namespace kpengine::runtime::application
 {
     void RegisterBuiltInHosts(ApplicationHostRegistry &registry);
@@ -69,7 +71,7 @@ namespace kpengine::runtime
 
     std::unique_ptr<IApplicationHost> ApplicationHostRegistry::Create(
         const std::string_view id,
-        Engine &engine,
+        const RuntimeLaunchOptions &launch_options,
         std::string &diagnostic) const
     {
         diagnostic.clear();
@@ -82,7 +84,7 @@ namespace kpengine::runtime
 
         try
         {
-            std::unique_ptr<IApplicationHost> host = descriptor->factory(engine);
+            std::unique_ptr<IApplicationHost> host = descriptor->factory(launch_options);
             if (!host)
             {
                 diagnostic = "application host factory for '" + descriptor->id +

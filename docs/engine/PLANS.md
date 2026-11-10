@@ -133,6 +133,26 @@ Both hosts
      input, window, and logging services
 ```
 
+## Host configuration and composition
+
+Command-line parsing produces `RuntimeLaunchOptions`; it does not write
+application-specific values into `Engine`. The application entry point passes
+those options to the host registry, whose per-host factory builds a typed
+configuration and constructs the selected host before `Engine::Initialize()`.
+Engine receives and owns the completed `IApplicationHost`, then drives its
+lifecycle.
+
+`Live2DViewerHost` owns its model selection, bubble content, and standalone
+capture/resize settings. Panel content is a Panel-owned value shared with the
+Live2D bubble consumer; `PanelViewerHost` adds its dot colour and ramp settings.
+The common standalone capture/resize value lives at the Runtime host boundary,
+while each host owns the value and applies its own semantics. The startup-level
+override remains on Engine for now because its asset loading and promotion
+sequence has a separate ownership boundary.
+
+Adding an application-specific startup option therefore extends its launch
+options and its composition factory, not Engine's public setter/getter surface.
+
 `RenderSystem` becomes a scene-host collaborator, not the universal home for
 every renderer. `Live2DRenderer` remains reusable GPU/render code, but its
 final host is `Live2DViewerHost`, not a `RenderSystem` extension.
@@ -201,6 +221,11 @@ provides the larger-editor precedent: level viewports and asset-editor
 viewports use separate editor/toolkit and preview-scene contexts while sharing
 engine services. KimPeanutEngine should use Sakura's process-level separation
 first and leave Unreal-style asset-editor sessions for a later stage.
+The Sakura repository's public Live2D Viewer description confirms a separate
+standalone application, but its source tree could not be inspected through the
+available source browser during the host-configuration study. The typed
+factory-to-host flow above follows KimPeanutEngine's existing registry and
+keeps that process-level separation without importing an unverified pattern.
 
 ## Navigation
 

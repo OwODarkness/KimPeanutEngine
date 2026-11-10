@@ -324,6 +324,10 @@ details and stage checklists belong in the linked submodule documents.
     init rollback, reload/resize/edit and safe cleanup parity. Execute
     R5.3.1–R5.3.7; move structs/state/constants with owners and remove pass
     implementations from the facade. → [concrete plan](.plan/R5.3.md)
+    The [post-R7.3 boundary follow-up](../../.spec/specs/render-owner-boundaries.md)
+    addresses PT submission commit, raster fallback mode, footprint telemetry,
+    environment ownership, camera queries and facade header dependencies;
+    expanded R5.2/R5.3 acceptance remains separate.
   - [x] **R5.4:** Render owns shader
     uniform schemas and registers stable GPU profile IDs; Graphics owns query
       slots. Vulkan RT audit retains the facade and existing serial retirement;

@@ -9,7 +9,8 @@ composition design.
 - Engine composition selects one application host for a process.
 - Shared services own logging, asset/resource access, graphics-device setup,
   frame scheduling, input, and window/presentation primitives.
-- `3DSceneHost` owns the traditional Gameplay/Render scene stack, including
+- `Scene3DHost` lives in `engine/runtime/application` and owns the built-in
+  Gameplay/Render scene stack, including
   `RenderWorld`, `DeferredRenderer`, scene capture, and a scene presentation
   capability. Editor UI attaches through a separate editor adapter.
 - `Live2DViewerHost` owns the Live2D instance, Live2D render feature, viewer

@@ -118,6 +118,24 @@ namespace kpengine
             ticks_gameplay_world_ = descriptor->ticks_gameplay_world;
         }
 
+        void Engine::SetApplicationHost(std::unique_ptr<IApplicationHost> application_host)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "application host must be supplied before Engine::Initialize");
+            }
+            if (!application_host)
+            {
+                throw std::invalid_argument("application host cannot be null");
+            }
+            if (application_host_)
+            {
+                throw std::runtime_error("application host has already been supplied");
+            }
+            application_host_ = std::move(application_host);
+        }
+
         void Engine::SetGraphicsAPI(GraphicsAPIType api_type)
         {
             if (api_type != GraphicsAPIType::GRAPHICS_API_UNKNOW)
@@ -174,123 +192,6 @@ namespace kpengine
             startup_level_override_ = std::move(normalized_path);
         }
 
-        void Engine::SetLive2DModelOverride(std::string asset_relative_path)
-        {
-            if (initialization_started_ || render_thread_.joinable() || cleared_)
-            {
-                throw std::runtime_error(
-                    "Live2D model override must be set before Engine::Initialize");
-            }
-            if (application_mode_ != "live2d-viewer")
-            {
-                throw std::runtime_error(
-                    "Live2D model override is only valid in live2d-viewer mode");
-            }
-            live2d_model_override_ = std::move(asset_relative_path);
-        }
-
-        void Engine::SetPanelGlyphProduct(std::string asset_relative_path)
-        {
-            if (initialization_started_ || render_thread_.joinable() || cleared_)
-            {
-                throw std::runtime_error(
-                    "Panel glyph product must be set before Engine::Initialize");
-            }
-            // Both viewer modes accept it: the panel renders it, and the Live2D
-            // viewer's speech bubble uses it as its text.
-            if (application_mode_ != "panel-viewer" &&
-                application_mode_ != "live2d-viewer")
-            {
-                throw std::runtime_error(
-                    "Panel glyph product is only valid in a viewer mode");
-            }
-            panel_glyph_product_ = std::move(asset_relative_path);
-        }
-
-        void Engine::SetPanelText(std::string text)
-        {
-            if (initialization_started_ || render_thread_.joinable() || cleared_)
-            {
-                throw std::runtime_error(
-                    "Panel text must be set before Engine::Initialize");
-            }
-            // Both viewer modes accept it, for the same reason the glyph product
-            // does: a bubble's content is a panel's content.
-            if (application_mode_ != "panel-viewer" &&
-                application_mode_ != "live2d-viewer")
-            {
-                throw std::runtime_error("Panel text is only valid in a viewer mode");
-            }
-            panel_text_ = std::move(text);
-        }
-
-        void Engine::SetPanelDotColor(std::string color)
-        {
-            if (initialization_started_ || render_thread_.joinable() || cleared_)
-            {
-                throw std::runtime_error(
-                    "Panel dot colour must be set before Engine::Initialize");
-            }
-            if (application_mode_ != "panel-viewer")
-            {
-                throw std::runtime_error(
-                    "Panel dot colour is only valid in panel-viewer mode");
-            }
-            panel_dot_color_ = std::move(color);
-        }
-
-        void Engine::SetPanelAccentColor(std::string color)
-        {
-            if (initialization_started_ || render_thread_.joinable() || cleared_)
-            {
-                throw std::runtime_error(
-                    "Panel accent colour must be set before Engine::Initialize");
-            }
-            if (application_mode_ != "panel-viewer")
-            {
-                throw std::runtime_error(
-                    "Panel accent colour is only valid in panel-viewer mode");
-            }
-            panel_accent_color_ = std::move(color);
-        }
-
-        void Engine::SetPanelGradient(const float amount)
-        {
-            if (initialization_started_ || render_thread_.joinable() || cleared_)
-            {
-                throw std::runtime_error(
-                    "Panel gradient must be set before Engine::Initialize");
-            }
-            if (application_mode_ != "panel-viewer")
-            {
-                throw std::runtime_error(
-                    "Panel gradient is only valid in panel-viewer mode");
-            }
-            if (amount < 0.0f || amount > 1.0f)
-            {
-                throw std::out_of_range("Panel gradient must be between 0 and 1");
-            }
-            panel_gradient_ = amount;
-        }
-
-        void Engine::SetStartupCaptureOverride(std::string output_path)
-        {
-            if (initialization_started_ || render_thread_.joinable() || cleared_)
-            {
-                throw std::runtime_error(
-                    "startup capture override must be set before Engine::Initialize");
-            }
-            // The startup capture belongs to whichever standalone host is
-            // running, not to Live2D, so both viewer modes accept it.
-            if (application_mode_ != "live2d-viewer" &&
-                application_mode_ != "panel-viewer")
-            {
-                throw std::runtime_error(
-                    "startup capture override is only valid in a viewer mode");
-            }
-            startup_capture_override_ = std::move(output_path);
-        }
-
         StartupSnapshot Engine::GetStartupSnapshot() const
         {
             return startup_coordinator_.GetSnapshot();
@@ -310,13 +211,12 @@ namespace kpengine
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initializing...");
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Application mode: %s",
                    application_mode_.c_str());
-            std::string host_diagnostic;
-            application_host_ = ApplicationHostRegistry::Global().Create(
-                application_mode_, *this, host_diagnostic);
             if (!application_host_)
             {
-                throw std::runtime_error("Application host creation failed: " + host_diagnostic);
+                throw std::runtime_error(
+                    "application host must be composed before Engine::Initialize");
             }
+            std::string host_diagnostic;
             // Installed before command services exist so the registration already
             // has it: a standalone host owns its window, and that window is
             // created on the render thread, so this must stay a per-call lookup.
@@ -499,10 +399,11 @@ namespace kpengine
                     ? asset::TextureVariantProfile::BlockCompressed
                     : asset::TextureVariantProfile::Portable;
             asset_manager.SetTextureVariantProfile(texture_profile);
-            // AP1.5b commits a small tail-mip view first; the native loader
-            // continues the full-resolution read in a bounded background task.
-            constexpr std::uint32_t kInitialTextureMipLevels = 6;
-            asset_manager.SetInitialTextureMipLevelCount(kInitialTextureMipLevels);
+            // Complete scene textures before presentation so mip promotion
+            // cannot repeatedly invalidate the initial path-tracing history.
+            constexpr std::uint32_t kStreamingTextureMipLevels = 6;
+            asset_manager.SetInitialTextureMipLevelCount(
+                UsesHostPresentation() ? kStreamingTextureMipLevels : 0U);
             const auto asset_loading_started = std::chrono::steady_clock::now();
             try
             {
@@ -521,6 +422,7 @@ namespace kpengine
                 startup_coordinator_.Fail("Unknown exception loading startup assets");
                 throw;
             }
+            asset_manager.SetInitialTextureMipLevelCount(kStreamingTextureMipLevels);
             startup_asset_session_->Seal();
             const auto asset_loading_elapsed = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - asset_loading_started).count();

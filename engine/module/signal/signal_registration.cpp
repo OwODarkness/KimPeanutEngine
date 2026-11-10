@@ -1,6 +1,7 @@
 #include <memory>
 
 #include "runtime/host/application_host.h"
+#include "runtime/launch_options.h"
 #include "tools/signal_lab_host.h"
 
 namespace kpengine::signal
@@ -9,7 +10,7 @@ namespace kpengine::signal
     {
         const runtime::ApplicationHostRegistration registration{
             {"signal-lab",
-             [](runtime::Engine &) { return std::make_unique<SignalLabHost>(); },
+             [](const runtime::RuntimeLaunchOptions &) { return std::make_unique<SignalLabHost>(); },
              runtime::ApplicationHostLayout::SharedWindowPresentation,
              false}};
     }

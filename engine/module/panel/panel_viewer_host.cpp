@@ -55,6 +55,11 @@ namespace kpengine::panel
         Shutdown();
     }
 
+    PanelViewerHost::PanelViewerHost(PanelViewerConfiguration configuration)
+        : configuration_(std::move(configuration))
+    {
+    }
+
     bool PanelViewerHost::Initialize(runtime::Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
@@ -76,12 +81,12 @@ namespace kpengine::panel
             // The glyph product is the panel's only content dependency. It is
             // Asset-root-relative, so a product derived from a licensed face
             // stays in the git-ignored asset tree.
-            if (!engine.GetPanelGlyphProduct().has_value())
+            if (!configuration_.content.glyph_product.has_value())
             {
                 diagnostic = "panel viewer requires --panel-glyph-product";
                 return false;
             }
-            loaded_glyph_product_ = *engine.GetPanelGlyphProduct();
+            loaded_glyph_product_ = *configuration_.content.glyph_product;
             const std::string product_path = GetAssetDirectory() + loaded_glyph_product_;
             PanelGlyphProduct product;
             try
@@ -97,27 +102,27 @@ namespace kpengine::panel
             glyphs_ = ToGlyphSet(std::move(product));
             glyphs_loaded_ = true;
 
-            if (engine.GetPanelText().has_value())
+            if (configuration_.content.text.has_value())
             {
-                panel_.SetText(0u, *engine.GetPanelText());
+                panel_.SetText(0u, *configuration_.content.text);
             }
-            if (engine.GetPanelDotColor().has_value())
+            if (configuration_.dot_color.has_value())
             {
                 // Parsed with the same function the command uses, so the launch
                 // option and panel.set_appearance accept exactly the spellings
                 // panel.report produces.
                 std::array<float, 4> color{};
-                if (!ParsePanelColor(*engine.GetPanelDotColor(), color))
+                if (!ParsePanelColor(*configuration_.dot_color, color))
                 {
                     diagnostic = "panel dot colour must be a \"#RRGGBB\" literal";
                     return false;
                 }
                 appearance_.dot_color = color;
             }
-            if (engine.GetPanelAccentColor().has_value())
+            if (configuration_.accent_color.has_value())
             {
                 std::array<float, 4> accent{};
-                if (!ParsePanelColor(*engine.GetPanelAccentColor(), accent))
+                if (!ParsePanelColor(*configuration_.accent_color, accent))
                 {
                     diagnostic = "panel accent colour must be a \"#RRGGBB\" literal";
                     return false;
@@ -126,7 +131,7 @@ namespace kpengine::panel
             }
             // Zero is the default and means "no ramp", so this is applied
             // unconditionally rather than only when a flag was passed.
-            appearance_.gradient_amount = engine.GetPanelGradient();
+            appearance_.gradient_amount = configuration_.gradient_amount;
 
             window_ = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
             if (!window_)
@@ -203,9 +208,9 @@ namespace kpengine::panel
             // --resize still moves the window, but the panel's target no longer
             // follows the window, so the capture is not deferred on it: there is
             // no post-resize target for the image to wait for.
-            if (engine.GetStartupResize().has_value())
+            if (configuration_.launch.resize.has_value())
             {
-                pending_resize_ = engine.GetStartupResize();
+                pending_resize_ = configuration_.launch.resize;
             }
             RequestStartupCapture();
             return true;
@@ -478,22 +483,22 @@ namespace kpengine::panel
 
     void PanelViewerHost::RequestStartupCapture()
     {
-        if (engine_ == nullptr || screenshot_service_ == nullptr ||
-            !engine_->GetStartupCaptureOverride().has_value())
+        if (screenshot_service_ == nullptr ||
+            !configuration_.launch.capture_path.has_value())
         {
             return;
         }
 
-        exit_after_capture_ = engine_->GetStartupExitAfterCapture();
+        exit_after_capture_ = configuration_.launch.exit_after_capture;
         runtime::ScreenshotRequest request{};
         // The product view reads the panel's own output target rather than the
         // swapchain, which is what makes two backends comparable: it carries no
         // window chrome.
         request.capture.view =
-            engine_->GetStartupCaptureView() == runtime::StartupCaptureView::Product
+            configuration_.launch.capture_view == runtime::StartupCaptureView::Product
                 ? render::CaptureView::HostOutput
                 : render::CaptureView::EngineWindow;
-        request.output_path = *engine_->GetStartupCaptureOverride();
+        request.output_path = *configuration_.launch.capture_path;
         screenshot_service_->RequestScreenshot(
             std::move(request),
             [this](runtime::ScreenshotResult result)

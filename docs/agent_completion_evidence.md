@@ -36,6 +36,12 @@ Changed files:
 
 Explain the important design consequences:
 
+Include the ownership/reuse decision from the
+[implementation workflow](agent_implementation_workflow.md): candidates
+inspected, the operation reused or extended, and why any new helper stayed
+local or needed a distinct owner. Record the placement evidence command and
+its result; its structural checks do not replace semantic review.
+
 - Which module owns the new state or resource?
 - Did a dependency direction change?
 - Did a public API, handle, lifetime, thread, or backend boundary change?

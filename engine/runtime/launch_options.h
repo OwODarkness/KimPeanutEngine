@@ -9,28 +9,10 @@
 
 #include "base/type.h"
 #include "command/command_local_transport.h"
-#include "host/application_host.h"
+#include "host/standalone_viewer_launch_configuration.h"
 
 namespace kpengine::runtime
 {
-    // Which surface a standalone host's startup capture reads back. The
-    // presentation view includes the host's own UI, so it is not a
-    // cross-backend comparable image; the product view is the host's own
-    // output target, which is.
-    enum class StartupCaptureView : uint8_t
-    {
-        Presentation,
-        Product,
-    };
-
-    // A standalone host's requested window extent. Width and height are both
-    // non-zero and bounded; the host rejects anything else while parsing.
-    struct RuntimeResizeRequest
-    {
-        uint32_t width = 0;
-        uint32_t height = 0;
-    };
-
     struct RuntimeLaunchOptions
     {
         std::string application_mode = "scene3d";
@@ -88,6 +70,9 @@ namespace kpengine::runtime
         // shutdown path (and its leaked-handle evidence) never executes.
         bool startup_exit_after_capture = false;
     };
+
+    StandaloneViewerLaunchConfiguration BuildStandaloneViewerLaunchConfiguration(
+        const RuntimeLaunchOptions &options);
 
     struct RuntimeLaunchOptionsParseResult
     {

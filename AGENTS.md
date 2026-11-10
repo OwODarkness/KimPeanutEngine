@@ -31,6 +31,24 @@ For implementation work:
 
 Do not start a broad refactor from a feature checklist alone. Diagnose first, then make the smallest coherent change.
 
+## Ownership and reuse gate
+
+Before non-trivial edits, follow [the implementation workflow](docs/agent_implementation_workflow.md).
+Search existing operations and owners before choosing a destination file. Record
+the operation, candidates inspected, chosen owner, and reason in the task's
+existing spec or short progress note. Run `tools/agent/placement.ps1` with the
+affected paths and a relevant search pattern before editing and during final
+review. Its structural checks supplement the semantic review; passing them
+does not establish correct placement.
+
+Reuse or extend an existing domain owner first. Keep frame orchestration thin;
+move cohesive algorithms and their state together. A local helper is valid when
+its knowledge and lifetime are local. A new shared abstraction needs a current
+consumer or a concrete ownership boundary, not hypothetical future reuse.
+Completion evidence must state what was reused, what stayed local and why, and
+any new dependency or lifetime impact. Do not add generic utility buckets or a
+shared mutable state bag merely to reduce a file's size.
+
 ## Shared skills
 
 Shared user-global skills use this portable layout:

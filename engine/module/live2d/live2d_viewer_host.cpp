@@ -109,6 +109,11 @@ namespace kpengine::live2d
         Shutdown();
     }
 
+    Live2DViewerHost::Live2DViewerHost(Live2DViewerConfiguration configuration)
+        : configuration_(std::move(configuration))
+    {
+    }
+
     bool Live2DViewerHost::Initialize(runtime::Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
@@ -138,8 +143,8 @@ namespace kpengine::live2d
             // --live2d-model selects a locally provisioned product for this run;
             // the tracked config keeps naming the fixture that is always present.
             const std::string &preview_asset =
-                engine.GetLive2DModelOverride().has_value()
-                    ? *engine.GetLive2DModelOverride()
+                configuration_.model_override.has_value()
+                    ? *configuration_.model_override
                     : settings.preview_asset;
             const std::string model_path = GetAssetDirectory() + preview_asset;
             loaded_model_path_ = preview_asset;
@@ -214,7 +219,7 @@ namespace kpengine::live2d
                 output_clear_color[channel] =
                     SrgbToLinear(output_clear_color[channel]);
             }
-            if (engine.GetStartupCaptureTransparentClear())
+            if (configuration_.launch.capture_transparent_clear)
             {
                 // Validation runs need the product's own alpha and blend
                 // coverage to survive into the exported image instead of being
@@ -276,11 +281,11 @@ namespace kpengine::live2d
             // The speech bubble, when both of its inputs were given. Without them
             // the viewer is exactly what it was, which is what keeps this from
             // changing every existing capture.
-            if (engine.GetPanelText().has_value() &&
-                engine.GetPanelGlyphProduct().has_value())
+            if (configuration_.bubble_content.text.has_value() &&
+                configuration_.bubble_content.glyph_product.has_value())
             {
                 const std::string product_path =
-                    GetAssetDirectory() + *engine.GetPanelGlyphProduct();
+                    GetAssetDirectory() + *configuration_.bubble_content.glyph_product;
                 panel::PanelGlyphProduct product;
                 try
                 {
@@ -298,7 +303,7 @@ namespace kpengine::live2d
                 if (!bubble_->Initialize(*backend_, renderer_->GetOutputColorFormat(),
                                          diagnostic) ||
                     !bubble_->SetGlyphs(panel::ToGlyphSet(std::move(product)), diagnostic) ||
-                    !bubble_->SetInitialText(*engine.GetPanelText(), diagnostic))
+                    !bubble_->SetInitialText(*configuration_.bubble_content.text, diagnostic))
                 {
                     return false;
                 }
@@ -345,12 +350,12 @@ namespace kpengine::live2d
             screenshot_service_ = MakeHostObject<runtime::RuntimeScreenshotService>(
                 *render_capture_service_);
 
-            if (engine.GetStartupResize().has_value())
+            if (configuration_.launch.resize.has_value())
             {
                 // Defer the capture: it must read the post-resize target, so the
                 // exported image's dimensions are themselves the evidence that
                 // the resize executed.
-                pending_resize_ = engine.GetStartupResize();
+                pending_resize_ = configuration_.launch.resize;
             }
             else
             {
@@ -359,7 +364,7 @@ namespace kpengine::live2d
                 // middle of an animation nobody asked to see.
                 capture_waits_for_bubble_ =
                     bubble_ != nullptr && bubble_->IsEnabled() &&
-                    engine.GetStartupCaptureOverride().has_value();
+                    configuration_.launch.capture_path.has_value();
                 RequestCaptureWhenSettled();
             }
             return true;
@@ -409,7 +414,7 @@ namespace kpengine::live2d
         // pre-resize image. Wait until the output target reports the requested
         // extent instead.
         capture_waits_for_resize_ =
-            engine_ != nullptr && engine_->GetStartupCaptureOverride().has_value();
+            configuration_.launch.capture_path.has_value();
 
         // A real window resize, not just a recorded extent: a Vulkan backend
         // recreates its surface from what the platform granted, so a size the
@@ -428,23 +433,23 @@ namespace kpengine::live2d
 
     void Live2DViewerHost::RequestStartupCapture()
     {
-        if (engine_ == nullptr || screenshot_service_ == nullptr ||
-            !engine_->GetStartupCaptureOverride().has_value())
+        if (screenshot_service_ == nullptr ||
+            !configuration_.launch.capture_path.has_value())
         {
             return;
         }
 
-        exit_after_capture_ = engine_->GetStartupExitAfterCapture();
+        exit_after_capture_ = configuration_.launch.exit_after_capture;
         runtime::ScreenshotRequest request{};
         // The standalone viewer presents directly to the swapchain, so the
         // default capture reads the presentation boundary. The product view
         // reads the viewer's own output target instead, which is what makes two
         // backends comparable: it carries no host UI.
         request.capture.view =
-            engine_->GetStartupCaptureView() == runtime::StartupCaptureView::Product
+            configuration_.launch.capture_view == runtime::StartupCaptureView::Product
                 ? render::CaptureView::HostOutput
                 : render::CaptureView::EngineWindow;
-        request.output_path = *engine_->GetStartupCaptureOverride();
+        request.output_path = *configuration_.launch.capture_path;
         screenshot_service_->RequestScreenshot(
             std::move(request),
             [this](runtime::ScreenshotResult result)

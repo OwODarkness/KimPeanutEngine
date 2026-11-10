@@ -4,6 +4,7 @@
 
 #include "runtime/engine.h"
 #include "runtime/host/application_host.h"
+#include "runtime/launch_options.h"
 #include "terrain_module.h"
 #include "tools/terrain_viewer_host.h"
 
@@ -21,7 +22,7 @@ namespace kpengine::terrain
 
         const runtime::ApplicationHostRegistration host_registration{
             {"terrain-viewer",
-             [](runtime::Engine &) { return std::make_unique<TerrainViewerHost>(); },
+             [](const runtime::RuntimeLaunchOptions &) { return std::make_unique<TerrainViewerHost>(); },
              runtime::ApplicationHostLayout::SharedWindowPresentation,
              true}};
         const module::ModuleRegistration registration(&RegisterTerrain);

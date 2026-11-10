@@ -5,6 +5,7 @@
 
 #include "runtime/engine.h"
 #include "runtime/host/application_host.h"
+#include "runtime/launch_options.h"
 #include "application/scene_3d_host.h"
 
 TEST(Scene3DHostTest, OwnsOnlySceneModeLifecycle)
@@ -26,7 +27,7 @@ TEST(Scene3DHostTest, RejectsAnotherApplicationMode)
     std::string registration_diagnostic;
     ASSERT_TRUE(kpengine::runtime::ApplicationHostRegistry::Global().Register(
         {"test-owned-window",
-         [](kpengine::runtime::Engine &) {
+         [](const kpengine::runtime::RuntimeLaunchOptions &) {
              return std::unique_ptr<kpengine::runtime::IApplicationHost>{};
          },
          kpengine::runtime::ApplicationHostLayout::OwnedWindow,

@@ -10,8 +10,9 @@
 
 #include "asset/asset.h"
 #include "host/application_host.h"
-#include "launch_options.h"
+#include "host/standalone_viewer_launch_configuration.h"
 #include "math/math_header.h"
+#include "panel_content_configuration.h"
 
 namespace kpengine
 {
@@ -39,6 +40,13 @@ namespace kpengine
 
 namespace kpengine::live2d
 {
+    struct Live2DViewerConfiguration
+    {
+        std::optional<std::string> model_override;
+        panel::PanelContentConfiguration bubble_content;
+        runtime::StandaloneViewerLaunchConfiguration launch;
+    };
+
     template <typename T>
     struct Live2DViewerHostDeleter final
     {
@@ -68,6 +76,7 @@ namespace kpengine::live2d
     class Live2DViewerHost final : public runtime::IApplicationHost
     {
     public:
+        explicit Live2DViewerHost(Live2DViewerConfiguration configuration);
         ~Live2DViewerHost() override;
 
         const char *Name() const noexcept override { return "live2d-viewer"; }
@@ -106,6 +115,7 @@ namespace kpengine::live2d
         void RequestStartupCapture();
 
         runtime::Engine *engine_ = nullptr;
+        Live2DViewerConfiguration configuration_;
         Live2DViewerHostPtr<WindowSystem> window_;
         Live2DViewerHostPtr<graphics::RenderBackend> backend_;
         std::vector<Live2DViewerHostPtr<render::FrameContext>> frame_contexts_;

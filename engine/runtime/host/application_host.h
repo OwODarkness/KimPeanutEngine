@@ -23,6 +23,7 @@ namespace kpengine
 namespace kpengine::runtime
 {
     class Engine;
+    struct RuntimeLaunchOptions;
 
     namespace command
     {
@@ -93,7 +94,8 @@ namespace kpengine::runtime
     };
 
     using ApplicationHostFactory =
-        std::function<std::unique_ptr<IApplicationHost>(Engine &engine)>;
+        std::function<std::unique_ptr<IApplicationHost>(
+            const RuntimeLaunchOptions &launch_options)>;
 
     struct ApplicationHostDescriptor
     {
@@ -117,7 +119,7 @@ namespace kpengine::runtime
         bool Contains(std::string_view id) const;
         std::optional<ApplicationHostDescriptor> Find(std::string_view id) const;
         std::unique_ptr<IApplicationHost> Create(std::string_view id,
-                                                  Engine &engine,
+                                                  const RuntimeLaunchOptions &launch_options,
                                                   std::string &diagnostic) const;
 
     private:

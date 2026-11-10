@@ -11,6 +11,17 @@
 
 namespace kpengine::runtime
 {
+    StandaloneViewerLaunchConfiguration BuildStandaloneViewerLaunchConfiguration(
+        const RuntimeLaunchOptions &options)
+    {
+        return {
+            options.startup_capture_override,
+            options.startup_resize,
+            options.startup_capture_view,
+            options.startup_capture_transparent_clear,
+            options.startup_exit_after_capture};
+    }
+
     namespace
     {
         RuntimeLaunchOptionsParseResult Failure(std::string diagnostic)

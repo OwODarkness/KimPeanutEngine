@@ -11,8 +11,9 @@
 
 #include "command/command_registry.h"
 #include "host/application_host.h"
-#include "launch_options.h"
+#include "host/standalone_viewer_launch_configuration.h"
 #include "panel.h"
+#include "panel_content_configuration.h"
 #include "panel_command_provider.h"
 #include "panel_render_planner.h"
 #include "render/frame_context.h"
@@ -31,12 +32,22 @@ namespace kpengine
 
 namespace kpengine::panel
 {
+    struct PanelViewerConfiguration
+    {
+        PanelContentConfiguration content;
+        std::optional<std::string> dot_color;
+        std::optional<std::string> accent_color;
+        float gradient_amount = 0.0f;
+        runtime::StandaloneViewerLaunchConfiguration launch;
+    };
+
     // Standalone panel composition. It owns the viewer window, RHI backend,
     // frame contexts, glyph product, and renderer. It depends on no other module:
     // the panel is not a Live2D feature and must not become one.
     class PanelViewerHost final : public runtime::IApplicationHost
     {
     public:
+        explicit PanelViewerHost(PanelViewerConfiguration configuration);
         ~PanelViewerHost() override;
 
         const char *Name() const noexcept override { return "panel-viewer"; }
@@ -66,6 +77,7 @@ namespace kpengine::panel
         void CleanupGpu() noexcept;
 
         runtime::Engine *engine_ = nullptr;
+        PanelViewerConfiguration configuration_;
         std::unique_ptr<WindowSystem> window_;
         std::unique_ptr<graphics::RenderBackend> backend_;
         std::vector<std::unique_ptr<render::FrameContext>> frame_contexts_;

@@ -28,6 +28,12 @@
   in Runtime's application composition and install it in the core registry;
   optional mode hosts remain module-owned. →
   [ownership correction](../../.spec/journal/2026-11-08-scene3d-core-ownership.md)
+- [x] **MODE1.7 — host-owned launch configuration:** construct hosts from typed
+  application configuration before Engine initialization. Live2D and Panel
+  settings, including standalone capture/resize behavior, stay with their
+  consuming hosts; Engine owns and drives the configured host. Startup-level
+  ownership remains a separate follow-up. →
+  [configuration refactor](../../.spec/journal/2026-11-10-host-configuration.md)
 
 ## Acceptance ledger
 

@@ -646,7 +646,7 @@ TEST(ApplicationHostRegistryTest, RegistersAndCreatesOneProviderPerMode)
     std::string diagnostic;
     const bool registered = registry.Register(
         {"test-viewer",
-        [](kpengine::runtime::Engine &) {
+        [](const kpengine::runtime::RuntimeLaunchOptions &) {
             return std::make_unique<TestApplicationHost>();
         },
         kpengine::runtime::ApplicationHostLayout::OwnedWindow,
@@ -655,14 +655,13 @@ TEST(ApplicationHostRegistryTest, RegistersAndCreatesOneProviderPerMode)
     ASSERT_TRUE(registered) << diagnostic;
     EXPECT_TRUE(registry.Contains("test-viewer"));
     EXPECT_FALSE(registry.Contains("scene3d"));
-    kpengine::runtime::Engine engine;
     const std::unique_ptr<kpengine::runtime::IApplicationHost> host = registry.Create(
-        "test-viewer", engine, diagnostic);
+        "test-viewer", kpengine::runtime::RuntimeLaunchOptions{}, diagnostic);
     ASSERT_NE(host, nullptr) << diagnostic;
     EXPECT_STREQ(host->Name(), "test");
     EXPECT_FALSE(registry.Register(
         {"test-viewer",
-        [](kpengine::runtime::Engine &) {
+        [](const kpengine::runtime::RuntimeLaunchOptions &) {
             return std::make_unique<TestApplicationHost>();
         },
         kpengine::runtime::ApplicationHostLayout::OwnedWindow,

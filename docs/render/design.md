@@ -105,6 +105,36 @@ gizmo policy, hit testing, and interaction state. The first transform gizmo is
 therefore an Editor overlay, with a future depth-aware GPU pass treated as a
 rendering implementation detail rather than a new Gameplay dependency.
 
+`RenderCamera::ProjectWorldPoint()` owns projection math beside `BuildWorldRay()`.
+The renderer selects its active camera and delegates; it does not implement a
+second camera algorithm for tools.
+
+## Frame preparation and submitted progress
+
+Before backend acquisition, `DeferredRenderer::PrepareFrame()` snapshots the
+scene, prepares RT scene descriptions and resolves one `RenderFrameMode` from
+requested settings, pipeline availability, scene capacity and TLAS readiness.
+That mode controls history-resource preparation, raster TAA/AO eligibility,
+graph selection and history commit. A PT request that cannot trace the current
+scene uses the raster consumers. Histories prepare before recording, so resize
+and shader replacement cannot idle-retire active AS build scratch.
+
+Graph finalization stages PT progress. `RenderSystem` then submits the backend
+frame and reports acceptance through `CommitSubmittedFrame()`. PT samples, RNG,
+history parity and adaptive sampling advance only on accepted frames, as do
+raster transforms/camera/jitter/history. A failed submission consumes the pending
+commit without advancing it.
+
+The existing `EnvironmentBindingsOwner` lives at frame composition. Deferred
+lighting and PT borrow the same immutable environment bindings; the resource
+resolver retains GPU texture/sampler ownership. `RenderTarget` reports color
+footprints using its own attachment descriptions and Core format sizing.
+Frame-target and temporal-history owners aggregate their layouts, and profiling
+aggregates those values with active AO transients independently of TAA recording.
+Unsupported native allocation measurements remain absent. AO/TAA settings are
+lightweight value contracts; the public RenderSystem header forward-declares
+its concrete renderer.
+
 ## Non-goals
 
 - Do not make Render load arbitrary source files outside Asset/Resource.
