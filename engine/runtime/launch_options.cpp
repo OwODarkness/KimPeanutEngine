@@ -356,7 +356,7 @@ namespace kpengine::runtime
                     {
                         return Failure("duplicate option '--disable-path-tracing'");
                     }
-                    result.options.path_tracing_enabled = false;
+                    result.options.path_tracing_enabled_override = false;
                     has_disable_path_tracing = true;
                 }
                 else if (argument == "--disable-ray-tracing")
@@ -365,8 +365,8 @@ namespace kpengine::runtime
                     {
                         return Failure("duplicate option '--disable-ray-tracing'");
                     }
-                    result.options.ray_tracing_enabled = false;
-                    result.options.path_tracing_enabled = false;
+                    result.options.ray_tracing_support_override = false;
+                    result.options.path_tracing_enabled_override = false;
                     has_disable_ray_tracing = true;
                 }
                 else if (argument == "--vsync")

@@ -87,8 +87,6 @@ namespace kpengine
             // Must be called before initialization; it reaches the window's
             // swap interval, which is fixed once the window exists.
             void SetVSync(bool enabled);
-            void SetRayTracingEnabled(bool enabled);
-            void SetPathTracingEnabled(bool enabled);
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
             StartupSnapshot GetStartupSnapshot() const;
 

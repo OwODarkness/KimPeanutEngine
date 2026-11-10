@@ -67,7 +67,7 @@ namespace kpengine::render
                 throw std::runtime_error("Failed to create the complete render target set.");
             }
             KP_LOG("RenderLog", LOG_LEVEL_INFO, "R4.6 frame targets initialized");
-            if (ray_tracing_enabled_ && path_tracing_enabled_ &&
+            if (ray_tracing_enabled_ &&
                 backend_->GetCapabilities().SupportsRayTracingPipeline())
                 path_tracing_pass_.PrepareResources(*backend_, *prepared_assets_);
             KP_LOG("RenderLog", LOG_LEVEL_INFO,

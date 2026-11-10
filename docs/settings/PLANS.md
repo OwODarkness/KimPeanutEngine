@@ -1,6 +1,6 @@
 # Settings architecture
 
-**Status: proposed; implementation has not started.**
+**Status: SET1/SET2 implementation in progress; SET3 design captured.**
 
 This module provides centrally discoverable settings with domain-owned behavior
 and a shared Editor settings window. [TODO.md](TODO.md) owns stage acceptance;
@@ -247,6 +247,7 @@ concrete property requires one. No UI dependency enters RuntimeSettings/Render.
 
 - [SET1: headless registry and store](.plan/SET1.md)
 - [SET2: Rendering integration](.plan/SET2.md)
+- [SET3: Editor settings window](.plan/SET3.md)
 - [Roadmap and GUI/expansion stages](TODO.md)
 - [Engine composition](../engine/PLANS.md)
 - [Reflection architecture](../reflection/PLANS.md)

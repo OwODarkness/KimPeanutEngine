@@ -5,10 +5,12 @@
 #include <array>
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -16,6 +18,7 @@
 #include "command/command_registry.h"
 #include "render/render_system.h"
 #include "render_asset_preparer.h"
+#include "settings/settings_registry.h"
 #include "runtime_camera_control.h"
 #include "gameplay/actor/actor_types.h"
 
@@ -56,6 +59,16 @@ namespace kpengine::runtime::script
     class LuaCommandBridge;
 }
 
+namespace kpengine::settings
+{
+    class SettingsStore;
+}
+
+namespace kpengine::render
+{
+    class RenderSettingsProvider;
+}
+
 namespace kpengine
 {
     constexpr float k_unit_scale = 0.01f;
@@ -87,6 +100,17 @@ namespace kpengine
             };
             using ShutdownProgressCallback =
                 std::function<void(const ShutdownProgress &)>;
+            // Builds the settings catalog and resolves disk/session layers before
+            // a host or graphics device consumes startup values.
+            void InitializeSettings();
+            settings::SettingsResult SetSessionSettingsOverrides(
+                settings::SettingsLayerOverrides overrides);
+            settings::SettingsLayerOverrides GetSessionSettingsOverrides() const;
+            settings::SettingsRegistry *GetSettingsRegistry() noexcept
+            {
+                return settings_registry_.get();
+            }
+            void PumpSettingsProviders();
             // Creates the traditional scene services. Standalone application
             // hosts deliberately leave this uncalled so they do not construct
             // RenderWorld, GameplayWorld, or the scene window stack.
@@ -221,8 +245,6 @@ namespace kpengine
 
             GraphicsAPIType graphics_api_type_;
             bool vsync_ = true;
-            bool ray_tracing_enabled_ = true;
-            bool path_tracing_enabled_ = true;
             asset::AssetID startup_level_asset_;
 
             std::shared_ptr<const render::PreparedRenderAssetCatalog> prepared_render_assets_;
@@ -231,6 +253,18 @@ namespace kpengine
             void EnsureSceneServices();
             void ProcessScenePickRequests();
             StartupResult ReloadStartupLevel();
+            command::CommandResult SubmitRenderSettingsCommandEdit(
+                std::string_view section_key,
+                settings::SettingValues changed_values,
+                const command::CommandContext &context,
+                std::optional<render::PathTraceOutputProbe> output_probe = std::nullopt);
+
+            struct PendingSettingsCommand
+            {
+                std::function<void(command::CommandResult)> complete;
+                std::optional<render::PathTraceOutputProbe> output_probe;
+                uint64_t command_request_id = 0;
+            };
 
             std::atomic<bool> scene_camera_control_captured_{false};
             std::atomic<float> scene_camera_move_speed_{kDefaultSceneCameraMoveSpeed};
@@ -240,6 +274,14 @@ namespace kpengine
             StartupControllerSetupOverride startup_controller_setup_override_;
             std::function<WindowSystem *()> host_window_resolver_;
             HostCommandRegistrar host_command_registrar_;
+            std::unique_ptr<settings::SettingsRegistry> settings_registry_;
+            std::unique_ptr<settings::SettingsStore> project_settings_store_;
+            std::unique_ptr<settings::SettingsStore> user_settings_store_;
+            std::unique_ptr<render::RenderSettingsProvider> render_settings_provider_;
+            std::vector<settings::SettingsProviderRegistration>
+                render_settings_registrations_;
+            std::map<uint64_t, PendingSettingsCommand> pending_settings_commands_;
+            settings::SettingsLayerOverrides pending_session_settings_overrides_;
 
         };
 

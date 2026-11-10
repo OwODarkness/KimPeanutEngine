@@ -45,8 +45,26 @@ TEST(RuntimeLaunchOptionsTest, DefaultsPreserveExistingLaunchBehavior)
     EXPECT_FALSE(result.options.startup_level_override.has_value());
     EXPECT_FALSE(result.options.startup_capture_override.has_value());
     EXPECT_FALSE(result.options.startup_resize.has_value());
+    EXPECT_FALSE(result.options.ray_tracing_support_override.has_value());
+    EXPECT_FALSE(result.options.path_tracing_enabled_override.has_value());
     // Presentation stays locked to the display refresh unless asked otherwise.
     EXPECT_TRUE(result.options.vsync);
+}
+
+TEST(RuntimeLaunchOptionsTest, TracksOnlyExplicitRayTracingDisableOverrides)
+{
+    const auto path_tracing = Parse({"--disable-path-tracing"});
+    ASSERT_TRUE(path_tracing) << path_tracing.diagnostic;
+    EXPECT_FALSE(path_tracing.options.ray_tracing_support_override.has_value());
+    ASSERT_TRUE(path_tracing.options.path_tracing_enabled_override.has_value());
+    EXPECT_FALSE(*path_tracing.options.path_tracing_enabled_override);
+
+    const auto ray_tracing = Parse({"--disable-ray-tracing"});
+    ASSERT_TRUE(ray_tracing) << ray_tracing.diagnostic;
+    ASSERT_TRUE(ray_tracing.options.ray_tracing_support_override.has_value());
+    EXPECT_FALSE(*ray_tracing.options.ray_tracing_support_override);
+    ASSERT_TRUE(ray_tracing.options.path_tracing_enabled_override.has_value());
+    EXPECT_FALSE(*ray_tracing.options.path_tracing_enabled_override);
 }
 
 TEST(RuntimeLaunchOptionsTest, ParsesVSyncAndRejectsUnusableValues)
@@ -675,11 +693,11 @@ TEST(ApplicationHostRegistryTest, AudioPlayerHasAnIndependentHostSlot)
     std::string diagnostic;
     ASSERT_TRUE(registry.Register(
         {"audio-player",
-        [](kpengine::runtime::Engine &) {
+        [](const kpengine::runtime::RuntimeLaunchOptions &) {
             return std::make_unique<TestApplicationHost>();
         },
         kpengine::runtime::ApplicationHostLayout::SharedWindowPresentation,
-        false}, diagnostic) << diagnostic;
+        false}, diagnostic)) << diagnostic;
     EXPECT_TRUE(registry.Contains("audio-player"));
     EXPECT_FALSE(registry.Contains("terrain-viewer"));
     EXPECT_FALSE(registry.Contains("scene3d"));

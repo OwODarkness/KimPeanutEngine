@@ -22,6 +22,7 @@
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/world/gameplay_world.h"
 #include "runtime/engine.h"
+#include "runtime/render/settings/render_settings.h"
 #include "runtime/runtime_global_context.h"
 #include "editor/terrain_editor.h"
 #include "evaluation/terrain_generation.h"
@@ -462,8 +463,27 @@ namespace kpengine::terrain
             diagnostic = "TerrainViewerHost can only initialize in terrain-viewer mode";
             return false;
         }
-        engine.SetRayTracingEnabled(false);
-        engine.SetPathTracingEnabled(false);
+        auto settings_overrides =
+            runtime::global_runtime_context.GetSessionSettingsOverrides();
+        const auto terrain_overrides = render::MakeRenderSettingsSessionOverrides(
+            {.ray_tracing_support = false, .path_tracing_enabled = false});
+        for (const auto &[section, values] : terrain_overrides)
+        {
+            auto &destination = settings_overrides[section];
+            for (const auto &[key, value] : values)
+            {
+                destination[key] = value;
+            }
+        }
+        const settings::SettingsResult settings_result =
+            runtime::global_runtime_context.SetSessionSettingsOverrides(
+                std::move(settings_overrides));
+        if (!settings_result)
+        {
+            diagnostic = "could not apply terrain viewer render settings: " +
+                         settings_result.diagnostic;
+            return false;
+        }
         runtime::global_runtime_context.InitializeSceneServices();
         gameplay::GameplayWorld *const world =
             runtime::global_runtime_context.gameplay_world_.get();

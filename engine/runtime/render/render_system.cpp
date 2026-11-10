@@ -90,8 +90,12 @@ namespace kpengine::render
         try
         {
             ray_tracing_enabled_ = info.ray_tracing_enabled;
-            path_tracing_enabled_ = info.ray_tracing_enabled && info.path_tracing_enabled;
-            requested_path_trace_settings_.path_tracing_enabled = path_tracing_enabled_;
+            requested_path_trace_settings_ = info.path_trace_settings;
+            requested_screen_space_ao_settings_ = info.screen_space_ao_settings;
+            requested_height_fog_settings_ = info.height_fog_settings;
+            requested_temporal_aa_settings_ = info.temporal_aa_settings;
+            path_tracing_enabled_ = info.ray_tracing_enabled &&
+                                    requested_path_trace_settings_.path_tracing_enabled;
             RenderBackendFactory factory = info.backend_factory;
             if (!factory)
             {
@@ -186,12 +190,25 @@ namespace kpengine::render
             {
                 throw std::runtime_error(renderer_result.diagnostic);
             }
+            path_tracing_available_.store(
+                deferred_renderer_->IsPathTracingAvailable(),
+                std::memory_order_release);
             PathTraceSettings initial_path_trace_settings;
+            ScreenSpaceAoSettings initial_screen_space_ao_settings;
+            HeightFogSettings initial_height_fog_settings;
+            TemporalAaSettings initial_temporal_aa_settings;
             {
                 std::lock_guard lock(request_mutex_);
                 initial_path_trace_settings = requested_path_trace_settings_;
+                initial_screen_space_ao_settings = requested_screen_space_ao_settings_;
+                initial_height_fog_settings = requested_height_fog_settings_;
+                initial_temporal_aa_settings = requested_temporal_aa_settings_;
             }
             deferred_renderer_->SetPathTraceSettings(initial_path_trace_settings);
+            deferred_renderer_->SetScreenSpaceAoSettings(initial_screen_space_ao_settings);
+            deferred_renderer_->SetHeightFogSettings(initial_height_fog_settings);
+            deferred_renderer_->SetTemporalAaSettings(initial_temporal_aa_settings);
+            scene_renderer_available_.store(true, std::memory_order_release);
             render_capture_service_ = std::make_unique<RenderCaptureService>(
                 backend_->GetRenderTargetReadback(),
                 [this](CaptureView view)
@@ -333,6 +350,12 @@ namespace kpengine::render
             std::optional<ScreenSpaceAoSettings> screen_space_ao_settings;
             std::optional<HeightFogSettings> height_fog_settings;
             std::optional<TemporalAaSettings> temporal_aa_settings;
+            std::function<void(PathTraceSettingsApplyResult)>
+                path_trace_settings_completion;
+            std::function<void(ScreenSpaceAoSettingsApplyResult)>
+                screen_space_ao_settings_completion;
+            std::function<void(HeightFogSettingsApplyResult)> height_fog_settings_completion;
+            std::function<void(TemporalAaSettingsApplyResult)> temporal_aa_settings_completion;
             {
                 std::lock_guard lock(request_mutex_);
                 editor_debug_view = debug_view_demands_[static_cast<std::size_t>(
@@ -340,27 +363,58 @@ namespace kpengine::render
                 tooling_debug_view = debug_view_demands_[static_cast<std::size_t>(
                     DebugViewConsumer::RuntimeTooling)];
                 path_trace_settings = std::exchange(pending_path_trace_settings_, std::nullopt);
+                path_trace_settings_completion = std::exchange(
+                    pending_path_trace_settings_completion_, {});
                 screen_space_ao_settings = std::exchange(
                     pending_screen_space_ao_settings_, std::nullopt);
+                screen_space_ao_settings_completion = std::exchange(
+                    pending_screen_space_ao_completion_, {});
                 height_fog_settings = std::exchange(pending_height_fog_settings_, std::nullopt);
+                height_fog_settings_completion = std::exchange(
+                    pending_height_fog_completion_, {});
                 temporal_aa_settings = std::exchange(
                     pending_temporal_aa_settings_, std::nullopt);
+                temporal_aa_settings_completion = std::exchange(
+                    pending_temporal_aa_completion_, {});
             }
             debug_view_ = editor_debug_view.value_or(
                 tooling_debug_view.value_or(CaptureView::SceneColor));
             if (path_trace_settings.has_value())
             {
                 deferred_renderer_->SetPathTraceSettings(*path_trace_settings);
+                path_tracing_enabled_ = path_trace_settings->path_tracing_enabled;
+                if (path_trace_settings_completion)
+                {
+                    path_trace_settings_completion({
+                        PathTraceSettingsApplyOutcome::Applied, *path_trace_settings});
+                }
             }
             if (screen_space_ao_settings.has_value())
             {
                 deferred_renderer_->SetScreenSpaceAoSettings(*screen_space_ao_settings);
+                if (screen_space_ao_settings_completion)
+                {
+                    screen_space_ao_settings_completion({
+                        RenderSettingsApplyOutcome::Applied, *screen_space_ao_settings});
+                }
             }
             if (height_fog_settings)
+            {
                 deferred_renderer_->SetHeightFogSettings(*height_fog_settings);
+                if (height_fog_settings_completion)
+                {
+                    height_fog_settings_completion({
+                        RenderSettingsApplyOutcome::Applied, *height_fog_settings});
+                }
+            }
             if (temporal_aa_settings.has_value())
             {
                 deferred_renderer_->SetTemporalAaSettings(*temporal_aa_settings);
+                if (temporal_aa_settings_completion)
+                {
+                    temporal_aa_settings_completion({
+                        RenderSettingsApplyOutcome::Applied, *temporal_aa_settings});
+                }
             }
             if (requested_profile_window_reset_.exchange(false, std::memory_order_acq_rel))
             {
@@ -767,18 +821,60 @@ namespace kpengine::render
 
     bool RenderSystem::RequestPathTraceSettings(PathTraceSettings settings)
     {
+        return RequestPathTraceSettings(std::move(settings), {});
+    }
+
+    bool RenderSystem::RequestPathTraceSettings(
+        PathTraceSettings settings,
+        std::function<void(PathTraceSettingsApplyResult)> completion)
+    {
         if (!IsValidPathTraceSettings(settings))
         {
             return false;
         }
-        std::lock_guard lock(request_mutex_);
-        requested_path_trace_settings_ = settings;
-        pending_path_trace_settings_ = settings;
+        std::function<void(PathTraceSettingsApplyResult)> superseded_completion;
+        PathTraceSettings superseded_settings{};
+        {
+            std::lock_guard lock(request_mutex_);
+            if (pending_path_trace_settings_.has_value())
+            {
+                superseded_completion = std::exchange(
+                    pending_path_trace_settings_completion_, {});
+                superseded_settings = *pending_path_trace_settings_;
+            }
+            requested_path_trace_settings_ = settings;
+            pending_path_trace_settings_ = settings;
+            pending_path_trace_settings_completion_ = std::move(completion);
+        }
+        if (superseded_completion)
+        {
+            superseded_completion({PathTraceSettingsApplyOutcome::Superseded,
+                                  superseded_settings});
+        }
         requested_profile_window_reset_.store(true, std::memory_order_release);
         return true;
     }
 
+    PathTraceSettings RenderSystem::GetRequestedPathTraceSettings() const
+    {
+        std::lock_guard lock(request_mutex_);
+        return requested_path_trace_settings_;
+    }
+
+    ScreenSpaceAoSettings RenderSystem::GetRequestedScreenSpaceAoSettings() const
+    {
+        std::lock_guard lock(request_mutex_);
+        return requested_screen_space_ao_settings_;
+    }
+
     bool RenderSystem::RequestScreenSpaceAoSettings(ScreenSpaceAoSettings settings)
+    {
+        return RequestScreenSpaceAoSettings(std::move(settings), {});
+    }
+
+    bool RenderSystem::RequestScreenSpaceAoSettings(
+        ScreenSpaceAoSettings settings,
+        std::function<void(ScreenSpaceAoSettingsApplyResult)> completion)
     {
         if (!std::isfinite(settings.radius) || !std::isfinite(settings.bias) ||
             !std::isfinite(settings.strength) || settings.radius <= 0.0f ||
@@ -787,42 +883,139 @@ namespace kpengine::render
         settings.radius = std::clamp(settings.radius, 0.05f, 2.0f);
         settings.bias = std::clamp(settings.bias, 0.0f, settings.radius * 0.5f);
         settings.strength = std::clamp(settings.strength, 0.0f, 4.0f);
-        std::lock_guard lock(request_mutex_);
-        pending_screen_space_ao_settings_ = settings;
+        std::function<void(ScreenSpaceAoSettingsApplyResult)> superseded_completion;
+        ScreenSpaceAoSettings superseded_settings{};
+        {
+            std::lock_guard lock(request_mutex_);
+            if (pending_screen_space_ao_settings_)
+            {
+                superseded_completion = std::exchange(pending_screen_space_ao_completion_, {});
+                superseded_settings = *pending_screen_space_ao_settings_;
+            }
+            requested_screen_space_ao_settings_ = settings;
+            pending_screen_space_ao_settings_ = settings;
+            pending_screen_space_ao_completion_ = std::move(completion);
+        }
+        if (superseded_completion)
+        {
+            superseded_completion({RenderSettingsApplyOutcome::Superseded,
+                                   superseded_settings});
+        }
         requested_profile_window_reset_.store(true, std::memory_order_release);
         return true;
     }
 
     bool RenderSystem::RequestHeightFogSettings(HeightFogSettings settings)
     {
+        return RequestHeightFogSettings(std::move(settings), {});
+    }
+
+    HeightFogSettings RenderSystem::GetRequestedHeightFogSettings() const
+    {
+        std::lock_guard lock(request_mutex_);
+        return requested_height_fog_settings_;
+    }
+
+    bool RenderSystem::RequestHeightFogSettings(
+        HeightFogSettings settings,
+        std::function<void(HeightFogSettingsApplyResult)> completion)
+    {
         if (!IsValidHeightFogSettings(settings))
             return false;
-        std::lock_guard lock(request_mutex_);
-        pending_height_fog_settings_ = settings;
+        std::function<void(HeightFogSettingsApplyResult)> superseded_completion;
+        HeightFogSettings superseded_settings{};
+        {
+            std::lock_guard lock(request_mutex_);
+            if (pending_height_fog_settings_)
+            {
+                superseded_completion = std::exchange(pending_height_fog_completion_, {});
+                superseded_settings = *pending_height_fog_settings_;
+            }
+            requested_height_fog_settings_ = settings;
+            pending_height_fog_settings_ = settings;
+            pending_height_fog_completion_ = std::move(completion);
+        }
+        if (superseded_completion)
+        {
+            superseded_completion({RenderSettingsApplyOutcome::Superseded,
+                                   superseded_settings});
+        }
         requested_profile_window_reset_.store(true, std::memory_order_release);
         return true;
     }
 
     bool RenderSystem::RequestTemporalAaSettings(TemporalAaSettings settings)
     {
+        return RequestTemporalAaSettings(std::move(settings), {});
+    }
+
+    TemporalAaSettings RenderSystem::GetRequestedTemporalAaSettings() const
+    {
+        std::lock_guard lock(request_mutex_);
+        return requested_temporal_aa_settings_;
+    }
+
+    bool RenderSystem::RequestTemporalAaSettings(
+        TemporalAaSettings settings,
+        std::function<void(TemporalAaSettingsApplyResult)> completion)
+    {
         if (!std::isfinite(settings.history_weight) || settings.history_weight < 0.0f ||
             settings.history_weight > 0.95f)
             return false;
-        std::lock_guard lock(request_mutex_);
-        pending_temporal_aa_settings_ = settings;
+        std::function<void(TemporalAaSettingsApplyResult)> superseded_completion;
+        TemporalAaSettings superseded_settings{};
+        {
+            std::lock_guard lock(request_mutex_);
+            if (pending_temporal_aa_settings_)
+            {
+                superseded_completion = std::exchange(pending_temporal_aa_completion_, {});
+                superseded_settings = *pending_temporal_aa_settings_;
+            }
+            requested_temporal_aa_settings_ = settings;
+            pending_temporal_aa_settings_ = settings;
+            pending_temporal_aa_completion_ = std::move(completion);
+        }
+        if (superseded_completion)
+        {
+            superseded_completion({RenderSettingsApplyOutcome::Superseded,
+                                   superseded_settings});
+        }
         requested_profile_window_reset_.store(true, std::memory_order_release);
         return true;
     }
 
     void RenderSystem::RequestPathTraceProbeMode(PathTraceProbeMode mode)
     {
+        (void)RequestPathTraceProbeMode(mode, {});
+    }
+
+    bool RenderSystem::RequestPathTraceProbeMode(
+        PathTraceProbeMode mode,
+        std::function<void(PathTraceSettingsApplyResult)> completion)
+    {
+        std::function<void(PathTraceSettingsApplyResult)> superseded_completion;
+        PathTraceSettings superseded_settings{};
+        PathTraceSettings settings{};
         {
             std::lock_guard lock(request_mutex_);
-            requested_path_trace_settings_ = ApplyLegacyPathTraceProbeMode(
-                requested_path_trace_settings_, mode);
-            pending_path_trace_settings_ = requested_path_trace_settings_;
+            settings = ApplyLegacyPathTraceProbeMode(requested_path_trace_settings_, mode);
+            if (pending_path_trace_settings_)
+            {
+                superseded_completion = std::exchange(
+                    pending_path_trace_settings_completion_, {});
+                superseded_settings = *pending_path_trace_settings_;
+            }
+            requested_path_trace_settings_ = settings;
+            pending_path_trace_settings_ = settings;
+            pending_path_trace_settings_completion_ = std::move(completion);
+        }
+        if (superseded_completion)
+        {
+            superseded_completion({PathTraceSettingsApplyOutcome::Superseded,
+                                  superseded_settings});
         }
         requested_profile_window_reset_.store(true, std::memory_order_release);
+        return true;
     }
 
     void RenderSystem::RequestPathTraceDispatchFailureInjection() noexcept
@@ -979,10 +1172,21 @@ namespace kpengine::render
             editor_presentation_assets_.reset();
             pending_editor_presentation_assets_.reset();
         }
+        path_tracing_available_.store(false, std::memory_order_release);
+        scene_renderer_available_.store(false, std::memory_order_release);
     }
 
     void RenderSystem::CleanupSceneState()
     {
+        scene_renderer_available_.store(false, std::memory_order_release);
+        std::function<void(PathTraceSettingsApplyResult)> path_trace_completion;
+        std::function<void(ScreenSpaceAoSettingsApplyResult)> ao_completion;
+        std::function<void(HeightFogSettingsApplyResult)> fog_completion;
+        std::function<void(TemporalAaSettingsApplyResult)> taa_completion;
+        PathTraceSettings path_trace_settings{};
+        ScreenSpaceAoSettings ao_settings{};
+        HeightFogSettings fog_settings{};
+        TemporalAaSettings taa_settings{};
         scene_coordinator_.Clear();
         material_system_.reset();
         if (backend_ && backend_initialized_)
@@ -1012,7 +1216,47 @@ namespace kpengine::render
         {
             std::lock_guard lock(request_mutex_);
             debug_view_demands_.fill(std::nullopt);
+            if (pending_path_trace_settings_)
+            {
+                path_trace_settings = *pending_path_trace_settings_;
+                path_trace_completion = std::exchange(
+                    pending_path_trace_settings_completion_, {});
+            }
+            if (pending_screen_space_ao_settings_)
+            {
+                ao_settings = *pending_screen_space_ao_settings_;
+                ao_completion = std::exchange(pending_screen_space_ao_completion_, {});
+            }
+            if (pending_height_fog_settings_)
+            {
+                fog_settings = *pending_height_fog_settings_;
+                fog_completion = std::exchange(pending_height_fog_completion_, {});
+            }
+            if (pending_temporal_aa_settings_)
+            {
+                taa_settings = *pending_temporal_aa_settings_;
+                taa_completion = std::exchange(pending_temporal_aa_completion_, {});
+            }
             pending_path_trace_settings_.reset();
+            pending_screen_space_ao_settings_.reset();
+            pending_height_fog_settings_.reset();
+            pending_temporal_aa_settings_.reset();
+        }
+        if (path_trace_completion)
+        {
+            path_trace_completion({RenderSettingsApplyOutcome::Cancelled, path_trace_settings});
+        }
+        if (ao_completion)
+        {
+            ao_completion({RenderSettingsApplyOutcome::Cancelled, ao_settings});
+        }
+        if (fog_completion)
+        {
+            fog_completion({RenderSettingsApplyOutcome::Cancelled, fog_settings});
+        }
+        if (taa_completion)
+        {
+            taa_completion({RenderSettingsApplyOutcome::Cancelled, taa_settings});
         }
     }
 

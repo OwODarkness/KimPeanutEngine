@@ -17,8 +17,10 @@ namespace kpengine::runtime
     {
         std::string application_mode = "scene3d";
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
-        bool ray_tracing_enabled = true;
-        bool path_tracing_enabled = true;
+        // Empty means the user did not supply a CLI preference override, so
+        // persisted settings remain authoritative.
+        std::optional<bool> ray_tracing_support_override;
+        std::optional<bool> path_tracing_enabled_override;
         // Whether presentation is locked to the display refresh. It controls
         // the OpenGL swap interval; the Vulkan swapchain selects its own present
         // mode independently and does not consult this yet.

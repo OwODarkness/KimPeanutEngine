@@ -154,24 +154,6 @@ namespace kpengine
             global_runtime_context.vsync_ = enabled;
         }
 
-        void Engine::SetRayTracingEnabled(bool enabled)
-        {
-            if (initialization_started_ || cleared_)
-            {
-                return;
-            }
-            global_runtime_context.ray_tracing_enabled_ = enabled;
-        }
-
-        void Engine::SetPathTracingEnabled(bool enabled)
-        {
-            if (initialization_started_ || cleared_)
-            {
-                return;
-            }
-            global_runtime_context.path_tracing_enabled_ = enabled;
-        }
-
         void Engine::SetStartupLevelOverride(std::string authored_or_normalized_path)
         {
             if (initialization_started_ || startup_level_loaded_ || render_thread_.joinable() ||
@@ -235,6 +217,7 @@ namespace kpengine
                                ? application_host_->RegisterHostCommands(registry, diagnostic)
                                : true;
                 });
+            global_runtime_context.InitializeSettings();
             if (!IsStandaloneViewerMode() &&
                 !application_host_->Initialize(*this, host_diagnostic))
             {
@@ -866,6 +849,7 @@ namespace kpengine
             {
                 global_runtime_context.command_registry_->PumpGameThread();
             }
+            global_runtime_context.PumpSettingsProviders();
 
             if (TicksGameplayWorld() &&
                 global_runtime_context.gameplay_world_)

@@ -127,3 +127,12 @@ target_link_libraries(RenderSystemTest PRIVATE Render KP::GoogleTest)
 
 include(GoogleTest)
 gtest_discover_tests(RenderSystemTest PROPERTIES LABELS "render")
+
+add_executable(RenderSettingsTest
+    render_settings_test.cpp
+)
+target_include_directories(RenderSettingsTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+)
+target_link_libraries(RenderSettingsTest PRIVATE RenderSettings KP::GoogleTest)
+gtest_discover_tests(RenderSettingsTest PROPERTIES LABELS "render;settings")

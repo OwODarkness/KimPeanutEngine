@@ -865,11 +865,29 @@ TEST(RenderSystemLifecycleTest, SeparatesPresentationInitializationFromSceneProm
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
     ASSERT_TRUE(system.EndFrame());
     EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::PresentationReady);
+    EXPECT_FALSE(system.HasSceneRenderer());
+
+    std::optional<render::TemporalAaSettingsApplyResult> apply_result;
+    auto taa = system.GetRequestedTemporalAaSettings();
+    taa.history_weight = 0.8f;
+    ASSERT_TRUE(system.RequestTemporalAaSettings(taa, [&apply_result](auto result)
+    {
+        apply_result = result;
+    }));
+    EXPECT_FALSE(apply_result.has_value());
 
     ASSERT_TRUE(system.PromoteToScene(info.prepared_assets));
     EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::Ready);
+    EXPECT_TRUE(system.HasSceneRenderer());
     EXPECT_TRUE(system.GetSceneRenderTargetView().IsValid());
+    EXPECT_FALSE(apply_result.has_value());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(apply_result.has_value());
+    EXPECT_EQ(apply_result->outcome, render::RenderSettingsApplyOutcome::Applied);
+    EXPECT_FLOAT_EQ(apply_result->active_settings.history_weight, 0.8f);
+    ASSERT_TRUE(system.EndFrame());
     system.Shutdown();
+    EXPECT_FALSE(system.HasSceneRenderer());
 }
 
 TEST(RenderSystemLifecycleTest, ReportsFailedCatalogPromotionAndAllowsRetry)
@@ -970,11 +988,20 @@ TEST(RenderSystemLifecycleTest, AppliesCopiedPathTraceSettingsAtFrameBoundary)
     settings.samples_per_dispatch = 2;
     settings.maximum_continuation_bounces = 5;
     settings.reconstruction = render::PathTraceReconstruction::GuidedPreview;
-    EXPECT_TRUE(system.RequestPathTraceSettings(settings));
+    std::optional<render::PathTraceSettingsApplyResult> completion;
+    EXPECT_TRUE(system.RequestPathTraceSettings(
+        settings, [&completion](render::PathTraceSettingsApplyResult result)
+        {
+            completion = std::move(result);
+        }));
+    EXPECT_FALSE(completion.has_value());
 
     settings.samples_per_dispatch = 0;
     EXPECT_FALSE(system.RequestPathTraceSettings(settings));
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(completion.has_value());
+    EXPECT_EQ(completion->outcome, render::PathTraceSettingsApplyOutcome::Applied);
+    EXPECT_EQ(completion->active_settings.samples_per_dispatch, 2U);
     const render::RenderProfileSnapshot profile = system.GetMetrics().profile;
     EXPECT_FALSE(profile.path_trace_settings_requested.path_tracing_enabled);
     EXPECT_EQ(profile.path_trace_settings_requested.samples_per_dispatch, 2U);
@@ -983,6 +1010,114 @@ TEST(RenderSystemLifecycleTest, AppliesCopiedPathTraceSettingsAtFrameBoundary)
               render::PathTraceReconstruction::GuidedPreview);
     ASSERT_TRUE(system.EndFrame());
     system.Shutdown();
+}
+
+TEST(RenderSystemLifecycleTest, CompletesTypedSettingsAtSafeFrameAndOnSupersession)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+    ASSERT_TRUE(system.HasSceneRenderer());
+
+    std::optional<render::PathTraceSettingsApplyResult> path_first;
+    std::optional<render::PathTraceSettingsApplyResult> path_last;
+    auto path = system.GetRequestedPathTraceSettings();
+    path.samples_per_dispatch = 2;
+    ASSERT_TRUE(system.RequestPathTraceSettings(path, [&path_first](auto result)
+    {
+        path_first = result;
+    }));
+    path.samples_per_dispatch = 3;
+    ASSERT_TRUE(system.RequestPathTraceSettings(path, [&path_last](auto result)
+    {
+        path_last = result;
+    }));
+
+    std::optional<render::ScreenSpaceAoSettingsApplyResult> ao_first;
+    std::optional<render::ScreenSpaceAoSettingsApplyResult> ao_last;
+    auto ao = system.GetRequestedScreenSpaceAoSettings();
+    ao.radius = 0.8f;
+    ASSERT_TRUE(system.RequestScreenSpaceAoSettings(ao, [&ao_first](auto result)
+    {
+        ao_first = result;
+    }));
+    ao.radius = 0.9f;
+    ASSERT_TRUE(system.RequestScreenSpaceAoSettings(ao, [&ao_last](auto result)
+    {
+        ao_last = result;
+    }));
+
+    std::optional<render::TemporalAaSettingsApplyResult> taa_first;
+    std::optional<render::TemporalAaSettingsApplyResult> taa_last;
+    auto taa = system.GetRequestedTemporalAaSettings();
+    taa.enabled = false;
+    ASSERT_TRUE(system.RequestTemporalAaSettings(taa, [&taa_first](auto result)
+    {
+        taa_first = result;
+    }));
+    taa.enabled = true;
+    taa.history_weight = 0.85f;
+    ASSERT_TRUE(system.RequestTemporalAaSettings(taa, [&taa_last](auto result)
+    {
+        taa_last = result;
+    }));
+
+    std::optional<render::HeightFogSettingsApplyResult> fog_first;
+    std::optional<render::HeightFogSettingsApplyResult> fog_last;
+    auto fog = system.GetRequestedHeightFogSettings();
+    fog.enabled = true;
+    fog.density = 0.05f;
+    ASSERT_TRUE(system.RequestHeightFogSettings(fog, [&fog_first](auto result)
+    {
+        fog_first = result;
+    }));
+    fog.density = 0.1f;
+    ASSERT_TRUE(system.RequestHeightFogSettings(fog, [&fog_last](auto result)
+    {
+        fog_last = result;
+    }));
+
+    ASSERT_TRUE(path_first.has_value());
+    ASSERT_TRUE(ao_first.has_value());
+    ASSERT_TRUE(taa_first.has_value());
+    ASSERT_TRUE(fog_first.has_value());
+    EXPECT_EQ(path_first->outcome, render::RenderSettingsApplyOutcome::Superseded);
+    EXPECT_EQ(ao_first->outcome, render::RenderSettingsApplyOutcome::Superseded);
+    EXPECT_EQ(taa_first->outcome, render::RenderSettingsApplyOutcome::Superseded);
+    EXPECT_EQ(fog_first->outcome, render::RenderSettingsApplyOutcome::Superseded);
+    EXPECT_FALSE(path_last.has_value());
+    EXPECT_FALSE(ao_last.has_value());
+    EXPECT_FALSE(taa_last.has_value());
+    EXPECT_FALSE(fog_last.has_value());
+
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(path_last.has_value());
+    ASSERT_TRUE(ao_last.has_value());
+    ASSERT_TRUE(taa_last.has_value());
+    ASSERT_TRUE(fog_last.has_value());
+    EXPECT_EQ(path_last->outcome, render::RenderSettingsApplyOutcome::Applied);
+    EXPECT_EQ(path_last->active_settings.samples_per_dispatch, 3u);
+    EXPECT_EQ(ao_last->outcome, render::RenderSettingsApplyOutcome::Applied);
+    EXPECT_FLOAT_EQ(ao_last->active_settings.radius, 0.9f);
+    EXPECT_EQ(taa_last->outcome, render::RenderSettingsApplyOutcome::Applied);
+    EXPECT_FLOAT_EQ(taa_last->active_settings.history_weight, 0.85f);
+    EXPECT_EQ(fog_last->outcome, render::RenderSettingsApplyOutcome::Applied);
+    EXPECT_FLOAT_EQ(fog_last->active_settings.density, 0.1f);
+    ASSERT_TRUE(system.EndFrame());
+
+    std::optional<render::TemporalAaSettingsApplyResult> cancelled;
+    taa.enabled = false;
+    ASSERT_TRUE(system.RequestTemporalAaSettings(taa, [&cancelled](auto result)
+    {
+        cancelled = result;
+    }));
+    system.Shutdown();
+    ASSERT_TRUE(cancelled.has_value());
+    EXPECT_EQ(cancelled->outcome, render::RenderSettingsApplyOutcome::Cancelled);
+    EXPECT_FALSE(system.HasSceneRenderer());
 }
 
 TEST(RenderSystemLifecycleTest, RollsBackWhenARequiredCollaboratorFails)

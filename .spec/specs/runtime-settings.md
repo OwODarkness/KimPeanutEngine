@@ -1,6 +1,6 @@
 # Runtime settings and subsystem-owned settings pages
 
-- Status: proposed
+- Status: active
 - Owner: Runtime settings infrastructure; domain modules own adapters
 - Parent TODO: [Settings roadmap](../../docs/settings/TODO.md)
 - Architecture: [Settings plans](../../docs/settings/PLANS.md)
@@ -13,12 +13,13 @@ the boundary first with headless contracts, then Rendering startup/live settings
 
 ## Current state
 
-Baseline inspected: `796ced5`, clean working tree before planning edits.
-Engine forwards RT/PT/VSync flags; RuntimeContext copies RT/PT into
-RenderSystemInitInfo. Render has typed feature settings and frame-boundary
-requests but no generic settings catalog or applied-edit confirmation contract.
-Reflection has neutral property metadata. Host-specific launch inputs already
-belong to configured hosts; preserve that recent change.
+SET1 implements the headless registry, layered stores, and provider lifecycle;
+its explicit write-failure injection acceptance remains open. SET2 composes the
+service before startup, resolves Render settings before backend creation, and
+routes Path Tracing, SSAO, TAA and Height Fog edits through Render's safe-frame
+provider. Existing CLI flags remain explicit session overrides. The GUI Settings
+window is SET3. Host-specific launch inputs remain owned by their configured
+hosts.
 
 ## Scope and non-goals
 
@@ -27,10 +28,9 @@ generic Editor window; SET4 proves a second domain and explicit migrations;
 SET5 addresses remaining domain-owned startup configuration. Their acceptance
 criteria live in the roadmap, with concrete SET1/SET2 designs linked there.
 
-This planning task changes documentation only. Implementation does not include
-a general service locator, a new reflection backend, live plugin reload,
-cross-subsystem transactions, direct ImGui mutation of runtime objects, or
-automatic migration of every existing config file.
+Implementation does not include a general service locator, a new reflection
+backend, live plugin reload, cross-subsystem transactions, direct ImGui mutation
+of runtime objects, or automatic migration of every existing config file.
 
 ## Invariants
 
@@ -53,8 +53,8 @@ designs from the accepted earlier contracts before implementing those stages.
 
 ## Acceptance criteria
 
-- [ ] SET1 headless behavior and failure/lifetime tests pass.
-- [ ] SET2 removes RT/PT Engine forwarding and proves startup/live behavior.
+- [ ] SET1 write-failure and full headless acceptance pass.
+- [x] SET2 removes RT/PT Engine forwarding and proves startup/live behavior.
 - [ ] SET3 exposes metadata-driven pages with correct apply/save feedback.
 - [ ] A second domain registers without changing Engine or registry algorithms.
 - [ ] Relevant runtime, visual, compatibility and shutdown evidence is recorded.

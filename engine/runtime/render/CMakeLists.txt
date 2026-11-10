@@ -55,3 +55,5 @@ target_include_directories(Render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # Graphics PRIVATE: RenderSystem owns the API-neutral RenderBackend facade;
 # scenes record through the common command-recorder contract.
 target_link_libraries(Render PUBLIC Core Asset PRIVATE Graphics )
+
+add_subdirectory(settings)

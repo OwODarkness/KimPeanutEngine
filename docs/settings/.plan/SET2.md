@@ -1,6 +1,8 @@
 # SET2 — Rendering settings integration
 
-**Status: proposed; depends on SET1.** Parent: [roadmap](../TODO.md).
+**Status: implemented; visible Vulkan/OpenGL and focused headless acceptance passed.**
+Parent: [roadmap](../TODO.md). Implementation evidence is recorded in the
+[runtime settings journal](../../../.spec/journal/2026-11-10-runtime-settings.md).
 
 ## Why Render is first
 
@@ -16,18 +18,15 @@ SettingsRegistry.
 | Section/property | Typed owner and application |
 |---|---|
 | `render.startup.ray_tracing_support` | RenderStartupSettings; requested graphics feature support; restart required |
-| `render.path_tracing.path_tracing_enabled` | PathTraceSettings; next safe render frame if initialized capability permits |
-| `render.path_tracing.hybrid_ray_query_shadows_enabled` | PathTraceSettings; independent live feature toggle |
-| `render.path_tracing.samples_per_dispatch` | Existing bounded sample count; next safe frame |
-| `render.path_tracing.maximum_continuation_bounces` | Existing bounded bounce count; next safe frame |
-| `render.path_tracing.sampling_policy` | Existing fixed/adaptive enum; next safe frame |
-| `render.path_tracing.reconstruction` | Existing reconstruction enum; next safe frame |
+| Persistent `render.path_tracing` fields | PathTraceSettings; typed complete candidate and next safe frame; transient output probes remain commands |
+| `render.screen_space_ao` | ScreenSpaceAoSettings; next safe frame |
+| `render.temporal_aa` | TemporalAaSettings; next safe frame |
+| `render.height_fog` | HeightFogSettings; next safe frame |
 
-These are initial exposed fields, not a replacement PathTraceSettings struct.
-Validate the entire typed candidate, preserve unexposed fields and document
-properties whose effect depends on adaptive/fixed mode. Do not label the fixed
-sample count as the active adaptive sample rate. Additional fields, SSAO, TAA and
-fog can follow the same pattern once the first page is accepted.
+The schema exposes the persistent PathTraceSettings fields as metadata rather
+than replacing the typed struct. Conversion validates complete candidates and
+keeps transient output probes outside persistent state. Fixed and adaptive
+sample properties retain their mode-specific meanings.
 
 ## Placement and startup migration
 
@@ -71,12 +70,13 @@ to GetPublishedMetrics. Keep resource creation, accumulation invalidation,
 profiling-window reset and GPU retirement inside existing Render/Graphics owners.
 Do not reset history merely because a catalog revision or UI draft changed.
 
-Move existing preference commands through this adapter and preserve compatible
-command names/argument validation. Concurrent command and UI edits use the same
-revision checks. Internal legacy requests must publish active values and cannot
-silently overwrite another request without a terminal status. Diagnostics and
-probes remain transient commands. A mode without a scene renderer shows the
-section as configured/unavailable and must not create Scene3D to service it.
+Move existing Path Tracing, SSAO, TAA and Height Fog preference commands through
+this adapter and preserve command names/argument validation. Concurrent command
+and UI edits use the same revision checks. Internal legacy requests publish
+active values and cannot silently overwrite another request without a terminal
+status. Diagnostics and probes remain transient commands. A host without a
+scene renderer reports live edits as unavailable and does not create Scene3D to
+service them.
 
 ## Validation and acceptance
 
@@ -98,9 +98,10 @@ section as configured/unavailable and must not create Scene3D to service it.
   owned-window viewer. Preserve host-configuration tests and normal startup.
 
 Build SettingsUnitTest, RuntimeLaunchOptionsTest, RuntimeStartupTest,
-RenderSystemTest, RenderPassScheduleTest, GraphicsContractTest, GraphicsSmoke and
-KimPeanutEngine as affected; run their discovered CTest cases/labels. Shared
-startup/CMake changes trigger broad validation under the repository matrix.
+RenderSettingsTest, RenderSystemTest, RenderPassScheduleTest,
+GraphicsContractTest, GraphicsSmoke and KimPeanutEngine as affected; run their
+discovered CTest cases/labels. Shared startup/CMake changes trigger broad
+validation under the repository matrix.
 Never run concurrent builds. Engine/smoke launches use the approved path outside
 the sandbox; engine captures stay under `save/screenshots/validation/*.png` and
 use the Runtime registry plus poll. GUI settings-window acceptance belongs to

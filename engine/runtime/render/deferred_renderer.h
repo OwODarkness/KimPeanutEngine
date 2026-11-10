@@ -100,6 +100,10 @@ namespace kpengine::render
         graphics::RenderTargetHandle GetCaptureTarget(CaptureView view) const;
         uint64_t GetTriangleCount() const { return triangle_count_; }
         RenderProfileSnapshot GetProfileSnapshot() const { return profile_; }
+        bool IsPathTracingAvailable() const noexcept
+        {
+            return path_tracing_pass_.Available();
+        }
         bool IsFramePlanValid() const { return frame_plan_valid_; }
 
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);

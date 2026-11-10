@@ -1,5 +1,7 @@
 #include "runtime/engine.h"
 #include "runtime/launch_options.h"
+#include "runtime/runtime_global_context.h"
+#include "runtime/render/settings/render_settings.h"
 #include "module/module_bootstrap.h"
 
 #include <cstdio>
@@ -74,8 +76,17 @@ int main(int argc, char **argv)
     engine.SetCommandTransportConfig(launch_options.options.command_transport_config);
     engine.SetGraphicsAPI(launch_options.options.graphics_api_type);
     engine.SetVSync(launch_options.options.vsync);
-    engine.SetRayTracingEnabled(launch_options.options.ray_tracing_enabled);
-    engine.SetPathTracingEnabled(launch_options.options.path_tracing_enabled);
+    const auto settings_overrides = kpengine::render::MakeRenderSettingsSessionOverrides(
+        {.ray_tracing_support = launch_options.options.ray_tracing_support_override,
+         .path_tracing_enabled = launch_options.options.path_tracing_enabled_override});
+    const auto settings_result = global_runtime_context.SetSessionSettingsOverrides(
+        settings_overrides);
+    if (!settings_result)
+    {
+        std::fprintf(stderr, "KimPeanut Engine settings error: %s\n",
+                     settings_result.diagnostic.c_str());
+        return 1;
+    }
     if (launch_options.options.startup_level_override.has_value())
     {
         engine.SetStartupLevelOverride(*launch_options.options.startup_level_override);

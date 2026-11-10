@@ -94,7 +94,10 @@ namespace kpengine::render
     {
         GraphicsAPIType api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         bool ray_tracing_enabled = true;
-        bool path_tracing_enabled = true;
+        PathTraceSettings path_trace_settings{};
+        ScreenSpaceAoSettings screen_space_ao_settings{};
+        HeightFogSettings height_fog_settings{};
+        TemporalAaSettings temporal_aa_settings{};
         WindowHandle native_window = nullptr;
         EventDispatcher<ResizeEvent> *resize_dispatcher = nullptr;
         std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets;
@@ -103,6 +106,26 @@ namespace kpengine::render
         // invokes it at the backend's final presentation boundary.
         std::function<CaptureResult()> window_capture;
     };
+
+    enum class RenderSettingsApplyOutcome : uint8_t
+    {
+        Applied,
+        Superseded,
+        Cancelled,
+    };
+
+    template <typename TSettings>
+    struct RenderSettingsApplyResult
+    {
+        RenderSettingsApplyOutcome outcome = RenderSettingsApplyOutcome::Cancelled;
+        TSettings active_settings{};
+    };
+
+    using PathTraceSettingsApplyOutcome = RenderSettingsApplyOutcome;
+    using PathTraceSettingsApplyResult = RenderSettingsApplyResult<PathTraceSettings>;
+    using ScreenSpaceAoSettingsApplyResult = RenderSettingsApplyResult<ScreenSpaceAoSettings>;
+    using HeightFogSettingsApplyResult = RenderSettingsApplyResult<HeightFogSettings>;
+    using TemporalAaSettingsApplyResult = RenderSettingsApplyResult<TemporalAaSettings>;
 
     // The render-module facade. It owns frame/lifecycle orchestration while
     // RenderSceneCoordinator owns Gameplay source inboxes and scene policy.
@@ -165,10 +188,37 @@ namespace kpengine::render
         void SetDebugViewDemand(DebugViewConsumer consumer,
                                 std::optional<CaptureView> view);
         bool RequestPathTraceSettings(PathTraceSettings settings);
+        bool RequestPathTraceSettings(
+            PathTraceSettings settings,
+            std::function<void(PathTraceSettingsApplyResult)> completion);
+        PathTraceSettings GetRequestedPathTraceSettings() const;
+        bool IsPathTracingAvailable() const noexcept
+        {
+            return path_tracing_available_.load(std::memory_order_acquire);
+        }
+        bool HasSceneRenderer() const noexcept
+        {
+            return scene_renderer_available_.load(std::memory_order_acquire);
+        }
         bool RequestScreenSpaceAoSettings(ScreenSpaceAoSettings settings);
+        bool RequestScreenSpaceAoSettings(
+            ScreenSpaceAoSettings settings,
+            std::function<void(ScreenSpaceAoSettingsApplyResult)> completion);
+        ScreenSpaceAoSettings GetRequestedScreenSpaceAoSettings() const;
         bool RequestHeightFogSettings(HeightFogSettings settings);
+        bool RequestHeightFogSettings(
+            HeightFogSettings settings,
+            std::function<void(HeightFogSettingsApplyResult)> completion);
+        HeightFogSettings GetRequestedHeightFogSettings() const;
         bool RequestTemporalAaSettings(TemporalAaSettings settings);
+        bool RequestTemporalAaSettings(
+            TemporalAaSettings settings,
+            std::function<void(TemporalAaSettingsApplyResult)> completion);
+        TemporalAaSettings GetRequestedTemporalAaSettings() const;
         void RequestPathTraceProbeMode(PathTraceProbeMode mode);
+        bool RequestPathTraceProbeMode(
+            PathTraceProbeMode mode,
+            std::function<void(PathTraceSettingsApplyResult)> completion);
         void RequestPathTraceDispatchFailureInjection() noexcept;
         CaptureView GetDebugView() const;
         graphics::RenderTargetView GetDebugRenderTargetView() const;
@@ -236,6 +286,8 @@ namespace kpengine::render
         bool backend_initialized_ = false;
         bool ray_tracing_enabled_ = true;
         bool path_tracing_enabled_ = true;
+        std::atomic<bool> path_tracing_available_{false};
+        std::atomic<bool> scene_renderer_available_{false};
         RenderSystemLifecycleState frame_return_state_ =
             RenderSystemLifecycleState::Uninitialized;
         RenderProfileSnapshot profile_;
@@ -251,10 +303,19 @@ namespace kpengine::render
         std::array<std::optional<CaptureView>,
                    static_cast<std::size_t>(DebugViewConsumer::Count)> debug_view_demands_{};
         PathTraceSettings requested_path_trace_settings_{};
+        ScreenSpaceAoSettings requested_screen_space_ao_settings_{};
+        HeightFogSettings requested_height_fog_settings_{};
+        TemporalAaSettings requested_temporal_aa_settings_{};
         std::optional<PathTraceSettings> pending_path_trace_settings_;
+        std::function<void(PathTraceSettingsApplyResult)>
+            pending_path_trace_settings_completion_;
         std::optional<ScreenSpaceAoSettings> pending_screen_space_ao_settings_;
+        std::function<void(ScreenSpaceAoSettingsApplyResult)>
+            pending_screen_space_ao_completion_;
         std::optional<HeightFogSettings> pending_height_fog_settings_;
+        std::function<void(HeightFogSettingsApplyResult)> pending_height_fog_completion_;
         std::optional<TemporalAaSettings> pending_temporal_aa_settings_;
+        std::function<void(TemporalAaSettingsApplyResult)> pending_temporal_aa_completion_;
         std::optional<std::pair<uint64_t,
             std::shared_ptr<const PreparedRenderAssetCatalog>>> pending_catalog_update_;
         std::map<uint64_t, PreparedAssetsUpdateResult> catalog_update_results_;

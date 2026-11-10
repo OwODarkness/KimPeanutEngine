@@ -13,7 +13,9 @@
 #include "gameplay_command/gameplay_command_provider.h"
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
+#include "render/settings/render_settings.h"
 #include "render_asset_preparer.h"
+#include "settings/settings_store.h"
 #include "render_settings_command_provider.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
 #include "gameplay/factory/point_light_actor_factory.h"
@@ -35,6 +37,7 @@
 
 #include <utility>
 #include <stdexcept>
+#include <filesystem>
 #include <cmath>
 #include <algorithm>
 
@@ -50,12 +53,265 @@ namespace kpengine
         {
         }
 
+        void RuntimeContext::InitializeSettings()
+        {
+            if (settings_registry_ != nullptr)
+            {
+                return;
+            }
+
+            auto registry = std::make_unique<settings::SettingsRegistry>();
+            const settings::SettingsResult registration =
+                render::RegisterRenderSettings(*registry);
+            if (!registration)
+            {
+                throw std::runtime_error(
+                    "Could not register Render settings: " + registration.diagnostic);
+            }
+            if (const settings::SettingsResult sealed = registry->Seal(); !sealed)
+            {
+                throw std::runtime_error(
+                    "Could not seal Runtime settings: " + sealed.diagnostic);
+            }
+
+            auto project_store = std::make_unique<settings::SettingsStore>(
+                project_root / "config/project_settings.json",
+                settings::SettingSaveScope::Project);
+            auto user_store = std::make_unique<settings::SettingsStore>(
+                project_root / "save/settings/user_settings.json",
+                settings::SettingSaveScope::User);
+            const settings::SettingsStoreResult project_load = project_store->Load(*registry);
+            const settings::SettingsStoreResult user_load = user_store->Load(*registry);
+            if (!project_load)
+            {
+                KP_LOG("RuntimeLog", LOG_LEVEL_WARNING,
+                       "Project settings unavailable; defaults apply: %s",
+                       project_load.diagnostic.c_str());
+            }
+            if (!user_load)
+            {
+                KP_LOG("RuntimeLog", LOG_LEVEL_WARNING,
+                       "User settings unavailable; lower layers apply: %s",
+                       user_load.diagnostic.c_str());
+            }
+
+            const settings::SettingsResult project_values = registry->SetPersistentOverrides(
+                settings::SettingSaveScope::Project,
+                project_store->GetSnapshot().overrides);
+            if (!project_values)
+            {
+                throw std::runtime_error(
+                    "Could not resolve project settings: " + project_values.diagnostic);
+            }
+            const settings::SettingsResult user_values = registry->SetPersistentOverrides(
+                settings::SettingSaveScope::User,
+                user_store->GetSnapshot().overrides);
+            if (!user_values)
+            {
+                throw std::runtime_error(
+                    "Could not resolve user settings: " + user_values.diagnostic);
+            }
+            if (!pending_session_settings_overrides_.empty())
+            {
+                const settings::SettingsResult session_values =
+                    registry->SetSessionOverrides(pending_session_settings_overrides_);
+                if (!session_values)
+                {
+                    throw std::runtime_error(
+                        "Could not resolve launch settings: " + session_values.diagnostic);
+                }
+            }
+
+            settings_registry_ = std::move(registry);
+            project_settings_store_ = std::move(project_store);
+            user_settings_store_ = std::move(user_store);
+            pending_session_settings_overrides_.clear();
+        }
+
+        settings::SettingsResult RuntimeContext::SetSessionSettingsOverrides(
+            settings::SettingsLayerOverrides overrides)
+        {
+            if (settings_registry_ == nullptr)
+            {
+                pending_session_settings_overrides_ = std::move(overrides);
+                return {};
+            }
+            return settings_registry_->SetSessionOverrides(std::move(overrides));
+        }
+
+        settings::SettingsLayerOverrides RuntimeContext::GetSessionSettingsOverrides() const
+        {
+            return settings_registry_ != nullptr
+                       ? settings_registry_->GetSessionOverrides()
+                       : pending_session_settings_overrides_;
+        }
+
+        command::CommandResult RuntimeContext::SubmitRenderSettingsCommandEdit(
+            const std::string_view section_key,
+            settings::SettingValues changed_values,
+            const command::CommandContext &context,
+            std::optional<render::PathTraceOutputProbe> output_probe)
+        {
+            if (settings_registry_ == nullptr)
+            {
+                return {command::CommandStatus::Failed,
+                        "Runtime settings registry is unavailable", context.request_id, {}};
+            }
+
+            const settings::SettingsResolvedSnapshot snapshot =
+                settings_registry_->GetResolvedSnapshot();
+            const auto section = std::find_if(
+                snapshot.sections.begin(), snapshot.sections.end(),
+                [section_key](const settings::ResolvedSettingsSection &candidate)
+                {
+                    return candidate.key == section_key;
+                });
+            if (section == snapshot.sections.end())
+            {
+                return {command::CommandStatus::Failed,
+                        "Render settings section is unavailable", context.request_id, {}};
+            }
+
+            settings::SettingsEditResult edit = settings_registry_->SubmitEdit(
+                section_key, section->revision, std::move(changed_values),
+                settings::SettingsEditOrigin::Command);
+            if (edit.status == settings::SettingsEditStatus::Pending)
+            {
+                if (!context.complete)
+                {
+                    return {command::CommandStatus::Failed,
+                            "asynchronous settings command has no completion channel",
+                            context.request_id, {}};
+                }
+                pending_settings_commands_.emplace(
+                    edit.request_id,
+                    PendingSettingsCommand{context.complete, output_probe,
+                                           context.request_id});
+                return {command::CommandStatus::Pending,
+                        "Render settings are pending safe-frame application",
+                        context.request_id,
+                        {{"settings_request_id", edit.request_id}}};
+            }
+
+            switch (edit.status)
+            {
+            case settings::SettingsEditStatus::RestartRequired:
+                return {command::CommandStatus::Success,
+                        "Render setting accepted for the next launch",
+                        context.request_id,
+                        {{"settings_status", std::string{"restart_required"}}}};
+            case settings::SettingsEditStatus::Busy:
+                return {command::CommandStatus::Busy, edit.diagnostic,
+                        context.request_id, {}};
+            case settings::SettingsEditStatus::StaleRevision:
+                return {command::CommandStatus::Busy, edit.diagnostic,
+                        context.request_id, {}};
+            case settings::SettingsEditStatus::ProviderUnavailable:
+                return {command::CommandStatus::Failed, edit.diagnostic,
+                        context.request_id, {}};
+            case settings::SettingsEditStatus::InvalidValues:
+                return {command::CommandStatus::InvalidArguments, edit.diagnostic,
+                        context.request_id, {}};
+            case settings::SettingsEditStatus::Rejected:
+            case settings::SettingsEditStatus::Superseded:
+            case settings::SettingsEditStatus::Cancelled:
+                return {command::CommandStatus::Failed,
+                        edit.diagnostic.empty() ? "Render settings edit was not applied"
+                                                : edit.diagnostic,
+                        context.request_id, {}};
+            case settings::SettingsEditStatus::Pending:
+            case settings::SettingsEditStatus::Applied:
+                break;
+            }
+            return {command::CommandStatus::Failed,
+                    "unexpected Render settings edit state", context.request_id, {}};
+        }
+
+        void RuntimeContext::PumpSettingsProviders()
+        {
+            if (settings_registry_ == nullptr)
+            {
+                return;
+            }
+            settings_registry_->PumpProviders();
+            for (auto pending = pending_settings_commands_.begin();
+                 pending != pending_settings_commands_.end();)
+            {
+                const std::optional<settings::SettingsEditResult> edit =
+                    settings_registry_->GetEditResult(pending->first);
+                if (!edit || edit->status == settings::SettingsEditStatus::Pending)
+                {
+                    ++pending;
+                    continue;
+                }
+
+                PendingSettingsCommand command = std::move(pending->second);
+                pending = pending_settings_commands_.erase(pending);
+                if (edit->status == settings::SettingsEditStatus::Applied &&
+                    command.output_probe.has_value())
+                {
+                    if (render_system_ == nullptr)
+                    {
+                        command.complete({command::CommandStatus::Failed,
+                                          "RenderSystem is unavailable for the probe update",
+                                          command.command_request_id, {}});
+                        continue;
+                    }
+                    render::PathTraceSettings path_settings =
+                        render_system_->GetRequestedPathTraceSettings();
+                    path_settings.output_probe = *command.output_probe;
+                    const uint64_t command_request_id = command.command_request_id;
+                    auto complete = command.complete;
+                    const bool queued = render_system_->RequestPathTraceSettings(
+                        path_settings,
+                        [complete = std::move(complete), command_request_id](
+                            render::PathTraceSettingsApplyResult result) mutable
+                        {
+                            const bool applied = result.outcome ==
+                                render::PathTraceSettingsApplyOutcome::Applied;
+                            complete({applied ? command::CommandStatus::Success
+                                              : command::CommandStatus::Cancelled,
+                                      applied ? "Render settings applied; probe updated"
+                                              : "probe update was superseded or cancelled",
+                                      command_request_id,
+                                      {{"settings_status", std::string{
+                                          applied ? "applied" : "not_applied"}}}});
+                        });
+                    if (!queued)
+                    {
+                        command.complete({command::CommandStatus::Failed,
+                                          "Render rejected the transient probe update",
+                                          command.command_request_id, {}});
+                    }
+                    continue;
+                }
+
+                const bool applied = edit->status == settings::SettingsEditStatus::Applied;
+                const command::CommandStatus status = applied
+                    ? command::CommandStatus::Success
+                    : (edit->status == settings::SettingsEditStatus::Busy ||
+                       edit->status == settings::SettingsEditStatus::StaleRevision)
+                          ? command::CommandStatus::Busy
+                          : (edit->status == settings::SettingsEditStatus::Cancelled ||
+                             edit->status == settings::SettingsEditStatus::Superseded)
+                                ? command::CommandStatus::Cancelled
+                                : command::CommandStatus::Failed;
+                command.complete({status,
+                    applied ? "Render settings applied at the safe frame boundary"
+                            : edit->diagnostic,
+                    command.command_request_id,
+                    {{"settings_status", std::string{applied ? "applied" : "not_applied"}}}});
+            }
+        }
+
         void RuntimeContext::InitializeSceneServices()
         {
             if (render_system_ != nullptr)
             {
                 return;
             }
+
+            InitializeSettings();
 
             window_system_ = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
             render_system_ = std::make_unique<render::RenderSystem>();
@@ -169,12 +425,34 @@ namespace kpengine
                                      context.request_id,
                                      {}};
                              }
-                             render_system_->RequestPathTraceProbeMode(probe_mode);
+                             if (!context.complete ||
+                                 !render_system_->RequestPathTraceProbeMode(
+                                     probe_mode,
+                                     [complete = context.complete,
+                                      request_id = context.request_id,
+                                      mode](render::PathTraceSettingsApplyResult result)
+                                     {
+                                         const bool applied = result.outcome ==
+                                             render::PathTraceSettingsApplyOutcome::Applied;
+                                         complete({applied ? command::CommandStatus::Success
+                                                           : command::CommandStatus::Cancelled,
+                                                   applied ? "Path-trace probe applied"
+                                                           : "Path-trace probe was superseded or cancelled",
+                                                   request_id,
+                                                   {{"mode", mode}}});
+                                     }))
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::Failed,
+                                     "Render rejected the path-trace probe request",
+                                     context.request_id,
+                                     {}};
+                             }
                              return command::CommandResult{
-                                 command::CommandStatus::Success,
-                                 "Path-trace probe mode scheduled: " + mode,
+                                 command::CommandStatus::Pending,
+                                 "Path-trace probe is pending safe-frame application",
                                  context.request_id,
-                                 {{"mode", mode}}};
+                                 {}};
                          },
                          command::CommandThread::Game});
                 if (probe_registration.IsSuccess())
@@ -356,20 +634,10 @@ namespace kpengine
                              settings.camera_rotation_threshold_degrees = static_cast<float>(
                                  std::get<double>(call.arguments.at(
                                      "camera_rotation_threshold_degrees")));
-                             settings.output_probe = *output_probe;
-                             if (!render_system_->RequestPathTraceSettings(settings))
-                             {
-                                 return command::CommandResult{
-                                     command::CommandStatus::InvalidArguments,
-                                     "Path-tracing settings are outside the supported range",
-                                     context.request_id,
-                                     {}};
-                             }
-                             return command::CommandResult{
-                                 command::CommandStatus::Success,
-                                 "Path-tracing settings scheduled",
-                                 context.request_id,
-                                 {}};
+                             return SubmitRenderSettingsCommandEdit(
+                                 "render.path_tracing",
+                                 render::MakePathTraceSettingValues(settings), context,
+                                 *output_probe);
                          },
                          command::CommandThread::Game});
                 if (settings_registration.IsSuccess())
@@ -440,19 +708,14 @@ namespace kpengine
                                  static_cast<float>(std::get<double>(
                                      call.arguments.at("strength"))),
                                  parsed_quality};
-                             if (!render_system_->RequestScreenSpaceAoSettings(settings))
-                             {
-                                 return command::CommandResult{
-                                     command::CommandStatus::InvalidArguments,
-                                     "SSAO settings are outside the supported range",
-                                     context.request_id,
-                                     {}};
-                             }
-                             return command::CommandResult{
-                                 command::CommandStatus::Success,
-                                 "SSAO settings scheduled",
-                                 context.request_id,
-                                 {}};
+                             render::ScreenSpaceAoSettings normalized = settings;
+                             normalized.radius = std::clamp(normalized.radius, 0.05f, 2.0f);
+                             normalized.bias = std::clamp(
+                                 normalized.bias, 0.0f, normalized.radius * 0.5f);
+                             normalized.strength = std::clamp(normalized.strength, 0.0f, 4.0f);
+                             return SubmitRenderSettingsCommandEdit(
+                                 "render.screen_space_ao",
+                                 render::MakeScreenSpaceAoSettingValues(normalized), context);
                          },
                          command::CommandThread::Game});
                 if (screen_space_ao_registration.IsSuccess())
@@ -468,7 +731,14 @@ namespace kpengine
                 }
 
                 auto fog_registration = RegisterHeightFogSettingsCommand(
-                    *command_registry_, [this] { return render_system_.get(); });
+                    *command_registry_,
+                    [this](std::string_view section_key,
+                           settings::SettingValues values,
+                           const command::CommandContext &context)
+                    {
+                        return SubmitRenderSettingsCommandEdit(
+                            section_key, std::move(values), context);
+                    });
                 if (fog_registration.IsSuccess())
                     height_fog_settings_command_registration_ = std::move(fog_registration.registration);
                 else
@@ -502,19 +772,9 @@ namespace kpengine
                                  std::get<bool>(call.arguments.at("enabled")),
                                  static_cast<float>(std::get<double>(
                                      call.arguments.at("history_weight")))};
-                             if (!render_system_->RequestTemporalAaSettings(settings))
-                             {
-                                 return command::CommandResult{
-                                     command::CommandStatus::InvalidArguments,
-                                     "Temporal AA history_weight must be in [0, 0.95]",
-                                     context.request_id,
-                                     {}};
-                             }
-                             return command::CommandResult{
-                                 command::CommandStatus::Success,
-                                 "Temporal AA settings scheduled",
-                                 context.request_id,
-                                 {}};
+                             return SubmitRenderSettingsCommandEdit(
+                                 "render.temporal_aa",
+                                 render::MakeTemporalAaSettingValues(settings), context);
                          },
                          command::CommandThread::Game});
                 if (temporal_aa_registration.IsSuccess())
@@ -642,6 +902,7 @@ namespace kpengine
 
         void RuntimeContext::Initialize()
         {
+            InitializeSettings();
             EnsureSceneServices();
             const StartupResult reflection = InitializeReflection();
             if (!reflection)
@@ -704,6 +965,7 @@ namespace kpengine
 
         void RuntimeContext::InitializePresentation()
         {
+            InitializeSettings();
             EnsureSceneServices();
             WindowCreateInfo window_create_info{};
             window_create_info.width = 1920;
@@ -728,8 +990,21 @@ namespace kpengine
 
             render::RenderSystemInitInfo render_init_info{};
             render_init_info.api_type = graphics_api_type_;
-            render_init_info.ray_tracing_enabled = ray_tracing_enabled_;
-            render_init_info.path_tracing_enabled = path_tracing_enabled_;
+            const settings::SettingsResolvedSnapshot settings_snapshot =
+                settings_registry_->GetResolvedSnapshot();
+            if (!render::ResolveRenderStartupSettings(
+                    settings_snapshot, render_init_info.ray_tracing_enabled))
+            {
+                throw std::runtime_error("Resolved Render startup settings are unavailable");
+            }
+            render_init_info.path_trace_settings = render::ResolvePathTraceSettings(
+                settings_snapshot, render::PathTraceSettings{});
+            render_init_info.screen_space_ao_settings =
+                render::ResolveScreenSpaceAoSettings(settings_snapshot);
+            render_init_info.temporal_aa_settings =
+                render::ResolveTemporalAaSettings(settings_snapshot);
+            render_init_info.height_fog_settings =
+                render::ResolveHeightFogSettings(settings_snapshot);
             render_init_info.native_window = window_system_->GetNativeHandle();
             render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;
             render_init_info.window_capture = [this]()
@@ -762,6 +1037,28 @@ namespace kpengine
             {
                 throw std::runtime_error("RenderSystem initialization failed: " +
                                          render_init_result.diagnostic);
+            }
+            render_settings_provider_ =
+                std::make_unique<render::RenderSettingsProvider>(*render_system_);
+            for (const char *section_key : {"render.path_tracing",
+                                            "render.screen_space_ao",
+                                            "render.temporal_aa",
+                                            "render.height_fog"})
+            {
+                settings::SettingsProviderBindResult provider_binding =
+                    settings_registry_->BindProvider(section_key,
+                                                     *render_settings_provider_);
+                if (!provider_binding)
+                {
+                    render_settings_registrations_.clear();
+                    render_settings_provider_.reset();
+                    throw std::runtime_error(
+                        "Could not bind Render settings provider for '" +
+                        std::string{section_key} + "': " +
+                        provider_binding.result.diagnostic);
+                }
+                render_settings_registrations_.push_back(
+                    std::move(provider_binding.registration));
             }
         }
 
@@ -1201,6 +1498,7 @@ namespace kpengine
             {
                 command_registry_->Shutdown();
             }
+            pending_settings_commands_.clear();
             screenshot_command_registration_ = {};
             glfw_window_capture_command_registration_ = {};
             level_reload_command_registration_ = {};
@@ -1210,6 +1508,8 @@ namespace kpengine
             temporal_aa_settings_command_registration_ = {};
             height_fog_settings_command_registration_ = {};
             path_trace_failure_command_registration_ = {};
+            render_settings_registrations_.clear();
+            render_settings_provider_.reset();
             screenshot_service_.reset();
             report_progress(3, "Releasing renderer");
             if (render_system_)
@@ -1217,6 +1517,10 @@ namespace kpengine
                 render_system_->Shutdown();
                 render_system_.reset();
             }
+            settings_registry_.reset();
+            project_settings_store_.reset();
+            user_settings_store_.reset();
+            pending_session_settings_overrides_.clear();
             report_progress(4, "Releasing prepared assets");
             prepared_render_assets_.reset();
             report_progress(5, "Releasing input");

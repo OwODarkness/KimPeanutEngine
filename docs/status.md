@@ -1,11 +1,13 @@
 # Project Status
 
-- **Central settings (2026-11-10; SET1 headless slices)** — RuntimeSettings now
+- **Central settings (2026-11-10; SET2 complete, SET1 acceptance follow-up open)** — RuntimeSettings
   has Reflection-backed schemas, project/user/session layer resolution and
-  provenance, a versioned JSON store, and a per-section provider/edit lifecycle
-  with bounded requests and acknowledgements. Runtime composition, Render
-  integration, Engine wiring and Editor pages remain proposed; host-owned
-  launch configuration stays separate. →
+  provenance, a versioned JSON store, and a per-section provider/edit lifecycle.
+  Runtime resolves Render startup policy before device creation. Render owns
+  typed path-tracing, SSAO, TAA and fog adapters; existing preference commands
+  use the common edit path and report completion after safe-frame application.
+  Debug Vulkan and OpenGL Sponza startup/captures pass. The Settings Editor is
+  SET3; host-owned launch configuration stays separate. →
   [architecture](settings/PLANS.md), [roadmap](settings/TODO.md),
   [spec](../.spec/specs/runtime-settings.md)
 

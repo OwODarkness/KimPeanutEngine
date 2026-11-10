@@ -1,6 +1,6 @@
 # Runtime settings planning evidence
 
-- Status: SET1 in progress; schema, store, and layer-resolution slices implemented
+- Status: SET2 complete; SET1 write-failure acceptance follow-up remains open
 - Date: 2026-11-10
 - Baseline: `796ced5`; working tree clean before documentation edits
 - Spec: [runtime-settings](../specs/runtime-settings.md)
@@ -164,9 +164,95 @@ Planning-stage validation above covered the documentation-only deliverable.
 
 ## Remaining work and risks
 
-SET1 remains in progress; store write-failure injection and complete runtime
-composition acceptance remain open. The provider bridge is not yet connected
-to Render, whose existing request methods still report queue acceptance rather
-than frame-boundary application. SET2 must add that owner-side acknowledgement
-and startup audit. SET2–SET5 acceptance and later-domain file migrations remain
-open; continue with SET1 acceptance before integrating Rendering.
+SET1's explicit disk write-failure injection remains open. SET3 owns the Editor
+Settings window and its save/apply feedback; SET4 owns later-domain persistence
+migrations. SET2 runtime composition, Render adapters and visible API checks are
+complete.
+
+## SET2 Render composition slice
+
+- Operation and acceptance: compose RuntimeSettings before host/device startup,
+  resolve Render's restart-only startup policy and live typed feature settings
+  from persisted layers plus explicit CLI overrides, and acknowledge provider
+  edits only after Render applies them at a safe frame boundary.
+- Existing candidates inspected: `Engine::Initialize` and `RenderThreadFunc`,
+  `RuntimeContext::InitializePresentation`/`Clear`, existing Runtime stores and
+  layer resolution, `RenderSystem::RequestPathTraceSettings` and `BeginFrame`,
+  `DeferredRenderer::Initialize`/`SetPathTraceSettings`, and CLI parsing.
+- Placement: RuntimeContext owns registry and file stores; the Render settings
+  satellite contributes schemas and typed conversion/provider; RenderSystem
+  keeps requested settings and applies queued changes. Engine only forwards
+  generic session overrides. Project/user paths follow the settings architecture.
+- Constraints: initialize schemas/load layers before host or device creation;
+  absent CLI flags must not mask persisted values; RT support is restart-only;
+  path tracing is live only when the required pipeline resources are prepared;
+  do not create scene services for standalone hosts.
+- Validation: headless contracts for persistence, startup resolution, CLI
+  presence tracking, frame application/supersession/cancellation and missing
+  scene renderer; Debug Vulkan validation and OpenGL Sponza runtime captures;
+  all four legacy Render preference command paths.
+
+### Implementation evidence
+
+- RuntimeContext now owns the registry and project/user file stores at
+  `config/project_settings.json` and `save/settings/user_settings.json`. Engine
+  initializes this service before host initialization; scene presentation
+  resolves the typed startup values before window/backend device creation.
+- Render contributes `render.startup` (RT support, restart-required),
+  persistent `render.path_tracing`, `render.screen_space_ao`,
+  `render.temporal_aa` and `render.height_fog` through `RenderSettings`.
+  Typed conversion keeps persistent fields separate from transient probes.
+- RenderSystem applies typed changes at `BeginFrame`; callbacks report applied,
+  superseded and shutdown-cancelled outcomes. Requests queued during presentation
+  initialization remain pending through first scene promotion and complete after
+  the first safe frame. The provider rejects live edits when a host has no scene
+  renderer and reports the configured-but-unavailable condition.
+- RT pipeline resources are now prepared whenever startup RT support is active,
+  even if PT starts disabled, so a live PT enable can use existing resources.
+  Capability remains separately observable from requested policy.
+- CLI parsing records only explicit RT/PT disable flags. `editor/main.cpp`
+  converts them to session overrides; Terrain Viewer adds its host-local
+  disable override through RuntimeContext. The old Engine RT/PT setters and
+  duplicated RuntimeContext booleans are removed.
+- RuntimeContext routes the existing Path Tracing, SSAO, TAA and Height Fog
+  commands through SettingsRegistry and polls terminal provider results before
+  completing command requests. Probes remain transient commands.
+- RuntimeContext pumps provider requests on the existing game lane and detaches
+  registrations before renderer teardown. No new threads or preference fields
+  were added to Engine/RuntimeContext.
+- Debug build passed for `KimPeanutEngine`, `SettingsUnitTest`,
+  `RuntimeLaunchOptionsTest`, `RuntimeStartupTest`, `RenderSettingsTest`,
+  `RenderSystemTest`, `RenderPassScheduleTest`, `GraphicsContractTest` and
+  `GraphicsSmoke`.
+- Focused CTest passed 84/84 across settings, Runtime launch/startup, Render
+  settings/system, render-pass schedule and Graphics contracts. An earlier
+  overbroad `Settings` regex also selected four unrelated TTS file-write tests;
+  those failed with “Could not publish TTS settings”. They do not use
+  RuntimeSettings.
+- Visible Debug Vulkan used `level/sponza.level`, reported Vulkan with ray
+  tracing enabled and active path-tracing mode, and exported base_color and
+  scene_color PNGs. `VK_LAYER_KHRONOS_validation` is installed; Debug enables
+  the validation layer. The Vulkan run reported no validation errors.
+- Visible OpenGL used the same fixture, reported OpenGL with the deferred graph
+  active, and exported both captures. Textures reached complete residency on
+  both API runs.
+- Runtime transport edits to Path Tracing, SSAO, TAA and Height Fog each
+  completed with `settings_status=applied`; values were restored after the
+  compatibility check. Both API windows closed cleanly.
+- Captures are retained under `save/screenshots/validation/`:
+  `set2-vulkan-base_color.png`, `set2-vulkan-scene_color.png`,
+  `set2-opengl-base_color.png`, and `set2-opengl-scene_color.png`.
+- Placement audit passed after implementation. GUI Settings page, automatic
+  persistence from editor changes and restart interaction remain SET3 work.
+
+## SET3 Editor window design
+
+- Inspected the Editor main-menu builder, floating `EditorWindowComponent`,
+  EditorUI initialization/promotion flow, RuntimeContext ownership, and current
+  SettingsRegistry/SettingsStore APIs.
+- Added `.plan/SET3.md` for the requested header-menu → Settings window →
+  Rendering section → path-tracing page flow. RuntimeContext retains registry
+  and store ownership; the Editor model holds copied drafts and uses a narrow
+  Runtime access interface, with saves queued to the existing game lane.
+- No UI code or Runtime interface was added in this design pass. SET3
+  implementation and visual acceptance remain open.

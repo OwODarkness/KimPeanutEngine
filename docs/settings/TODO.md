@@ -1,6 +1,7 @@
 # Settings roadmap
 
-**Status: SET1 headless implementation in progress; schema, store, resolution, and provider slices implemented.**
+**Status: SET2 Runtime/Render integration complete; SET1 failure-injection
+acceptance remains open; SET3 is ready for implementation.**
 Architecture: [PLANS.md](PLANS.md). Delivery contract:
 [spec](../../.spec/specs/runtime-settings.md). Current evidence:
 [planning journal](../../.spec/journal/2026-11-10-runtime-settings.md).
@@ -11,19 +12,22 @@ Architecture: [PLANS.md](PLANS.md). Delivery contract:
   explicit safe save. Accept when invalid/stale edits, unknown sections, save
   failure, cancellation, late acknowledgements and provider shutdown are covered
   without Editor/Render/window construction. [Design](.plan/SET1.md).
-- [ ] **SET2 — Rendering startup and live settings.** Add the Render-owned
+- [x] **SET2 — Rendering startup and live settings.** Add the Render-owned
   adapter; load typed startup values before device creation, acknowledge live
   changes at a safe frame boundary, distinguish requested/active/available, and
   remove Engine's RT/PT forwarding setters and duplicated RuntimeContext flags.
   Preserve existing CLI and settings commands through the common edit path.
-  Accept headless contracts plus visible Debug Vulkan/OpenGL startup, toggle,
-  restart-only, capture and shutdown checks. [Design](.plan/SET2.md).
-- [ ] **SET3 — Settings window.** Write a concrete stage design before coding;
-  implement an Editor model and metadata-driven pages with search, scope/source,
+  Verified with headless contracts, visible Debug Vulkan/OpenGL startup and
+  captures, safe-frame command edits and clean shutdown. [Design](.plan/SET2.md);
+  [evidence](../../.spec/journal/2026-11-10-runtime-settings.md).
+- [ ] **SET3 — Settings window.** Design captured; implementation next. Add a
+  Settings entry to the main Editor header that opens a searchable window with
+  category/section navigation and a Render page. Implement an Editor model and
+  metadata-driven pages with search, scope/source,
   Apply/Revert/Save, conflicts, defaults, unsupported and restart feedback.
   Accept keyboard-only editing, narrow/wide layouts, no-results/unavailable
   states, failed apply/save, reopening/restart and visible Vulkan/OpenGL captures.
-  All UI writes use the same validated path as commands.
+  All UI writes use the same validated path as commands. [Design](.plan/SET3.md).
 - [ ] **SET4 — second domain and existing preferences.** Prove extension with
   one Audio section and one Editor preference; define explicit migrations for
   existing files before switching writers. Accept an extension without adding
