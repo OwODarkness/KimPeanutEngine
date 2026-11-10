@@ -37,6 +37,11 @@
 
 ## Acceptance ledger
 
+The separate [Settings roadmap](../settings/TODO.md) proposes removal of
+Engine's RT/PT forwarding API after domain-owned startup resolution and live
+Rendering application are proven. VSync and Scene3D startup-level ownership
+remain later settings stages; host launch inputs retain their existing owners.
+
 - [x] Scene mode produces the existing deferred/PBR output and existing
   gameplay/editor smoke remains valid.
 - [x] Viewer mode creates no `RenderWorld`, `DeferredRenderer`, level scene,

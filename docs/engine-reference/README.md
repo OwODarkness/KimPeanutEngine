@@ -19,6 +19,10 @@ This directory contains durable design knowledge extracted from open-source engi
 
 ## Reference conclusions
 
+- [Central settings architecture](../settings/PLANS.md#references-and-decisions)
+  — Unreal DeveloperSettings/section-registration documentation and Godot's
+  `ProjectSettings` header, mapped to domain-owned schemas, restart metadata,
+  typed active state and the existing Runtime/Editor thread boundary.
 - [Selective editor UI bloom](../editor/.plan/ED5.md#reference-study-and-adoption)
   — public ImGui draw-command extension points and bgfx filtering source,
   mapped to ordered Editor presentation and common RHI ownership.

@@ -18,6 +18,7 @@ add_subdirectory(script)
 add_subdirectory(screenshot)
 add_subdirectory(level)
 add_subdirectory(stats)
+add_subdirectory(settings)
 
 add_library(RuntimeLib STATIC
     engine.cpp

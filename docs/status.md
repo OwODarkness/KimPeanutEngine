@@ -1,5 +1,14 @@
 # Project Status
 
+- **Central settings (2026-11-10; SET1 headless slices)** — RuntimeSettings now
+  has Reflection-backed schemas, project/user/session layer resolution and
+  provenance, a versioned JSON store, and a per-section provider/edit lifecycle
+  with bounded requests and acknowledgements. Runtime composition, Render
+  integration, Engine wiring and Editor pages remain proposed; host-owned
+  launch configuration stays separate. →
+  [architecture](settings/PLANS.md), [roadmap](settings/TODO.md),
+  [spec](../.spec/specs/runtime-settings.md)
+
 - **Core Scene3D host ownership (2026-11-08)** — The built-in `Scene3DHost`
   lives in `engine/runtime/application`; Runtime's global registry installs
   it as core, while optional modes register from their modules. Debug editor

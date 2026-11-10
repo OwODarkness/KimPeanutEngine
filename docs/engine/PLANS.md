@@ -229,6 +229,9 @@ keeps that process-level separation without importing an unverified pattern.
 
 ## Navigation
 
+- [Central settings architecture](../settings/PLANS.md): proposed shared
+  configuration/discovery service with domain-owned settings and safe apply;
+  Engine coordinates its lifetime without adding preference-specific fields.
 - [Concrete MODE1 design](.plan/MODE1.md)
 - [Roadmap](TODO.md)
 - [Render module plans](../render/PLANS.md)

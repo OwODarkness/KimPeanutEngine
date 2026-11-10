@@ -19,6 +19,15 @@ Existing behavior, build targets, threading, and known boundary debt are in
 | [ED4](.plan/ED4.md) | Loading-safe CPU-projected wireframe decoration |
 | [ED5](.plan/ED5.md) | Selective UI bloom through editor-owned presentation and common RHI commands |
 
+## Settings window proposal
+
+The proposed [Settings architecture](../settings/PLANS.md) assigns settings-page
+presentation to Editor while Runtime owns registration/persistence and each
+domain applies its changes. [SET3](../settings/TODO.md) will add a shared settings
+window using copied snapshots and queued edits; no settings GUI is implemented
+by this plan. Existing palette/log files retain their current owner until an
+explicit migration stage.
+
 ## UI bloom extension
 
 [ED5](.plan/ED5.md) uses public ImGui draw-list markers and an editor-owned RHI
