@@ -18,12 +18,6 @@
 #include "editor/editor.h"
 #include "module/engine_module.h"
 
-// [reconstruction] The legacy render/world systems are still being reconstructed;
-// the editor is back (minimal — a single ImGui window). The render module remains
-// the primary reconstruction target — docs/render/overview.md.
-// #include "render/render_system.h"
-// #include "game_framework/world_system.h"
-
 namespace kpengine
 {
     namespace runtime
@@ -1620,18 +1614,21 @@ namespace kpengine
                 // present an unrelated buffer without an active Render bracket.
                 global_runtime_context.window_system_->PollEvents();
                 const auto frame_finished = clock::now();
-                frame_loop_metrics_.frame_total_ms =
-                    std::chrono::duration<double, std::milli>(frame_finished - tick_started)
-                        .count();
-                frame_loop_metrics_.game_wait_ms =
-                    std::chrono::duration<double, std::milli>(
-                        game_wait_finished - game_wait_started)
-                        .count();
-                frame_loop_metrics_.render_work_ms =
-                    std::chrono::duration<double, std::milli>(
-                        frame_finished - render_work_started)
-                        .count();
-                frame_loop_metrics_.frame_pacing_ms = 0.0;
+                {
+                    std::lock_guard<std::mutex> lock(frame_loop_metrics_mutex_);
+                    frame_loop_metrics_.frame_total_ms =
+                        std::chrono::duration<double, std::milli>(frame_finished - tick_started)
+                            .count();
+                    frame_loop_metrics_.game_wait_ms =
+                        std::chrono::duration<double, std::milli>(
+                            game_wait_finished - game_wait_started)
+                            .count();
+                    frame_loop_metrics_.render_work_ms =
+                        std::chrono::duration<double, std::milli>(
+                            frame_finished - render_work_started)
+                            .count();
+                    frame_loop_metrics_.frame_pacing_ms = 0.0;
+                }
                 return;
             }
             case RenderFrameBeginDisposition::Fatal:
@@ -1686,23 +1683,7 @@ namespace kpengine
                 }
             }
             const bool frame_ended = global_runtime_context.render_system_->EndFrame();
-            if(global_runtime_context.graphics_api_type_ == GraphicsAPIType::GRAPHICS_API_OPENGL)
-            {
-                if (frame_ended)
-                {
-                    global_runtime_context.render_system_->CompletePendingWindowCapture();
-                    const auto swap_started = std::chrono::steady_clock::now();
-                    global_runtime_context.window_system_->SwapBuffers();
-                    global_runtime_context.render_system_->RecordPresentationTime(
-                        std::chrono::duration<double, std::milli>(
-                            std::chrono::steady_clock::now() - swap_started)
-                            .count());
-                }
-            }
-            else if (frame_ended)
-            {
-                global_runtime_context.render_system_->CompletePendingWindowCapture();
-            }
+            FinishPresentation(frame_ended);
 
             auto frame_end = clock::now();
             std::chrono::duration<double> elapsed = frame_end - frame_start;
@@ -1718,26 +1699,38 @@ namespace kpengine
                         .count();
             }
             const auto tick_finished = clock::now();
-            frame_loop_metrics_.frame_total_ms =
-                std::chrono::duration<double, std::milli>(tick_finished - tick_started).count();
-            frame_loop_metrics_.game_wait_ms =
-                std::chrono::duration<double, std::milli>(
-                    game_wait_finished - game_wait_started)
-                    .count();
-            frame_loop_metrics_.render_work_ms =
-                std::chrono::duration<double, std::milli>(tick_finished - render_work_started)
-                    .count() - frame_pacing_ms;
-            frame_loop_metrics_.frame_pacing_ms = frame_pacing_ms;
+            {
+                std::lock_guard<std::mutex> lock(frame_loop_metrics_mutex_);
+                frame_loop_metrics_.frame_total_ms =
+                    std::chrono::duration<double, std::milli>(tick_finished - tick_started)
+                        .count();
+                frame_loop_metrics_.game_wait_ms =
+                    std::chrono::duration<double, std::milli>(
+                        game_wait_finished - game_wait_started)
+                        .count();
+                frame_loop_metrics_.render_work_ms =
+                    std::chrono::duration<double, std::milli>(tick_finished - render_work_started)
+                        .count() - frame_pacing_ms;
+                frame_loop_metrics_.frame_pacing_ms = frame_pacing_ms;
+            }
         }
 
         bool Engine::RenderLoadingTick()
         {
             const float delta = 1.0f / static_cast<float>(target_fps);
             const bool frame_began = global_runtime_context.render_system_->BeginFrame(delta);
-            if (!frame_began)
+            switch (ClassifyRenderFrameBegin(
+                frame_began, global_runtime_context.render_system_->GetLifecycleState()))
             {
+            case RenderFrameBeginDisposition::Record:
+                break;
+            case RenderFrameBeginDisposition::SkipRecoverable:
                 global_runtime_context.window_system_->PollEvents();
                 return false;
+            case RenderFrameBeginDisposition::Fatal:
+                throw std::runtime_error(
+                    "Render frame begin failed: " +
+                    global_runtime_context.render_system_->GetLastDiagnostic());
             }
             global_runtime_context.window_system_->PollEvents();
             if (!UsesHostPresentation())
@@ -1752,9 +1745,20 @@ namespace kpengine
             {
                 throw std::runtime_error("Loading frame could not be closed");
             }
+            FinishPresentation(true);
+            return true;
+        }
+
+        void Engine::FinishPresentation(const bool frame_ended)
+        {
+            if (!frame_ended)
+            {
+                return;
+            }
+
+            global_runtime_context.render_system_->CompletePendingWindowCapture();
             if (global_runtime_context.graphics_api_type_ == GraphicsAPIType::GRAPHICS_API_OPENGL)
             {
-                global_runtime_context.render_system_->CompletePendingWindowCapture();
                 const auto swap_started = std::chrono::steady_clock::now();
                 global_runtime_context.window_system_->SwapBuffers();
                 global_runtime_context.render_system_->RecordPresentationTime(
@@ -1762,11 +1766,6 @@ namespace kpengine
                         std::chrono::steady_clock::now() - swap_started)
                         .count());
             }
-            else
-            {
-                global_runtime_context.render_system_->CompletePendingWindowCapture();
-            }
-            return true;
         }
 
         void Engine::CalculateFPS(float delta_time)
