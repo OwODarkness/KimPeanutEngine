@@ -14,8 +14,8 @@ namespace kpengine::audio
 
 namespace kpengine::editor
 {
-    class EditorUI;
-    class EditorDockedWorkspace;
+    class EditorUiHost;
+    class EditorWorkspace;
     namespace ui { class UiContext; }
 }
 
@@ -59,8 +59,8 @@ namespace kpengine::audio_player
         void RenderOutputLog(editor::ui::UiContext &ui);
         void ReportImport(std::string path, std::string subtitle = {});
 
-        std::unique_ptr<editor::EditorUI> ui_;
-        std::unique_ptr<editor::EditorDockedWorkspace> workspace_;
+        std::unique_ptr<editor::EditorUiHost> ui_;
+        std::unique_ptr<editor::EditorWorkspace> workspace_;
         editor::EditorBuiltinIcons icons_;
         AudioPlayerController *controller_ = nullptr;
         audio::MiniAudioSystem *audio_system_ = nullptr;

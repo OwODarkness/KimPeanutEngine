@@ -106,11 +106,23 @@ the active mode through Runtime stats: disabling path tracing may still leave
 ray-query shadows active. Compare matched conditions and do not run builds or
 tests concurrently with performance sampling.
 
-Use `tools/kp.ps1` for targeted validation when possible. The standard fallback is:
+Use `tools/kp.ps1` for targeted validation when possible. First map changed
+files and targets to the tests that exercise their behavior. Before running
+CTest, preview the selected set with `ctest -N` and confirm the count and names
+are within that scope. Run affected tests and their direct contract/consumer
+tests; do not run the full repository suite by default. A full build does not
+by itself require full CTest.
+
+Run the complete CTest suite only when the user or a repository task contract
+explicitly requires it, or when the change spans the repository so broadly that
+no defensible affected-test set exists. If a focused CTest selection is not
+available, run the relevant test executable or explain the coverage gap. Keep
+CI's complete suite unchanged. The standard targeted fallback is:
 
 ```powershell
-cmake --build build --config Debug
-ctest --test-dir build -C Debug
+cmake --build build --config Debug --target <affected-targets> -- /m:1
+ctest --test-dir build -C Debug -N -R "<affected-test-pattern>"
+ctest --test-dir build -C Debug -R "<affected-test-pattern>" --output-on-failure
 ```
 
 Do not start concurrent CMake/MSBuild builds. If compilation is blocked by the environment, report the first environment error separately from source failures.

@@ -10,55 +10,106 @@
 #include <numbers>
 #include <optional>
 #include <span>
+#include <string>
 
-#include "editor/log/editor_log_component.h"
-#include "editor/settings/editor_settings.h"
-#include "editor/ui/editor_ui.h"
+#include "runtime/core/log/editor/log_editor_view.h"
+#include "editor/ui/host/editor_ui_host.h"
 #include "editor/ui/api/editor_ui/ui_plot.h"
+#include "editor/ui/api/editor_ui/ui_theme.h"
 #include "runtime/engine.h"
 #include "runtime/runtime_global_context.h"
 #include "runtime/window/window_system.h"
-#include "imgui.h"
 
 namespace kpengine::signal
 {
     namespace
     {
-        // Match EditorTheme's cool slate ink and restrained accent.
-        constexpr ImVec4 kAccent{0.6353f, 0.7490f, 0.8000f, 1.0f};
-        constexpr ImVec4 kMuted{0.6078f, 0.6863f, 0.7294f, 0.82f};
-        constexpr ImVec4 kValue{0.8314f, 0.8980f, 0.9255f, 1.0f};
-        constexpr std::array<ImU32, 8> kSignalColors{
-            IM_COL32(162, 191, 204, 255), IM_COL32(107, 214, 177, 255),
-            IM_COL32(205, 151, 235, 255), IM_COL32(239, 178, 111, 255),
-            IM_COL32(235, 124, 150, 255), IM_COL32(126, 174, 239, 255),
-            IM_COL32(200, 205, 119, 255), IM_COL32(120, 205, 207, 255)};
+        using editor::ui::UiColor;
+        using editor::ui::UiContext;
+        using editor::ui::UiPlotPoint;
+        using editor::ui::UiPlotSeries;
+        using editor::ui::UiPlotSeriesKind;
+        using editor::ui::UiTextRole;
 
-        double NiceAxisStep(double approximate_step);
+        constexpr UiColor kMixColor{0.94F, 0.70F, 0.44F, 1.0F};
+        constexpr std::array<UiColor, 8> kSignalColors{{
+            {0.635F, 0.749F, 0.800F, 1.0F}, {0.420F, 0.839F, 0.694F, 1.0F},
+            {0.804F, 0.592F, 0.922F, 1.0F}, {0.937F, 0.698F, 0.435F, 1.0F},
+            {0.922F, 0.486F, 0.588F, 1.0F}, {0.494F, 0.682F, 0.937F, 1.0F},
+            {0.784F, 0.804F, 0.467F, 1.0F}, {0.471F, 0.804F, 0.812F, 1.0F}}};
 
-        editor::ui::UiColor PlotColor(const ImU32 color)
+        std::size_t SignalColorIndex(const UiColor color)
         {
-            constexpr float scale = 1.0F / 255.0F;
-            return {static_cast<float>(color & 0xFFU) * scale,
-                    static_cast<float>((color >> 8U) & 0xFFU) * scale,
-                    static_cast<float>((color >> 16U) & 0xFFU) * scale,
-                    static_cast<float>((color >> 24U) & 0xFFU) * scale};
+            std::size_t nearest = 0;
+            float nearest_distance = std::numeric_limits<float>::max();
+            for (std::size_t index = 0; index < kSignalColors.size(); ++index)
+            {
+                const UiColor candidate = kSignalColors[index];
+                const float dr = color.r - candidate.r;
+                const float dg = color.g - candidate.g;
+                const float db = color.b - candidate.b;
+                const float distance = dr * dr + dg * dg + db * db;
+                if (distance < nearest_distance)
+                {
+                    nearest = index;
+                    nearest_distance = distance;
+                }
+            }
+            return nearest;
+        }
+
+        double NiceAxisStep(const double approximate_step)
+        {
+            if (!(approximate_step > 0.0) || !std::isfinite(approximate_step)) return 1.0;
+            const double magnitude = std::pow(10.0, std::floor(std::log10(approximate_step)));
+            const double fraction = approximate_step / magnitude;
+            const double nice_fraction = fraction <= 1.0 ? 1.0
+                : fraction <= 2.0 ? 2.0 : fraction <= 2.5 ? 2.5
+                : fraction <= 5.0 ? 5.0 : 10.0;
+            return nice_fraction * magnitude;
         }
 
         editor::ui::UiPlotStyle SignalPlotStyle()
         {
-            editor::ui::UiPlotStyle style;
+            editor::ui::UiPlotStyle style{};
             style.background = {0.035F, 0.047F, 0.058F, 1.0F};
-            style.border = PlotColor(IM_COL32(64, 78, 88, 255));
-            style.grid = PlotColor(IM_COL32(67, 82, 91, 135));
-            style.axis = PlotColor(IM_COL32(167, 192, 203, 255));
-            style.labels = PlotColor(IM_COL32(155, 175, 186, 255));
+            style.border = {0.25F, 0.31F, 0.35F, 1.0F};
+            style.grid = {0.26F, 0.32F, 0.36F, 0.53F};
+            style.axis = {0.65F, 0.75F, 0.80F, 1.0F};
+            style.labels = {0.61F, 0.69F, 0.73F, 1.0F};
             return style;
         }
 
-        void RenderSignalScopePlot(editor::ui::UiContext &ui,
-                                   const SignalScopeSnapshot &snapshot,
-                                   const ImU32 trace_color, const bool trace_visible)
+        editor::ui::UiVec2 PlotExtent(UiContext &ui)
+        {
+            const auto available = ui.AvailableContent();
+            return {std::max(available.x, 240.0F), std::max(available.y - 42.0F, 220.0F)};
+        }
+
+        const char *SignalKindName(const SignalKind kind) noexcept
+        {
+            switch (kind)
+            {
+            case SignalKind::Sine: return "Sine";
+            case SignalKind::Cosine: return "Cosine";
+            case SignalKind::Square: return "Square (naive)";
+            case SignalKind::Sawtooth: return "Sawtooth (naive)";
+            case SignalKind::Triangle: return "Triangle (naive)";
+            case SignalKind::Constant: return "Constant";
+            case SignalKind::Impulse: return "Impulse";
+            case SignalKind::UniformNoise: return "Uniform noise";
+            }
+            return "Unknown";
+        }
+
+        bool IsUnbandlimitedKind(const SignalKind kind) noexcept
+        {
+            return kind == SignalKind::Square || kind == SignalKind::Sawtooth ||
+                   kind == SignalKind::Triangle;
+        }
+
+        void RenderSignalScopePlot(UiContext &ui, const SignalScopeSnapshot &snapshot,
+                                   const UiColor trace_color, const bool trace_visible)
         {
             using namespace editor::ui;
             const std::span<const double> samples = snapshot.capture != nullptr
@@ -90,47 +141,40 @@ namespace kpengine::signal
             std::size_t series_count = 0;
             if (trace_visible && !trace.empty())
                 series[series_count++] = {.label = "Signal", .points = trace,
-                    .color = PlotColor(trace_color), .kind = UiPlotSeriesKind::Line,
-                    .thickness = 1.8F};
+                    .color = trace_color, .kind = UiPlotSeriesKind::Line, .thickness = 1.8F};
             if (snapshot.trigger_sample && !samples.empty() && rate > 0.0)
             {
-                const double trigger_ms = static_cast<double>(snapshot.pretrigger_samples) *
-                                          1000.0 / rate;
+                const double trigger_ms = static_cast<double>(snapshot.pretrigger_samples) * 1000.0 / rate;
                 trigger_points = {{{trigger_ms, -limit}, {trigger_ms, limit}}};
                 series[series_count++] = {.label = "Trigger", .points = trigger_points,
-                    .color = PlotColor(IM_COL32(239, 166, 82, 190)),
+                    .color = {0.94F, 0.65F, 0.32F, 0.75F},
                     .kind = UiPlotSeriesKind::Line, .thickness = 1.2F};
             }
             UiPlotStyle style = SignalPlotStyle();
             style.top_margin = 24.0F;
             style.bottom_margin = 42.0F;
-            const UiVec2 available = ui.AvailableContent();
             const UiPlotResult result = Plot(ui, {
                 .control = {.id = "signal.lab.scope.plot", .label = "Signal scope",
                             .enabled = !trace.empty()},
-                .size = {std::max(available.x, 240.0F),
-                         std::max(available.y - 42.0F, 220.0F)},
+                .size = PlotExtent(ui),
                 .x_axis = {.minimum = 0.0, .maximum = std::max(duration_ms, 0.001),
                            .label = "TIME (ms)", .divisions = 10},
                 .y_axis = {.minimum = -limit, .maximum = limit,
                            .label = "VOLTAGE (V)", .divisions = 8},
-                .series = {series.data(), series_count},
-                .style = style,
+                .series = {series.data(), series_count}, .style = style,
                 .empty_label = !trace_visible ? "Selected signal is hidden"
                     : samples.empty() ? snapshot.state_label : std::string_view{}});
             if (result.has_pointer_value && !samples.empty())
             {
                 const double fraction = std::clamp(result.pointer_x / duration_ms, 0.0, 1.0);
-                const std::size_t sample = static_cast<std::size_t>(
-                    fraction * static_cast<double>(samples.size() - 1));
-                ui.Text("Sample " + std::to_string(sample) + "  |  " +
+                const std::size_t sample = static_cast<std::size_t>(fraction * (samples.size() - 1));
+                ui.Text("Sample " + std::to_string(sample) + " | " +
                     std::to_string(samples[sample]) + " V", UiTextRole::Muted);
             }
         }
 
-        void RenderSignalSpectrumPlot(editor::ui::UiContext &ui,
-                                      const Spectrum &spectrum, const ImU32 trace_color,
-                                      const bool show_psd)
+        void RenderSignalSpectrumPlot(UiContext &ui, const Spectrum &spectrum,
+                                      const UiColor trace_color, const bool show_psd)
         {
             using namespace editor::ui;
             if (spectrum.bins.empty())
@@ -139,649 +183,248 @@ namespace kpengine::signal
                 return;
             }
             const auto value_for = [show_psd](const SpectrumBin &bin)
-            {
-                return show_psd ? bin.power_spectral_density : bin.peak_amplitude;
-            };
+            { return show_psd ? bin.power_spectral_density : bin.peak_amplitude; };
             double maximum = 0.0;
-            for (const SpectrumBin &bin : spectrum.bins)
-                maximum = std::max(maximum, value_for(bin));
+            for (const SpectrumBin &bin : spectrum.bins) maximum = std::max(maximum, value_for(bin));
             const double limit = NiceAxisStep(std::max(maximum * 1.1 / 4.0, 1.0e-12)) * 4.0;
             std::vector<UiPlotPoint> points;
             points.reserve(spectrum.bins.size());
-            for (const SpectrumBin &bin : spectrum.bins)
-                points.push_back({bin.frequency_hz, value_for(bin)});
+            for (const SpectrumBin &bin : spectrum.bins) points.push_back({bin.frequency_hz, value_for(bin)});
             UiPlotStyle style = SignalPlotStyle();
             style.top_margin = 30.0F;
             style.bottom_margin = 48.0F;
-            const UiVec2 available = ui.AvailableContent();
             const std::array<UiPlotSeries, 1> series{{
-                {.label = "Spectrum", .points = points,
-                 .color = PlotColor(trace_color), .kind = UiPlotSeriesKind::Line,
-                 .thickness = 2.0F}}};
-            const UiPlotResult result = Plot(ui, {
-                .control = {.id = "signal.lab.spectrum.plot", .label = "Signal spectrum",
-                            .enabled = true},
-                .size = {std::max(available.x, 240.0F),
-                         std::max(available.y - 42.0F, 220.0F)},
-                .x_axis = {.minimum = 0.0,
-                           .maximum = std::max(spectrum.sample_rate_hz * 0.5, 1.0),
+                {.label = "Spectrum", .points = points, .color = trace_color,
+                 .kind = UiPlotSeriesKind::Line, .thickness = 2.0F}}};
+            const auto result = Plot(ui, {
+                .control = {.id = "signal.lab.spectrum.plot", .label = "Signal spectrum"},
+                .size = PlotExtent(ui),
+                .x_axis = {.minimum = 0.0, .maximum = std::max(spectrum.sample_rate_hz * 0.5, 1.0),
                            .label = "FREQUENCY (Hz)", .divisions = 6},
                 .y_axis = {.minimum = 0.0, .maximum = limit,
-                           .label = show_psd ? "POWER DENSITY (V^2/Hz)"
-                                             : "PEAK AMPLITUDE (V)", .divisions = 4},
-                .series = series,
-                .style = style});
+                           .label = show_psd ? "POWER DENSITY (V^2/Hz)" : "PEAK AMPLITUDE (V)",
+                           .divisions = 4},
+                .series = series, .style = style});
             if (result.has_pointer_value)
             {
                 const auto nearest = std::min_element(spectrum.bins.begin(), spectrum.bins.end(),
                     [&](const SpectrumBin &left, const SpectrumBin &right)
-                    {
-                        return std::abs(left.frequency_hz - result.pointer_x) <
-                               std::abs(right.frequency_hz - result.pointer_x);
-                    });
-                ui.Text(std::to_string(nearest->frequency_hz) + " Hz  |  " +
+                    { return std::abs(left.frequency_hz - result.pointer_x) <
+                             std::abs(right.frequency_hz - result.pointer_x); });
+                ui.Text(std::to_string(nearest->frequency_hz) + " Hz | " +
                     std::to_string(value_for(*nearest)), UiTextRole::Muted);
             }
         }
 
-        const char *SignalKindName(const SignalKind kind) noexcept
-        {
-            switch (kind)
-            {
-            case SignalKind::Sine: return "Sine";
-            case SignalKind::Cosine: return "Cosine";
-            case SignalKind::Square: return "Square (naive)";
-            case SignalKind::Sawtooth: return "Sawtooth (naive)";
-            case SignalKind::Triangle: return "Triangle (naive)";
-            case SignalKind::Constant: return "Constant";
-            case SignalKind::Impulse: return "Impulse";
-            case SignalKind::UniformNoise: return "Uniform noise";
-            }
-            return "Unknown";
-        }
-
-        bool IsUnbandlimitedKind(const SignalKind kind) noexcept
-        {
-            return kind == SignalKind::Square || kind == SignalKind::Sawtooth ||
-                   kind == SignalKind::Triangle;
-        }
-
-        bool SelectPairSignal(const char *label, std::size_t &selected,
-                              const std::span<const SignalLabSignal> signals)
-        {
-            if (signals.empty())
-            {
-                ImGui::TextDisabled("%s: No signals", label);
-                return false;
-            }
-
-            selected = std::min(selected, signals.size() - 1);
-            bool changed = false;
-            ImGui::SetNextItemWidth(150.0f);
-            if (ImGui::BeginCombo(label, signals[selected].name.c_str()))
-            {
-                for (std::size_t index = 0; index < signals.size(); ++index)
-                {
-                    const bool is_selected = selected == index;
-                    ImGui::PushID(static_cast<int>(index));
-                    if (ImGui::Selectable(signals[index].name.c_str(), is_selected))
-                    {
-                        selected = index;
-                        changed = true;
-                    }
-                    if (is_selected)
-                    {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                    ImGui::PopID();
-                }
-                ImGui::EndCombo();
-            }
-            return changed;
-        }
-
-        void RenderPanelHeading(const char *title, const char *detail)
-        {
-            ImGui::TextColored(kAccent, "%s", title);
-            ImGui::TextDisabled("%s", detail);
-            ImGui::Spacing();
-        }
-
-        void RenderProperty(const char *label, const char *value)
-        {
-            ImGui::TextDisabled("%s", label);
-            ImGui::SameLine(92.0f);
-            ImGui::TextColored(kValue, "%s", value);
-        }
-
-        void DrawVisibilityEye(const ImVec2 min, const ImVec2 max,
-                               const ImU32 color, const bool visible)
-        {
-            ImDrawList *draw = ImGui::GetWindowDrawList();
-            const ImVec2 center{(min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f};
-            std::array<ImVec2, 14> outline{};
-            constexpr float kRadiusX = 7.0f;
-            constexpr float kRadiusY = 4.5f;
-            for (int point = 0; point < 7; ++point)
-            {
-                const float x = -kRadiusX + 2.0f * kRadiusX *
-                    static_cast<float>(point) / 6.0f;
-                const float taper = std::sqrt(std::max(0.0f,
-                    1.0f - (x * x) / (kRadiusX * kRadiusX)));
-                outline[static_cast<std::size_t>(point)] =
-                    {center.x + x, center.y - kRadiusY * taper};
-                outline[static_cast<std::size_t>(13 - point)] =
-                    {center.x + x, center.y + kRadiusY * taper};
-            }
-            draw->AddPolyline(outline.data(), static_cast<int>(outline.size()), color,
-                              ImDrawFlags_Closed, 1.4f);
-            if (visible)
-            {
-                draw->AddCircleFilled(center, 2.0f, color);
-            }
-            else
-            {
-                draw->AddLine({center.x - 6.0f, center.y + 6.0f},
-                              {center.x + 6.0f, center.y - 6.0f}, color, 1.6f);
-            }
-        }
-
-        double NiceAxisStep(const double approximate_step)
-        {
-            if (!(approximate_step > 0.0) || !std::isfinite(approximate_step))
-            {
-                return 1.0;
-            }
-
-            const double magnitude = std::pow(10.0, std::floor(std::log10(approximate_step)));
-            const double fraction = approximate_step / magnitude;
-            const double nice_fraction = fraction <= 1.0 ? 1.0
-                : fraction <= 2.0 ? 2.0
-                : fraction <= 2.5 ? 2.5
-                : fraction <= 5.0 ? 5.0 : 10.0;
-            return nice_fraction * magnitude;
-        }
-
-        void RenderSignalPlot(const std::span<const SignalLabSignal> signals,
+        void RenderSignalPlot(UiContext &ui, const std::span<const SignalLabSignal> signals,
                               const bool composite_mode,
                               const std::span<const double> composite_samples,
                               const bool composite_valid)
         {
-            const ImVec2 available = ImGui::GetContentRegionAvail();
-            const ImVec2 size{std::max(available.x, 240.0f),
-                              std::max(available.y - 42.0f, 220.0f)};
-            ImGui::InvisibleButton("##signal_plot", size);
-            const ImVec2 origin = ImGui::GetItemRectMin();
-            const ImVec2 end = ImGui::GetItemRectMax();
-            ImDrawList *draw = ImGui::GetWindowDrawList();
-            const ImU32 panel = ImGui::GetColorU32(ImGuiCol_FrameBg);
-            const ImU32 grid = ImGui::GetColorU32(ImGuiCol_Border, 0.65f);
-            const ImU32 axis = ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.9f);
-            draw->AddRectFilled(origin, end, panel, 8.0f);
-            draw->AddRect(origin, end, IM_COL32(145, 170, 178, 48), 8.0f);
-
+            using namespace editor::ui;
             if (signals.empty())
             {
-                const char *message = "No samples available";
-                const ImVec2 text_size = ImGui::CalcTextSize(message);
-                draw->AddText({(origin.x + end.x - text_size.x) * 0.5f,
-                               (origin.y + end.y - text_size.y) * 0.5f},
-                              ImGui::GetColorU32(kMuted), message);
+                ui.Text("Generate a waveform to begin.", UiTextRole::Muted);
                 return;
             }
-
-            const ImVec2 graph_min{origin.x + 54.0f, origin.y + 28.0f};
-            const ImVec2 graph_max{end.x - 16.0f, end.y - 48.0f};
-            const float graph_width = std::max(graph_max.x - graph_min.x, 1.0f);
-            const float graph_height = std::max(graph_max.y - graph_min.y, 1.0f);
-            const float center_y = (graph_min.y + graph_max.y) * 0.5f;
-            const ImU32 label_color = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-
-            const SampleBlockView first_block = signals.front().samples.View();
-            const std::span<const double> timeline = first_block.ChannelSamples(0);
-            if (timeline.empty())
-            {
-                return;
-            }
-            double peak = 0.0;
-            std::size_t visible_count = 0;
-            for (const SignalLabSignal &signal : signals)
-            {
-                if (!signal.visible)
-                {
-                    continue;
-                }
-                ++visible_count;
-                for (const double sample : signal.samples.ChannelSamples(0))
-                {
-                    peak = std::max(peak, std::abs(sample));
-                }
-            }
-
-            if (visible_count == 0)
-            {
-                const char *message = "All signals are hidden";
-                const ImVec2 text_size = ImGui::CalcTextSize(message);
-                draw->AddText({(graph_min.x + graph_max.x - text_size.x) * 0.5f,
-                               (graph_min.y + graph_max.y - text_size.y) * 0.5f},
-                              ImGui::GetColorU32(kMuted), message);
-                return;
-            }
-
             if (composite_mode && !composite_valid)
             {
-                const char *message = "Composite exceeds the numeric range";
-                const ImVec2 text_size = ImGui::CalcTextSize(message);
-                draw->AddText({(graph_min.x + graph_max.x - text_size.x) * 0.5f,
-                               (graph_min.y + graph_max.y - text_size.y) * 0.5f},
-                              ImGui::GetColorU32(kMuted), message);
+                ui.Text("Composite exceeds the numeric range.", UiTextRole::Warning);
                 return;
             }
-            if (composite_valid)
+            std::vector<const SignalLabSignal *> visible;
+            for (const auto &signal : signals) if (signal.visible) visible.push_back(&signal);
+            if (!composite_mode && visible.empty())
             {
-                for (const double sample : composite_samples)
-                {
-                    peak = std::max(peak, std::abs(sample));
-                }
+                ui.Text("All signals are hidden.", UiTextRole::Muted);
+                return;
             }
-
-            const double amplitude_tick = NiceAxisStep(std::max(peak, 1.0e-12) / 3.0 * 1.1);
-            const double amplitude_limit = amplitude_tick * 3.0;
-            const float amplitude_division_count = 6.0f;
-            for (int division = 0; division <= 6; ++division)
-            {
-                const float fraction = static_cast<float>(division) / amplitude_division_count;
-                const float y = graph_min.y + graph_height * fraction;
-                const bool zero_axis = division == 3;
-                draw->AddLine({graph_min.x, y}, {graph_max.x, y},
-                              zero_axis ? axis : grid, zero_axis ? 1.4f : 1.0f);
-                draw->AddLine({graph_min.x - 4.0f, y}, {graph_min.x, y}, axis);
-
-                const double value = amplitude_limit - 2.0 * amplitude_limit * fraction;
-                char label[32]{};
-                std::snprintf(label, sizeof(label), "%.3g", value);
-                const ImVec2 label_size = ImGui::CalcTextSize(label);
-                draw->AddText({graph_min.x - label_size.x - 8.0f,
-                               y - label_size.y * 0.5f}, label_color, label);
-            }
-
-            constexpr int kTimeDivisionCount = 5;
-            const double duration_ms = static_cast<double>(timeline.size()) * 1000.0 /
-                                       first_block.SampleRateHz();
-            for (int division = 0; division <= kTimeDivisionCount; ++division)
-            {
-                const float fraction = static_cast<float>(division) /
-                                       static_cast<float>(kTimeDivisionCount);
-                const float x = graph_min.x + graph_width * fraction;
-                draw->AddLine({x, graph_min.y}, {x, graph_max.y}, grid);
-                draw->AddLine({x, graph_max.y}, {x, graph_max.y + 4.0f}, axis);
-
-                char label[32]{};
-                std::snprintf(label, sizeof(label), "%.3g",
-                              duration_ms * static_cast<double>(fraction));
-                const ImVec2 label_size = ImGui::CalcTextSize(label);
-                draw->AddText({x - label_size.x * 0.5f, graph_max.y + 8.0f},
-                              label_color, label);
-            }
-            draw->AddLine({graph_min.x, graph_min.y}, {graph_min.x, graph_max.y}, axis, 1.4f);
-            draw->AddText({graph_min.x, origin.y + 7.0f}, label_color, "AMPLITUDE");
-            const char *time_label = "TIME (ms)";
-            const ImVec2 time_label_size = ImGui::CalcTextSize(time_label);
-            draw->AddText({graph_max.x - time_label_size.x,
-                           graph_max.y + 25.0f}, label_color, time_label);
-
-            constexpr std::size_t kMaximumDisplayPoints = 2'048;
-            std::array<ImVec2, kMaximumDisplayPoints> points{};
-            draw->PushClipRect(origin, end, true);
-            const auto draw_trace = [&](const std::span<const double> samples,
-                                        const ImU32 color)
-            {
-                const std::size_t point_count = std::min(samples.size(), kMaximumDisplayPoints);
-                for (std::size_t point = 0; point < point_count; ++point)
-                {
-                    const std::size_t sample_index = point_count == 1
-                        ? 0
-                        : point * (samples.size() - 1) / (point_count - 1);
-                    const float x = point_count == 1
-                        ? (graph_min.x + graph_max.x) * 0.5f
-                        : graph_min.x + graph_width * static_cast<float>(point) /
-                              static_cast<float>(point_count - 1);
-                    const float y = center_y - static_cast<float>(samples[sample_index] /
-                        amplitude_limit) * graph_height * 0.5f;
-                    points[point] = {x, y};
-                }
-                const ImU32 glow = (color & 0x00FFFFFFU) | 0x28000000U;
-                if (point_count == 1)
-                {
-                    draw->AddCircleFilled(points[0], 3.0f, color);
-                }
-                else
-                {
-                    draw->AddPolyline(points.data(), static_cast<int>(point_count),
-                                      glow, ImDrawFlags_None, 5.0f);
-                    draw->AddPolyline(points.data(), static_cast<int>(point_count),
-                                      color, ImDrawFlags_None, 2.0f);
-                }
-            };
+            const auto first = signals.front().samples.View();
+            const double rate = first.SampleRateHz();
+            const std::size_t extent = composite_mode ? composite_samples.size()
+                : visible.front()->samples.SampleCount();
+            const double duration = rate > 0.0 ? static_cast<double>(extent) / rate : 1.0;
+            double peak = 1.0e-9;
             if (composite_mode)
             {
-                draw_trace(composite_samples, IM_COL32(239, 178, 111, 255));
+                for (const double sample : composite_samples) peak = std::max(peak, std::abs(sample));
             }
             else
             {
-                for (const SignalLabSignal &signal : signals)
-                {
-                    if (signal.visible)
-                    {
-                        draw_trace(signal.samples.ChannelSamples(0),
-                                   static_cast<ImU32>(signal.color));
-                    }
-                }
+                for (const auto *signal : visible)
+                    for (const double sample : signal->samples.ChannelSamples(0))
+                        peak = std::max(peak, std::abs(sample));
             }
-            draw->PopClipRect();
-
-            if (ImGui::IsItemHovered() && !signals.empty())
+            const double limit = NiceAxisStep(peak * 1.1 / 3.0) * 3.0;
+            std::vector<std::vector<UiPlotPoint>> points;
+            std::vector<UiPlotSeries> series;
+            points.reserve(composite_mode ? 1 : visible.size());
+            series.reserve(composite_mode ? 1 : visible.size());
+            const auto add_trace = [&](const std::span<const double> samples,
+                                       const std::string_view label, const UiColor color)
             {
-                const float cursor = std::clamp(ImGui::GetIO().MousePos.x - graph_min.x,
-                                                0.0f, graph_width);
-                const std::size_t sample_index = static_cast<std::size_t>(
-                    cursor / graph_width * static_cast<float>(timeline.size() - 1));
-                const ImVec2 probe{graph_min.x + cursor, center_y};
-                draw->AddLine({probe.x, graph_min.y}, {probe.x, graph_max.y},
-                              IM_COL32(210, 229, 229, 110));
-                const std::uint64_t absolute_index = first_block.FirstSampleIndex() + sample_index;
-                const double time_seconds = static_cast<double>(absolute_index) /
-                                            first_block.SampleRateHz();
-                ImGui::BeginTooltip();
-                ImGui::Text("Sample %llu", static_cast<unsigned long long>(absolute_index));
-                ImGui::Text("Time %.6f s", time_seconds);
-                if (composite_mode)
+                const std::size_t count = std::min<std::size_t>(samples.size(), 2'048);
+                points.emplace_back();
+                auto &trace = points.back();
+                trace.reserve(count);
+                for (std::size_t i = 0; i < count; ++i)
                 {
-                    if (sample_index < composite_samples.size())
-                    {
-                        ImGui::TextColored(ImVec4{0.94f, 0.70f, 0.44f, 1.0f},
-                            "Composite: %.6f", composite_samples[sample_index]);
-                    }
+                    const std::size_t sample = count <= 1 ? 0 : i * (samples.size() - 1) / (count - 1);
+                    const double x = samples.size() <= 1 ? 0.0
+                        : duration * static_cast<double>(sample) / (samples.size() - 1);
+                    trace.push_back({x, samples[sample]});
                 }
-                else for (const SignalLabSignal &signal : signals)
-                {
-                    if (!signal.visible)
-                    {
-                        continue;
-                    }
-                    const std::span<const double> samples = signal.samples.ChannelSamples(0);
-                    if (sample_index < samples.size())
-                    {
-                        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(
-                            static_cast<ImU32>(signal.color)), "%s: %.6f",
-                            signal.name.c_str(), samples[sample_index]);
-                    }
-                }
-                ImGui::EndTooltip();
-            }
+                series.push_back({.label = label, .points = trace, .color = color,
+                    .kind = UiPlotSeriesKind::Line, .thickness = 1.7F});
+            };
+            if (composite_mode)
+                add_trace(composite_samples, "Composite", kMixColor);
+            else
+                for (const auto *signal : visible)
+                    add_trace(signal->samples.ChannelSamples(0), signal->name, signal->color);
+            auto style = SignalPlotStyle();
+            style.left_margin = 58.0F;
+            style.bottom_margin = 42.0F;
+            (void)Plot(ui, {
+                .control = {.id = "signal.lab.overlay.plot", .label = "Signal overlay"},
+                .size = PlotExtent(ui),
+                .x_axis = {.minimum = 0.0, .maximum = std::max(duration * 1000.0, 1.0e-6),
+                           .label = "TIME (ms)", .divisions = 5},
+                .y_axis = {.minimum = -limit, .maximum = limit,
+                           .label = "AMPLITUDE (V)", .divisions = 6},
+                .series = series, .style = style,
+                .empty_label = "No samples available"});
         }
 
-        void RenderPairMixPlot(const SignalLabSignal &signal_a,
-                               const SignalLabSignal &signal_b,
-                               const SampleBlock &mixed_block)
+        void RenderPairMixPlot(UiContext &ui, const SignalLabSignal &signal_a,
+                               const SignalLabSignal &signal_b, const SampleBlock &mixed_block)
         {
-            const std::span<const double> samples_a = signal_a.samples.ChannelSamples(0);
-            const std::span<const double> samples_b = signal_b.samples.ChannelSamples(0);
-            const std::span<const double> samples_mix = mixed_block.ChannelSamples(0);
-            const ImVec2 available = ImGui::GetContentRegionAvail();
-            const ImVec2 size{std::max(available.x, 240.0f),
-                              std::max(available.y - 42.0f, 220.0f)};
-            ImGui::InvisibleButton("##pair_mix_plot", size);
-            const ImVec2 origin = ImGui::GetItemRectMin();
-            const ImVec2 end = ImGui::GetItemRectMax();
-            ImDrawList *draw = ImGui::GetWindowDrawList();
-            draw->AddRectFilled(origin, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 6.0f);
-            draw->AddRect(origin, end, ImGui::GetColorU32(ImGuiCol_Border), 6.0f);
-
-            if (samples_a.empty() || samples_a.size() != samples_b.size() ||
-                samples_a.size() != samples_mix.size())
+            using namespace editor::ui;
+            const auto a = signal_a.samples.ChannelSamples(0);
+            const auto b = signal_b.samples.ChannelSamples(0);
+            const auto mixed = mixed_block.ChannelSamples(0);
+            if (a.empty() || a.size() != b.size() || a.size() != mixed.size())
             {
-                const char *message = "The selected pair has no aligned samples";
-                draw->AddText({origin.x + 16.0f, origin.y + 16.0f},
-                              ImGui::GetColorU32(kMuted), message);
+                ui.Text("The selected pair has no aligned samples.", UiTextRole::Warning);
                 return;
             }
-
-            const ImVec2 graph_min{origin.x + 58.0f, origin.y + 28.0f};
-            const ImVec2 graph_max{end.x - 16.0f, end.y - 48.0f};
-            const float width = std::max(graph_max.x - graph_min.x, 1.0f);
-            const float height = std::max(graph_max.y - graph_min.y, 1.0f);
-            const float center_y = (graph_min.y + graph_max.y) * 0.5f;
-            double peak = 0.0;
-            for (std::size_t sample = 0; sample < samples_mix.size(); ++sample)
+            const std::array<std::span<const double>, 3> inputs{a, b, mixed};
+            const std::array<std::string_view, 3> labels{signal_a.name, signal_b.name, "A + B"};
+            const std::array<UiColor, 3> colors{signal_a.color, signal_b.color, kMixColor};
+            double peak = 1.0e-9;
+            for (const auto span : inputs)
+                for (const double sample : span) peak = std::max(peak, std::abs(sample));
+            const double limit = NiceAxisStep(peak * 1.1 / 3.0) * 3.0;
+            const double duration = static_cast<double>(mixed.size()) / mixed_block.SampleRateHz();
+            std::vector<std::vector<UiPlotPoint>> points(3);
+            std::array<UiPlotSeries, 3> series{};
+            for (std::size_t trace = 0; trace < inputs.size(); ++trace)
             {
-                peak = std::max({peak, std::abs(samples_a[sample]),
-                                 std::abs(samples_b[sample]), std::abs(samples_mix[sample])});
-            }
-            const double tick = NiceAxisStep(std::max(peak / 3.0 * 1.1, 1.0e-12));
-            const double limit = tick * 3.0;
-            const ImU32 grid = ImGui::GetColorU32(ImGuiCol_Border, 0.65f);
-            const ImU32 axis = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-            const ImU32 labels = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-            for (int division = 0; division <= 6; ++division)
-            {
-                const float fraction = static_cast<float>(division) / 6.0f;
-                const float y = graph_min.y + fraction * height;
-                draw->AddLine({graph_min.x, y}, {graph_max.x, y},
-                              division == 3 ? axis : grid,
-                              division == 3 ? 1.4f : 1.0f);
-                char value[32]{};
-                std::snprintf(value, sizeof(value), "%.3g", limit * (1.0 - 2.0 * fraction));
-                const ImVec2 text = ImGui::CalcTextSize(value);
-                draw->AddText({graph_min.x - text.x - 7.0f, y - text.y * 0.5f}, labels, value);
-            }
-            constexpr int kTimeDivisions = 5;
-            const double duration_ms = static_cast<double>(samples_mix.size()) * 1'000.0 /
-                                       mixed_block.SampleRateHz();
-            for (int division = 0; division <= kTimeDivisions; ++division)
-            {
-                const float fraction = static_cast<float>(division) / kTimeDivisions;
-                const float x = graph_min.x + fraction * width;
-                draw->AddLine({x, graph_min.y}, {x, graph_max.y}, grid);
-                char value[32]{};
-                std::snprintf(value, sizeof(value), "%.3g", duration_ms * fraction);
-                const ImVec2 text = ImGui::CalcTextSize(value);
-                draw->AddText({x - text.x * 0.5f, graph_max.y + 7.0f}, labels, value);
-            }
-            draw->AddLine({graph_min.x, graph_min.y}, {graph_min.x, graph_max.y}, axis, 1.3f);
-            draw->AddText({graph_min.x, origin.y + 5.0f}, labels, "PAIR MIX: A + B (V)");
-            draw->AddText({graph_max.x - 58.0f, graph_max.y + 25.0f}, labels, "TIME (ms)");
-            float legend_x = graph_max.x - 146.0f;
-            const float legend_y = origin.y + 10.0f;
-            const auto draw_legend_entry = [&](const char *name, const ImU32 color,
-                                               const float entry_width)
-            {
-                draw->AddLine({legend_x, legend_y + 6.0f},
-                              {legend_x + 12.0f, legend_y + 6.0f}, color, 2.0f);
-                draw->AddText({legend_x + 16.0f, legend_y}, labels, name);
-                legend_x += entry_width;
-            };
-            draw_legend_entry("A", static_cast<ImU32>(signal_a.color), 38.0f);
-            draw_legend_entry("B", static_cast<ImU32>(signal_b.color), 38.0f);
-            draw_legend_entry("A+B", IM_COL32(239, 178, 111, 255), 48.0f);
-
-            std::array<ImVec2, 2'048> points{};
-            const auto draw_trace = [&](const std::span<const double> samples,
-                                        const ImU32 color, const float thickness)
-            {
-                const std::size_t count = std::min(samples.size(), points.size());
-                for (std::size_t point = 0; point < count; ++point)
+                const std::size_t count = std::min<std::size_t>(inputs[trace].size(), 2'048);
+                points[trace].reserve(count);
+                for (std::size_t i = 0; i < count; ++i)
                 {
-                    const std::size_t index = count == 1 ? 0
-                        : point * (samples.size() - 1) / (count - 1);
-                    const float x = count == 1 ? (graph_min.x + graph_max.x) * 0.5f
-                        : graph_min.x + width * static_cast<float>(point) /
-                            static_cast<float>(count - 1);
-                    const float y = center_y - static_cast<float>(samples[index] / limit) *
-                        height * 0.5f;
-                    points[point] = {x, y};
+                    const std::size_t sample = count <= 1 ? 0
+                        : i * (inputs[trace].size() - 1) / (count - 1);
+                    points[trace].push_back({duration * static_cast<double>(sample) /
+                        std::max<std::size_t>(inputs[trace].size() - 1, 1), inputs[trace][sample]});
                 }
-                if (count > 1)
-                {
-                    draw->AddPolyline(points.data(), static_cast<int>(count), color,
-                                      ImDrawFlags_None, thickness);
-                }
-            };
-            draw->PushClipRect(graph_min, graph_max, true);
-            draw_trace(samples_a, static_cast<ImU32>(signal_a.color), 1.5f);
-            draw_trace(samples_b, static_cast<ImU32>(signal_b.color), 1.5f);
-            draw_trace(samples_mix, IM_COL32(239, 178, 111, 255), 2.4f);
-            draw->PopClipRect();
-
-            if (ImGui::IsItemHovered())
-            {
-                const float cursor = std::clamp(ImGui::GetIO().MousePos.x - graph_min.x,
-                                                0.0f, width);
-                const std::size_t sample = static_cast<std::size_t>(cursor / width *
-                    static_cast<float>(samples_mix.size() - 1));
-                const float x = graph_min.x + cursor;
-                draw->AddLine({x, graph_min.y}, {x, graph_max.y},
-                              IM_COL32(210, 229, 229, 110));
-                ImGui::BeginTooltip();
-                ImGui::Text("Sample %zu  |  %.4f ms", sample,
-                    static_cast<double>(sample) * 1'000.0 / mixed_block.SampleRateHz());
-                ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(
-                    static_cast<ImU32>(signal_a.color)), "A: %.6f V", samples_a[sample]);
-                ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(
-                    static_cast<ImU32>(signal_b.color)), "B: %.6f V", samples_b[sample]);
-                ImGui::TextColored(ImVec4{0.94f, 0.70f, 0.44f, 1.0f},
-                                   "A + B: %.6f V", samples_mix[sample]);
-                ImGui::EndTooltip();
+                series[trace] = {.label = labels[trace], .points = points[trace],
+                    .color = colors[trace], .kind = UiPlotSeriesKind::Line,
+                    .thickness = trace == 2 ? 2.2F : 1.5F};
             }
+            auto style = SignalPlotStyle();
+            style.left_margin = 58.0F;
+            (void)Plot(ui, {
+                .control = {.id = "signal.lab.pair_mix.plot", .label = "Pair mix"},
+                .size = PlotExtent(ui),
+                .x_axis = {.minimum = 0.0, .maximum = std::max(duration * 1000.0, 1.0e-6),
+                           .label = "TIME (ms)", .divisions = 5},
+                .y_axis = {.minimum = -limit, .maximum = limit,
+                           .label = "VOLTAGE (V)", .divisions = 6},
+                .series = series, .style = style});
         }
 
-        void RenderPhasePlot(const SignalLabSignal &signal_a,
+        void RenderPhasePlot(UiContext &ui, const SignalLabSignal &signal_a,
                              const SignalLabSignal &signal_b)
         {
-            const std::span<const double> samples_a = signal_a.samples.ChannelSamples(0);
-            const std::span<const double> samples_b = signal_b.samples.ChannelSamples(0);
-            const ImVec2 available = ImGui::GetContentRegionAvail();
-            const ImVec2 size{std::max(available.x, 240.0f),
-                              std::max(available.y - 42.0f, 220.0f)};
-            ImGui::InvisibleButton("##phase_plot", size);
-            const ImVec2 origin = ImGui::GetItemRectMin();
-            const ImVec2 end = ImGui::GetItemRectMax();
-            ImDrawList *draw = ImGui::GetWindowDrawList();
-            draw->AddRectFilled(origin, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 6.0f);
-            draw->AddRect(origin, end, ImGui::GetColorU32(ImGuiCol_Border), 6.0f);
-
-            if (samples_a.empty() || samples_a.size() != samples_b.size())
+            using namespace editor::ui;
+            const auto a = signal_a.samples.ChannelSamples(0);
+            const auto b = signal_b.samples.ChannelSamples(0);
+            const std::size_t size = std::min(a.size(), b.size());
+            if (size == 0)
             {
-                const char *message = "The selected pair has no aligned samples";
-                draw->AddText({origin.x + 16.0f, origin.y + 16.0f},
-                              ImGui::GetColorU32(kMuted), message);
+                ui.Text("The selected pair has no aligned samples.", UiTextRole::Warning);
                 return;
             }
-
-            const ImVec2 graph_min{origin.x + 58.0f, origin.y + 24.0f};
-            const ImVec2 graph_max{end.x - 16.0f, end.y - 50.0f};
-            const float width = std::max(graph_max.x - graph_min.x, 1.0f);
-            const float height = std::max(graph_max.y - graph_min.y, 1.0f);
-            double peak = 0.0;
-            for (std::size_t sample = 0; sample < samples_a.size(); ++sample)
+            double limit = 1.0e-9;
+            for (std::size_t i = 0; i < size; ++i)
+                limit = std::max({limit, std::abs(a[i]), std::abs(b[i])});
+            limit = NiceAxisStep(limit * 1.1 / 3.0) * 3.0;
+            std::vector<UiPlotPoint> points;
+            const std::size_t count = std::min<std::size_t>(size, 4'096);
+            points.reserve(count);
+            for (std::size_t i = 0; i < count; ++i)
             {
-                peak = std::max({peak, std::abs(samples_a[sample]),
-                                 std::abs(samples_b[sample])});
+                const std::size_t sample = count <= 1 ? 0 : i * (size - 1) / (count - 1);
+                points.push_back({a[sample], b[sample]});
             }
-            const double tick = NiceAxisStep(std::max(peak / 3.0 * 1.1, 1.0e-12));
-            const double limit = tick * 3.0;
-            const ImU32 grid = ImGui::GetColorU32(ImGuiCol_Border, 0.65f);
-            const ImU32 axis = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-            const ImU32 labels = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-            for (int division = 0; division <= 6; ++division)
-            {
-                const float fraction = static_cast<float>(division) / 6.0f;
-                const double x_value = -limit + 2.0 * limit * fraction;
-                const double y_value = limit - 2.0 * limit * fraction;
-                const float x = graph_min.x + width * fraction;
-                const float y = graph_max.y - height * fraction;
-                draw->AddLine({x, graph_min.y}, {x, graph_max.y},
-                              division == 3 ? axis : grid,
-                              division == 3 ? 1.4f : 1.0f);
-                draw->AddLine({graph_min.x, y}, {graph_max.x, y},
-                              division == 3 ? axis : grid,
-                              division == 3 ? 1.4f : 1.0f);
-                char value[32]{};
-                std::snprintf(value, sizeof(value), "%.3g", y_value);
-                const ImVec2 text = ImGui::CalcTextSize(value);
-                draw->AddText({graph_min.x - text.x - 7.0f, y - text.y * 0.5f}, labels, value);
-                std::snprintf(value, sizeof(value), "%.3g", x_value);
-                const ImVec2 x_text = ImGui::CalcTextSize(value);
-                draw->AddText({x - x_text.x * 0.5f, graph_max.y + 7.0f}, labels, value);
-            }
-            draw->AddText({graph_min.x, origin.y + 3.0f}, labels, "A (V)");
-            draw->AddText({graph_max.x - 36.0f, graph_max.y + 26.0f}, labels, "B (V)");
-
-            const std::size_t count = std::min<std::size_t>(samples_a.size(), 2'048);
-            std::array<ImVec2, 2'048> points{};
-            const auto map_point = [&](const std::size_t point)
-            {
-                const std::size_t sample = count == 1 ? 0
-                    : point * (samples_a.size() - 1) / (count - 1);
-                return ImVec2{
-                    graph_min.x + (static_cast<float>(samples_a[sample] / limit) * 0.5f + 0.5f) * width,
-                    graph_max.y - (static_cast<float>(samples_b[sample] / limit) * 0.5f + 0.5f) * height};
-            };
-            for (std::size_t point = 0; point < count; ++point)
-            {
-                points[point] = map_point(point);
-            }
-            draw->PushClipRect(graph_min, graph_max, true);
-            if (count > 1)
-            {
-                draw->AddPolyline(points.data(), static_cast<int>(count),
-                    (signal_a.color & 0x00FFFFFFU) | 0x28000000U,
-                    ImDrawFlags_None, 5.0f);
-                draw->AddPolyline(points.data(), static_cast<int>(count),
-                    static_cast<ImU32>(signal_a.color), ImDrawFlags_None, 2.0f);
-            }
-            draw->PopClipRect();
-
-            if (ImGui::IsItemHovered() && count > 0)
-            {
-                const ImVec2 mouse = ImGui::GetIO().MousePos;
-                std::size_t nearest = 0;
-                float nearest_distance = std::numeric_limits<float>::max();
-                for (std::size_t point = 0; point < count; ++point)
-                {
-                    const float dx = points[point].x - mouse.x;
-                    const float dy = points[point].y - mouse.y;
-                    const float distance = dx * dx + dy * dy;
-                    if (distance < nearest_distance)
-                    {
-                        nearest = point;
-                        nearest_distance = distance;
-                    }
-                }
-                draw->AddCircleFilled(points[nearest], 4.0f,
-                                      static_cast<ImU32>(signal_a.color));
-                const std::size_t sample = count == 1 ? 0
-                    : nearest * (samples_a.size() - 1) / (count - 1);
-                ImGui::BeginTooltip();
-                ImGui::Text("Sample %zu  |  t = %.4f ms", sample,
-                    static_cast<double>(sample) * 1'000.0 /
-                        signal_a.samples.SampleRateHz());
-                ImGui::Text("X (%s): %.6f V", signal_a.name.c_str(), samples_a[sample]);
-                ImGui::Text("Y (%s): %.6f V", signal_b.name.c_str(), samples_b[sample]);
-                ImGui::EndTooltip();
-            }
+            const std::array<UiPlotSeries, 1> series{{
+                {.label = "A[n], B[n]", .points = points,
+                 .color = signal_a.color, .kind = UiPlotSeriesKind::Line,
+                 .thickness = 1.8F}}};
+            auto style = SignalPlotStyle();
+            style.left_margin = 56.0F;
+            style.bottom_margin = 40.0F;
+            (void)Plot(ui, {
+                .control = {.id = "signal.lab.phase.plot", .label = "Phase view"},
+                .size = PlotExtent(ui),
+                .x_axis = {.minimum = -limit, .maximum = limit, .label = "A (V)", .divisions = 6},
+                .y_axis = {.minimum = -limit, .maximum = limit, .label = "B (V)", .divisions = 6},
+                .series = series, .style = style});
         }
 
-        void RenderMeasurement(const char *label, const double value)
+        bool SelectPairSignal(UiContext &ui, const std::string_view id,
+                              const std::string_view label, std::size_t &selected,
+                              const std::span<const SignalLabSignal> signals)
         {
-            ImGui::TextDisabled("%s", label);
-            ImGui::TextColored(kValue, "%.4f", value);
-            ImGui::Spacing();
+            if (signals.empty())
+            {
+                ui.Text(std::string(label) + ": No signals", UiTextRole::Muted);
+                return false;
+            }
+            selected = std::min(selected, signals.size() - 1);
+            std::vector<editor::ui::UiChoice> choices;
+            choices.reserve(signals.size());
+            for (std::size_t i = 0; i < signals.size(); ++i)
+                choices.push_back({std::to_string(i), signals[i].name,
+                    static_cast<std::uint64_t>(i)});
+            const auto result = ui.Combo<std::uint64_t>({.id = id, .label = label},
+                static_cast<std::uint64_t>(selected), std::move(choices));
+            if (result.changed) selected = static_cast<std::size_t>(result.value);
+            return result.changed;
         }
 
+        void RenderPanelHeading(UiContext &ui, const std::string_view title,
+                                const std::string_view detail)
+        {
+            ui.Section(title);
+            ui.Text(detail, UiTextRole::Muted);
+        }
 
+        void RenderProperty(UiContext &ui, const std::string_view label,
+                            const std::string_view value)
+        {
+            ui.Text(std::string(label) + "  " + std::string(value), UiTextRole::Muted);
+        }
+
+        void RenderMeasurement(UiContext &ui, const std::string_view label, const double value)
+        {
+            char formatted[64]{};
+            std::snprintf(formatted, sizeof(formatted), "%.5g", value);
+            ui.Text(std::string(label) + "  " + formatted, UiTextRole::Accent);
+        }
     }
-
     SignalLabEditor::SignalLabEditor() = default;
 
     SignalLabEditor::~SignalLabEditor()
@@ -812,32 +455,13 @@ namespace kpengine::signal
             return false;
         }
 
-        editor::EditorUIInitInfo init{};
-        init.window = context.window_system_->GetNativeHandle();
-        init.editor_presentation_bridge =
-            context.render_system_->GetEditorPresentationBridge();
-        init.log_system = context.log_system_.get();
-        init.engine = &engine;
-        init.render_system = context.render_system_.get();
-        init.window_system = context.window_system_.get();
         try
         {
-            editor::EditorWindowConfig log_config;
-            log_config.pos_y_ratio = 0.72f;
-            log_config.width_ratio = 1.0f;
-            log_config.height_ratio = 0.28f;
-            log_config.extra_flags = ImGuiWindowFlags_NoCollapse;
-            log_component_ = std::make_unique<editor::EditorLogComponent>(
-                context.log_system_.get(), editor::DefaultLogColors(), log_config);
-            ui_ = std::make_unique<editor::EditorUI>();
-            ui_->InitializeUiViewer(init, [this](editor::ui::UiContext &ui)
-            {
-                RenderWorkspace(ui);
-                if (log_component_ != nullptr)
-                {
-                    log_component_->Render();
-                }
-            });
+            log_view_ = std::make_unique<editor::LogEditorView>();
+            ui_ = std::make_unique<editor::EditorUiHost>();
+            ui_->Initialize({
+                .window = context.window_system_->GetNativeHandle(),
+                .presentation_bridge = context.render_system_->GetEditorPresentationBridge()});
         }
         catch (const std::exception &error)
         {
@@ -901,8 +525,7 @@ namespace kpengine::signal
         std::snprintf(name, sizeof(name), "%s%s %02llu",
                       composite ? "Composite " : "", SignalKindName(config.kind),
                       static_cast<unsigned long long>(serial));
-        const std::uint32_t color = static_cast<std::uint32_t>(
-            kSignalColors[(serial - 1) % kSignalColors.size()]);
+        const UiColor color = kSignalColors[(serial - 1) % kSignalColors.size()];
         signals_.emplace_back(name, config, std::move(*block), *statistics, color);
         selected_signal_ = signals_.size() - 1;
         RebuildComposite();
@@ -1013,9 +636,13 @@ namespace kpengine::signal
     bool SignalLabEditor::Render(std::string &diagnostic)
     {
         diagnostic.clear();
-        if (ui_ == nullptr || !ui_->Render())
+        if (ui_ == nullptr || !ui_->RenderFrame([this](editor::ui::UiContext &ui)
+            {
+                RenderWorkspace(ui);
+                RenderLog(ui);
+            }))
         {
-            diagnostic = "Signal Lab ImGui presentation failed";
+            diagnostic = "Signal Lab UI presentation failed";
             return false;
         }
         return true;
@@ -1023,7 +650,7 @@ namespace kpengine::signal
 
     void SignalLabEditor::Shutdown() noexcept
     {
-        log_component_.reset();
+        log_view_.reset();
         scope_session_.reset();
         if (ui_ != nullptr)
         {
@@ -1034,741 +661,340 @@ namespace kpengine::signal
 
     void SignalLabEditor::RenderWorkspace(editor::ui::UiContext &ui)
     {
-        const ImGuiViewport *viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);
-        ImGui::SetNextWindowSize({viewport->WorkSize.x, viewport->WorkSize.y * 0.72f});
-        constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
-            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
-            ImGuiWindowFlags_NoScrollWithMouse;
-        if (ImGui::Begin("Signal Lab", nullptr, flags))
+        using namespace editor::ui;
+        const UiViewportInfo &viewport = ui.Viewport();
+        const UiVec2 origin = viewport.logical_origin;
+        const UiVec2 extent = viewport.logical_extent;
+        UiTheme theme{};
+        theme.surface = {0.025F, 0.035F, 0.045F, 1.0F};
+        theme.panel = {0.045F, 0.060F, 0.073F, 1.0F};
+        theme.raised = {0.075F, 0.095F, 0.110F, 1.0F};
+        theme.border = {0.14F, 0.25F, 0.29F, 1.0F};
+        theme.text = {0.82F, 0.89F, 0.92F, 1.0F};
+        theme.muted = {0.48F, 0.61F, 0.66F, 1.0F};
+        theme.accent = {0.08F, 0.78F, 0.88F, 1.0F};
+        theme.accent_active = {1.0F, 0.67F, 0.18F, 1.0F};
+        theme.selected = {0.22F, 0.16F, 0.07F, 1.0F};
+        theme.selected_hovered = {0.34F, 0.24F, 0.09F, 1.0F};
+        theme.window_padding_x = 10.0F;
+        theme.window_padding_y = 8.0F;
+        theme.frame_padding_x = 7.0F;
+        theme.frame_padding_y = 4.0F;
+
+        const auto scope = scope_session_ != nullptr ? scope_session_->Snapshot() : nullptr;
+        const UiVec2 workspace_size{extent.x, extent.y * 0.72F};
+        const auto window = ui.Window({.id = "signal.lab.window", .label = "Signal Lab"},
+            origin, workspace_size);
+        if (!window.ContentVisible()) return;
+        [[maybe_unused]] const auto theme_scope = ui.Theme(theme);
+        ui.Text("SIGNAL LAB  /  SIMULATED OSCILLOSCOPE", UiTextRole::Accent);
+        ui.Text("Generate, sample, trigger, and inspect deterministic signals.", UiTextRole::Muted);
+
+        if (scope != nullptr)
         {
-            ImGui::TextColored(kAccent, "SIGNAL LAB");
-            ImGui::SameLine();
-            ImGui::TextDisabled("/  SIMULATED OSCILLOSCOPE");
-            ImGui::TextDisabled("Generate, sample, trigger, and inspect a deterministic signal.");
-            ImGui::Separator();
-            const auto scope = scope_session_ != nullptr ? scope_session_->Snapshot() : nullptr;
-            std::optional<Spectrum> spectrum;
-            std::string spectrum_diagnostic;
+            const bool running = scope->transport == ScopeTransport::Running;
+            if (ui.Button({.id = "signal.lab.transport", .label = running ? "Pause" : "Run"}).activated)
+            {
+                if (running) scope_session_->Pause(); else scope_session_->Run();
+            }
+            ui.SameLine();
+            if (ui.Button({.id = "signal.lab.arm", .label = "Arm"}).activated)
+            {
+                std::string message;
+                (void)scope_session_->Arm(message);
+                if (!message.empty()) generator_message_ = std::move(message);
+            }
+            ui.SameLine();
+            if (ui.Button({.id = "signal.lab.step", .label = "Step 256",
+                           .enabled = !running}).activated)
+            {
+                std::string message;
+                (void)scope_session_->Step(message);
+                if (!message.empty()) generator_message_ = std::move(message);
+            }
+            ui.SameLine();
+            if (ui.Button({.id = "signal.lab.reset", .label = "Reset"}).activated)
+            {
+                std::string message;
+                (void)scope_session_->Reset(message);
+                if (!message.empty()) generator_message_ = std::move(message);
+            }
+            ui.SameLine();
+            ui.Text(scope->state_label, UiTextRole::Accent);
+
+            std::vector<UiChoice> trigger_modes{
+                {"auto", "Auto", static_cast<std::int64_t>(ScopeTriggerMode::Auto)},
+                {"normal", "Normal", static_cast<std::int64_t>(ScopeTriggerMode::Normal)},
+                {"single", "Single", static_cast<std::int64_t>(ScopeTriggerMode::Single)}};
+            auto mode = ui.Combo<std::int64_t>({.id = "signal.lab.trigger.mode", .label = "Trigger"},
+                static_cast<std::int64_t>(scope->trigger_mode), std::move(trigger_modes));
+            auto edge = ui.Combo<std::int64_t>({.id = "signal.lab.trigger.edge", .label = "Edge"},
+                static_cast<std::int64_t>(scope->trigger_edge), {
+                    {"rising", "Rising", static_cast<std::int64_t>(ScopeTriggerEdge::Rising)},
+                    {"falling", "Falling", static_cast<std::int64_t>(ScopeTriggerEdge::Falling)}});
+            auto level = ui.NumericInput<double>({.id = "signal.lab.trigger.level", .label = "Level (V)"},
+                scope->trigger_level, -1.0e6, 1.0e6, 0.01);
+            auto hysteresis = ui.NumericInput<double>({.id = "signal.lab.trigger.hysteresis", .label = "Hysteresis"},
+                scope->trigger_hysteresis, 0.0, 1.0e6, 0.01);
+            auto timebase = ui.NumericInput<double>({.id = "signal.lab.timebase", .label = "Timebase (ms)"},
+                scope->timebase_ms, 0.01, 10'000.0, 0.1);
+            auto holdoff = ui.NumericInput<std::uint64_t>(
+                {.id = "signal.lab.holdoff", .label = "Holdoff (samples)"},
+                scope->holdoff_samples, 0ULL, 65'536ULL, 1ULL);
+            if (mode.changed || edge.changed || level.changed || hysteresis.changed)
+            {
+                std::string message;
+                (void)scope_session_->SetTrigger(level.value, hysteresis.value,
+                    static_cast<ScopeTriggerEdge>(edge.value),
+                    static_cast<ScopeTriggerMode>(mode.value), message);
+                if (!message.empty()) generator_message_ = std::move(message);
+            }
+            if (timebase.changed)
+            {
+                std::string message;
+                (void)scope_session_->SetTimebaseMs(timebase.value, message);
+                if (!message.empty()) generator_message_ = std::move(message);
+            }
+            if (holdoff.changed)
+            {
+                std::string message;
+                (void)scope_session_->SetHoldoffSamples(holdoff.value, message);
+                if (!message.empty()) generator_message_ = std::move(message);
+            }
+        }
+
+        ui.Section("WORKSPACE");
+        const float table_height = std::max(extent.y * 0.72F - 160.0F, 240.0F);
+        const std::array<UiTableColumn, 3> columns{{
+            {"Generator / Signals", 250.0F}, {"Waveform", 0.0F}, {"Details", 250.0F}}};
+        ui.Table("signal.lab.workspace", columns, table_height, true, [&]
+        {
+            ui.TableColumn();
+            ui.Section("SIGNAL GENERATOR");
+            std::vector<UiChoice> waveform_choices;
+            constexpr std::array<SignalKind, 8> kinds{
+                SignalKind::Sine, SignalKind::Cosine, SignalKind::Square, SignalKind::Sawtooth,
+                SignalKind::Triangle, SignalKind::Constant, SignalKind::Impulse,
+                SignalKind::UniformNoise};
+            for (std::size_t i = 0; i < kinds.size(); ++i)
+                waveform_choices.push_back({std::to_string(i), SignalKindName(kinds[i]),
+                    static_cast<std::int64_t>(kinds[i])});
+            const auto waveform = ui.Combo<std::int64_t>(
+                {.id = "signal.lab.generator.waveform", .label = "Waveform"},
+                static_cast<std::int64_t>(generator_kind_), std::move(waveform_choices));
+            if (waveform.changed) generator_kind_ = static_cast<SignalKind>(waveform.value);
+            auto realistic = ui.Checkbox({.id = "signal.lab.generator.realistic", .label = "Composite model"},
+                generator_realistic_);
+            if (realistic.changed) generator_realistic_ = realistic.value;
+            auto frequency = ui.NumericInput<double>(
+                {.id = "signal.lab.generator.frequency", .label = "Frequency (Hz)"},
+                generator_frequency_hz_, 0.1,
+                std::max(0.1, generator_sample_rate_hz_ * 0.5), 1.0);
+            if (frequency.changed) generator_frequency_hz_ = frequency.value;
+            auto amplitude = ui.NumericInput<double>(
+                {.id = "signal.lab.generator.amplitude", .label = "Amplitude (V)"},
+                generator_amplitude_, 0.0, 1.0e6, 0.01);
+            if (amplitude.changed) generator_amplitude_ = amplitude.value;
+            auto advanced = ui.Checkbox({.id = "signal.lab.generator.advanced", .label = "Advanced"},
+                generator_advanced_open_);
+            if (advanced.changed) generator_advanced_open_ = advanced.value;
+            if (generator_advanced_open_)
+            {
+                auto phase = ui.NumericInput<double>({.id = "signal.lab.generator.phase", .label = "Phase (deg)"},
+                    generator_phase_degrees_, -360.0, 360.0, 1.0);
+                auto offset = ui.NumericInput<double>({.id = "signal.lab.generator.offset", .label = "Offset (V)"},
+                    generator_offset_, -1.0e6, 1.0e6, 0.01);
+                auto rate = ui.NumericInput<double>({.id = "signal.lab.generator.rate", .label = "Sample rate (Hz)"},
+                    generator_sample_rate_hz_, 1.0, 384'000.0, 100.0);
+                if (phase.changed) generator_phase_degrees_ = phase.value;
+                if (offset.changed) generator_offset_ = offset.value;
+                if (rate.changed)
+                {
+                    generator_sample_rate_hz_ = rate.value;
+                    generator_frequency_hz_ = std::min(generator_frequency_hz_, rate.value * 0.5);
+                }
+                if (generator_realistic_ && !IsUnbandlimitedKind(generator_kind_))
+                {
+                    auto harmonics = ui.NumericInput<double>(
+                        {.id = "signal.lab.generator.harmonics", .label = "Harmonics (%)"},
+                        generator_harmonic_distortion_percent_, 0.0, 100.0, 1.0);
+                    if (harmonics.changed) generator_harmonic_distortion_percent_ = harmonics.value;
+                }
+                if (generator_realistic_)
+                {
+                    auto noise = ui.NumericInput<double>(
+                        {.id = "signal.lab.generator.noise", .label = "Noise RMS (V)"},
+                        generator_noise_rms_, 0.0, 1.0e6, 0.01);
+                    if (noise.changed) generator_noise_rms_ = noise.value;
+                }
+            }
+            const bool can_generate = signals_.size() < kSignalColors.size();
+            UiControlDescriptor generate_control{
+                .id = "signal.lab.generator.generate", .label = "Generate signal",
+                .enabled = can_generate};
+            if (!can_generate) generate_control.disabled_reason = "Signal limit reached";
+            if (ui.Button(generate_control).activated)
+            {
+                if (GenerateSignal(generator_message_)) generator_message_.clear();
+            }
+            if (!generator_message_.empty()) ui.Text(generator_message_, UiTextRole::Warning);
+            ui.Section("SIGNALS");
+            for (std::size_t index = 0; index < signals_.size(); ++index)
+            {
+                SignalLabSignal &signal = signals_[index];
+                const std::string signal_id = "signal.lab.signal." + std::to_string(index);
+                const auto selected = ui.Selectable({.id = signal_id, .label = signal.name},
+                    selected_signal_ == index);
+                if (selected.changed)
+                {
+                    selected_signal_ = index;
+                    generator_kind_ = signal.config.kind;
+                    generator_realistic_ = signal.config.harmonic_distortion > 0.0 || signal.config.noise_rms > 0.0;
+                    generator_sample_rate_hz_ = signal.config.sample_rate_hz;
+                    generator_frequency_hz_ = signal.config.frequency_hz;
+                    generator_amplitude_ = signal.config.amplitude;
+                    generator_harmonic_distortion_percent_ = signal.config.harmonic_distortion * 100.0;
+                    generator_noise_rms_ = signal.config.noise_rms;
+                    generator_phase_degrees_ = signal.config.phase_radians * 180.0 / std::numbers::pi_v<double>;
+                    generator_offset_ = signal.config.offset;
+                    scope_session_->SetSource(signal.config, generator_message_);
+                    scope_session_->Run();
+                }
+                const std::string visible_id = "signal.lab.visible." + std::to_string(index);
+                const auto visible = ui.Checkbox({.id = visible_id, .label = "Visible"}, signal.visible);
+                if (visible.changed)
+                {
+                    signal.visible = visible.value;
+                    RebuildComposite();
+                }
+                std::vector<UiChoice> colors;
+                for (std::size_t color = 0; color < kSignalColors.size(); ++color)
+                    colors.push_back({std::to_string(color), "Color " + std::to_string(color + 1),
+                        static_cast<std::uint64_t>(color)});
+                const std::size_t color_index = SignalColorIndex(signal.color);
+                const std::string color_id = "signal.lab.color." + std::to_string(index);
+                const auto color_result = ui.Combo<std::uint64_t>(
+                    {.id = color_id, .label = "Trace color"},
+                    static_cast<std::uint64_t>(color_index), std::move(colors));
+                if (color_result.changed) signal.color = kSignalColors[color_result.value % kSignalColors.size()];
+            }
+            if (signals_.empty()) ui.Text("Generate a waveform to begin.", UiTextRole::Muted);
+
+            ui.TableColumn();
+            std::vector<UiChoice> views{
+                {"scope", "Scope", static_cast<std::int64_t>(DisplayMode::Scope)},
+                {"overlay", "Overlay", static_cast<std::int64_t>(DisplayMode::Overlay)},
+                {"composite", "Composite", static_cast<std::int64_t>(DisplayMode::Composite)},
+                {"spectrum", "Spectrum", static_cast<std::int64_t>(DisplayMode::Spectrum)},
+                {"mix", "Mix", static_cast<std::int64_t>(DisplayMode::Mix)},
+                {"phase", "Phase", static_cast<std::int64_t>(DisplayMode::Phase)}};
+            const auto view = ui.Combo<std::int64_t>({.id = "signal.lab.view", .label = "View"},
+                static_cast<std::int64_t>(display_mode_), std::move(views));
+            if (view.changed) display_mode_ = static_cast<DisplayMode>(view.value);
+            const bool pair_view = display_mode_ == DisplayMode::Mix || display_mode_ == DisplayMode::Phase;
+            if (pair_view)
+            {
+                bool pair_changed = SelectPairSignal(ui, "signal.lab.pair.a", "Signal A", pair_signal_a_, signals_);
+                pair_changed = SelectPairSignal(ui, "signal.lab.pair.b", "Signal B", pair_signal_b_, signals_) || pair_changed;
+                if (pair_changed) RebuildPairMix();
+            }
+            if (display_mode_ == DisplayMode::Spectrum)
+            {
+                auto window_kind = ui.Combo<std::int64_t>({.id = "signal.lab.spectrum.window", .label = "Window"},
+                    static_cast<std::int64_t>(spectrum_window_), {
+                        {"rect", "Rectangular", static_cast<std::int64_t>(WindowKind::Rectangular)},
+                        {"hann", "Periodic Hann", static_cast<std::int64_t>(WindowKind::PeriodicHann)}});
+                if (window_kind.changed) spectrum_window_ = static_cast<WindowKind>(window_kind.value);
+                constexpr std::array<std::size_t, 4> fft_sizes{512, 1'024, 2'048, 4'096};
+                std::vector<UiChoice> fft_choices;
+                for (const std::size_t size : fft_sizes)
+                    fft_choices.push_back({std::to_string(size), std::to_string(size),
+                        static_cast<std::uint64_t>(size)});
+                auto fft = ui.Combo<std::uint64_t>({.id = "signal.lab.spectrum.fft", .label = "FFT size"},
+                    static_cast<std::uint64_t>(spectrum_fft_size_), std::move(fft_choices));
+                if (fft.changed) spectrum_fft_size_ = static_cast<std::size_t>(fft.value);
+                auto psd = ui.Checkbox({.id = "signal.lab.spectrum.psd", .label = "Power density"},
+                    spectrum_show_psd_);
+                if (psd.changed) spectrum_show_psd_ = psd.value;
+            }
+            ui.Section(display_mode_ == DisplayMode::Scope ? "SCOPE"
+                : display_mode_ == DisplayMode::Spectrum ? "SPECTRUM"
+                : pair_view ? "PAIR ANALYSIS" : "SIGNAL VIEW");
+            if (display_mode_ == DisplayMode::Scope && scope != nullptr)
+            {
+                const bool visible = !signals_.empty() && signals_[std::min(selected_signal_, signals_.size() - 1)].visible;
+                const UiColor color = signals_.empty() ? kSignalColors.front() : signals_[selected_signal_].color;
+                RenderSignalScopePlot(ui, *scope, color, visible);
+                if (scope->capture != nullptr)
+                    RenderMeasurement(ui, "Capture RMS (V)", scope->measurements.rms);
+            }
+            else if (display_mode_ == DisplayMode::Overlay)
+                RenderSignalPlot(ui, signals_, false, composite_samples_, composite_valid_);
+            else if (display_mode_ == DisplayMode::Composite)
+                RenderSignalPlot(ui, signals_, true, composite_samples_, composite_valid_);
+            else if (display_mode_ == DisplayMode::Spectrum && !signals_.empty())
+            {
+                selected_signal_ = std::min(selected_signal_, signals_.size() - 1);
+                const auto &selected = signals_[selected_signal_];
+                std::string message;
+                const auto spectrum = ComputeSpectrum(selected.samples.ChannelSamples(0),
+                    selected.samples.SampleRateHz(), spectrum_window_, spectrum_fft_size_, message);
+                if (spectrum) RenderSignalSpectrumPlot(ui, *spectrum, selected.color, spectrum_show_psd_);
+                else ui.Text(message, UiTextRole::Warning);
+            }
+            else if (pair_view && pair_signal_a_ < signals_.size() && pair_signal_b_ < signals_.size())
+            {
+                if (display_mode_ == DisplayMode::Mix && pair_mix_)
+                    RenderPairMixPlot(ui, signals_[pair_signal_a_], signals_[pair_signal_b_], *pair_mix_);
+                else if (display_mode_ == DisplayMode::Phase)
+                    RenderPhasePlot(ui, signals_[pair_signal_a_], signals_[pair_signal_b_]);
+                else if (!pair_mix_diagnostic_.empty()) ui.Text(pair_mix_diagnostic_, UiTextRole::Muted);
+            }
+
+            ui.TableColumn();
+            ui.Section("SELECTED SIGNAL");
+            if (!signals_.empty())
+            {
+                selected_signal_ = std::min(selected_signal_, signals_.size() - 1);
+                const SignalLabSignal &selected = signals_[selected_signal_];
+                ui.Text(selected.name, UiTextRole::Accent);
+                RenderProperty(ui, "Waveform", SignalKindName(selected.config.kind));
+                RenderProperty(ui, "Frequency", std::to_string(selected.config.frequency_hz) + " Hz");
+                RenderProperty(ui, "Amplitude", std::to_string(selected.config.amplitude) + " V");
+                RenderProperty(ui, "Sample rate", std::to_string(selected.config.sample_rate_hz) + " Hz");
+                RenderProperty(ui, "Samples", std::to_string(selected.samples.SampleCount()));
+                RenderMeasurement(ui, "RMS (V)", selected.statistics.rms);
+                RenderMeasurement(ui, "Peak to peak (V)", selected.statistics.peak_to_peak);
+            }
             if (scope != nullptr)
             {
-                const bool running = scope->transport == ScopeTransport::Running;
-                const bool single_needs_arm =
-                    scope->trigger_mode == ScopeTriggerMode::Single && !running &&
-                    scope->transport == ScopeTransport::Stopped;
-                const char *transport_action = running ? "Pause"
-                    : single_needs_arm ? "Arm" : "Run";
-                if (ImGui::Button(transport_action, {82.0f, 0.0f}))
-                {
-                    if (running)
-                    {
-                        scope_session_->Pause();
-                    }
-                    else if (single_needs_arm)
-                    {
-                        scope_session_->Arm(generator_message_);
-                    }
-                    else
-                    {
-                        scope_session_->Run();
-                    }
-                }
-                ImGui::SameLine();
-                ImGui::BeginDisabled(scope->transport == ScopeTransport::Running);
-                if (ImGui::Button("Step 256", {82.0f, 0.0f}))
-                {
-                    if (!scope_session_->Step(generator_message_))
-                    {
-                        // Keep the step diagnostic visible beside the controls.
-                    }
-                }
-                ImGui::EndDisabled();
-                ImGui::SameLine();
-                if (ImGui::Button("Reset", {68.0f, 0.0f}))
-                {
-                    scope_session_->Reset(generator_message_);
-                }
-                ImGui::SameLine();
-                ImGui::TextColored(kAccent, "%s", scope->state_label.c_str());
-                ImGui::SameLine();
-                ImGui::TextDisabled("%llu samples", static_cast<unsigned long long>(
-                    scope->sample_position));
-
-                const char *trigger_modes[]{"Auto", "Normal", "Single"};
-                int trigger_mode = scope->trigger_mode == ScopeTriggerMode::Normal ? 1
-                    : scope->trigger_mode == ScopeTriggerMode::Single ? 2 : 0;
-                ImGui::SetNextItemWidth(112.0f);
-                bool trigger_changed = ImGui::Combo("Trigger", &trigger_mode,
-                                                     trigger_modes, 3);
-                const char *trigger_edges[]{"Rising", "Falling"};
-                int trigger_edge = scope->trigger_edge == ScopeTriggerEdge::Falling ? 1 : 0;
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(108.0f);
-                trigger_changed = ImGui::Combo("Edge", &trigger_edge,
-                                                trigger_edges, 2) || trigger_changed;
-                double trigger_level = scope->trigger_level;
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(104.0f);
-                trigger_changed = ImGui::InputDouble("Level (V)", &trigger_level,
-                    0.0, 0.0, "%.3f") || trigger_changed;
-                double trigger_hysteresis = scope->trigger_hysteresis;
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(112.0f);
-                trigger_changed = ImGui::InputDouble("Hysteresis", &trigger_hysteresis,
-                    0.0, 0.0, "%.3f") || trigger_changed;
-                if (trigger_changed)
-                {
-                    const auto mode = trigger_mode == 1 ? ScopeTriggerMode::Normal
-                        : trigger_mode == 2 ? ScopeTriggerMode::Single
-                        : ScopeTriggerMode::Auto;
-                    const auto edge = trigger_edge == 1 ? ScopeTriggerEdge::Falling
-                        : ScopeTriggerEdge::Rising;
-                    scope_session_->SetTrigger(trigger_level, trigger_hysteresis,
-                                               edge, mode, generator_message_);
-                }
-                if (!generator_message_.empty())
-                {
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4{0.92f, 0.57f, 0.52f, 1.0f}, "%s",
-                                       generator_message_.c_str());
-                }
-                std::uint64_t holdoff_samples = scope->holdoff_samples;
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(112.0f);
-                if (ImGui::InputScalar("Holdoff (samples)", ImGuiDataType_U64,
-                                       &holdoff_samples))
-                {
-                    if (scope_session_->SetHoldoffSamples(holdoff_samples,
-                                                          generator_message_))
-                    {
-                        generator_message_.clear();
-                    }
-                }
-                double timebase_ms = scope->timebase_ms;
-                ImGui::SetNextItemWidth(112.0f);
-                if (ImGui::InputDouble("Timebase (ms)", &timebase_ms,
-                                       0.0, 0.0, "%.3f"))
-                {
-                    if (scope_session_->SetTimebaseMs(timebase_ms, generator_message_))
-                    {
-                        generator_message_.clear();
-                    }
-                }
+                ui.Section("ACQUISITION");
+                RenderProperty(ui, "Capture", scope->stale ? "STALE" : "CURRENT");
+                RenderProperty(ui, "State", scope->state_label);
+                RenderProperty(ui, "Trigger sample", scope->trigger_sample
+                    ? std::to_string(*scope->trigger_sample) : "waiting");
+                if (scope->frequency_available)
+                    RenderMeasurement(ui, "Measured frequency (Hz)", scope->measured_frequency_hz);
+                RenderMeasurement(ui, "Window RMS (V)", scope->measurements.rms);
+                RenderMeasurement(ui, "Window peak-to-peak (V)", scope->measurements.peak_to_peak);
             }
-            ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, {10.0f, 8.0f});
-            const float content_height = ImGui::GetContentRegionAvail().y;
-            const float panel_height = std::max(content_height - 4.0f, 160.0f);
-            if (ImGui::BeginTable("##signal_workspace", 3,
-                    ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV,
-                    {0.0f, panel_height}))
-            {
-                ImGui::TableSetupColumn("Signals", ImGuiTableColumnFlags_WidthFixed, 270.0f);
-                ImGui::TableSetupColumn("Waveform", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("Details", ImGuiTableColumnFlags_WidthFixed, 245.0f);
-                ImGui::TableNextColumn();
-                const float desired_generator_height = generator_realistic_
-                    ? generator_advanced_open_ ? 292.0f : 222.0f
-                    : generator_advanced_open_ ? 246.0f : 174.0f;
-                const float maximum_generator_height =
-                    std::max(112.0f, panel_height - 96.0f);
-                const float generator_card_height =
-                    std::min(desired_generator_height, maximum_generator_height);
-                ImGui::BeginChild("##signal_generator_card", {0.0f, generator_card_height},
-                                  true, ImGuiWindowFlags_None);
-                ImGui::TextColored(kAccent, "SIGNAL GENERATOR");
-                ImGui::SameLine();
-                ImGui::TextDisabled("/ SOURCE CONFIGURATION");
-                ImGui::Spacing();
-                const bool unbandlimited_waveform = IsUnbandlimitedKind(generator_kind_);
-                const char *waveforms[]{"Sine", "Cosine", "Square (naive)",
-                                        "Sawtooth (naive)", "Triangle (naive)"};
-                const char *models[]{unbandlimited_waveform ? "Naive waveform" : "Ideal",
-                    unbandlimited_waveform ? "Naive + noise" : "Harmonics + noise"};
-                int waveform = generator_kind_ == SignalKind::Cosine ? 1
-                    : generator_kind_ == SignalKind::Square ? 2
-                    : generator_kind_ == SignalKind::Sawtooth ? 3
-                    : generator_kind_ == SignalKind::Triangle ? 4 : 0;
-                int model = generator_realistic_ ? 1 : 0;
-                ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, {4.0f, 1.0f});
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {4.0f, 2.0f});
-                if (ImGui::BeginTable("##signal_generator_fields", 2,
-                        ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings))
-                {
-                    ImGui::TableSetupColumn("##generator_label",
-                        ImGuiTableColumnFlags_WidthFixed, 86.0f);
-                    ImGui::TableSetupColumn("##generator_value",
-                        ImGuiTableColumnFlags_WidthStretch);
-                    const auto field_label = [](const char *label)
-                    {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::AlignTextToFramePadding();
-                        ImGui::TextDisabled("%s", label);
-                        ImGui::TableSetColumnIndex(1);
-                    };
-                    field_label("Waveform");
-                    if (ImGui::Combo("##waveform", &waveform, waveforms, 5))
-                    {
-                        generator_kind_ = waveform == 1 ? SignalKind::Cosine
-                            : waveform == 2 ? SignalKind::Square
-                            : waveform == 3 ? SignalKind::Sawtooth
-                            : waveform == 4 ? SignalKind::Triangle : SignalKind::Sine;
-                    }
-                    field_label("Model");
-                    if (ImGui::Combo("##signal_model", &model, models, 2))
-                    {
-                        generator_realistic_ = model == 1;
-                    }
-                    field_label("Freq (Hz)");
-                    ImGui::SetNextItemWidth(-1.0f);
-                    ImGui::InputDouble("##frequency_hz", &generator_frequency_hz_,
-                                       0.0, 0.0, "%.1f");
-                    field_label("Amp (V)");
-                    ImGui::SetNextItemWidth(-1.0f);
-                    ImGui::InputDouble("##amplitude", &generator_amplitude_,
-                                       0.0, 0.0, "%.3f");
-                    if (generator_realistic_ && !unbandlimited_waveform)
-                    {
-                        field_label("Harmonic (%)");
-                        ImGui::SetNextItemWidth(-1.0f);
-                        ImGui::InputDouble("##harmonic_distortion",
-                            &generator_harmonic_distortion_percent_, 0.0, 0.0, "%.1f");
-                    }
-                    if (generator_realistic_)
-                    {
-                        field_label("Noise RMS (V)");
-                        ImGui::SetNextItemWidth(-1.0f);
-                        ImGui::InputDouble("##noise_rms", &generator_noise_rms_,
-                                           0.0, 0.0, "%.3f");
-                    }
-                    ImGui::EndTable();
-                }
-                ImGui::PopStyleVar(2);
-                generator_advanced_open_ = ImGui::CollapsingHeader("Advanced");
-                if (generator_advanced_open_ &&
-                    ImGui::BeginTable("##signal_generator_advanced", 2,
-                        ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings))
-                {
-                    ImGui::TableSetupColumn("##advanced_label",
-                        ImGuiTableColumnFlags_WidthFixed, 86.0f);
-                    ImGui::TableSetupColumn("##advanced_value",
-                        ImGuiTableColumnFlags_WidthStretch);
-                    const auto advanced_label = [](const char *label)
-                    {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::AlignTextToFramePadding();
-                        ImGui::TextDisabled("%s", label);
-                        ImGui::TableSetColumnIndex(1);
-                    };
-                    advanced_label("Phase (deg)");
-                    ImGui::SetNextItemWidth(-1.0f);
-                    ImGui::InputDouble("##phase_degrees", &generator_phase_degrees_,
-                                       0.0, 0.0, "%.1f");
-                    advanced_label("Offset (V)");
-                    ImGui::SetNextItemWidth(-1.0f);
-                    ImGui::InputDouble("##offset", &generator_offset_,
-                                       0.0, 0.0, "%.3f");
-                    advanced_label("Rate (Hz)");
-                    ImGui::SetNextItemWidth(-1.0f);
-                    ImGui::InputDouble("##sample_rate_hz", &generator_sample_rate_hz_,
-                                       0.0, 0.0, "%.0f");
-                    ImGui::EndTable();
-                }
-                ImGui::Spacing();
-                ImGui::BeginDisabled(signals_.size() >= kSignalColors.size());
-                if (ImGui::Button("Generate signal", {-1.0f, 0.0f}) &&
-                    GenerateSignal(generator_message_))
-                {
-                    generator_message_.clear();
-                }
-                ImGui::EndDisabled();
-                if (!generator_message_.empty())
-                {
-                    ImGui::TextColored(ImVec4{0.92f, 0.57f, 0.52f, 1.0f}, "%s",
-                                       generator_message_.c_str());
-                }
-                ImGui::EndChild();
-
-                ImGui::BeginChild("##signal_list_panel", {0.0f, 0.0f}, true,
-                                  ImGuiWindowFlags_None);
-                RenderPanelHeading("SIGNALS", "GENERATED");
-                for (std::size_t index = 0; index < signals_.size(); ++index)
-                {
-                    SignalLabSignal &signal = signals_[index];
-                    const float row_width = std::max(ImGui::GetContentRegionAvail().x -
-                        55.0f, 58.0f);
-                    if (ImGui::Selectable(signal.name.c_str(), selected_signal_ == index,
-                                          ImGuiSelectableFlags_None, {row_width, 27.0f}))
-                    {
-                        selected_signal_ = index;
-                        generator_kind_ = signal.config.kind;
-                        generator_realistic_ = signal.config.harmonic_distortion > 0.0 ||
-                                               signal.config.noise_rms > 0.0;
-                        generator_sample_rate_hz_ = signal.config.sample_rate_hz;
-                        generator_frequency_hz_ = signal.config.frequency_hz;
-                        generator_amplitude_ = signal.config.amplitude;
-                        generator_harmonic_distortion_percent_ =
-                            signal.config.harmonic_distortion * 100.0;
-                        generator_noise_rms_ = signal.config.noise_rms;
-                        generator_phase_degrees_ = signal.config.phase_radians *
-                            180.0 / std::numbers::pi_v<double>;
-                        generator_offset_ = signal.config.offset;
-                        scope_session_->SetSource(signal.config, generator_message_);
-                        scope_session_->Run();
-                    }
-                    ImGui::SameLine();
-                    const std::string color_popup_id =
-                        "##signal_color_picker_" + std::to_string(index);
-                    if (ImGui::ColorButton(("##signal_color_" + std::to_string(index)).c_str(),
-                        ImGui::ColorConvertU32ToFloat4(static_cast<ImU32>(signal.color)),
-                        ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
-                        {18.0f, 18.0f}))
-                    {
-                        selected_signal_ = index;
-                        ImGui::OpenPopup(color_popup_id.c_str());
-                    }
-                    if (ImGui::BeginPopup(color_popup_id.c_str()))
-                    {
-                        ImGui::Text("%s color", signal.name.c_str());
-                        const ImVec4 current_color = ImGui::ColorConvertU32ToFloat4(
-                            static_cast<ImU32>(signal.color));
-                        float editable_color[4]{current_color.x, current_color.y,
-                                                 current_color.z, current_color.w};
-                        if (ImGui::ColorPicker4("##signal_color_picker", editable_color,
-                                ImGuiColorEditFlags_NoAlpha |
-                                ImGuiColorEditFlags_PickerHueWheel |
-                                ImGuiColorEditFlags_DisplayRGB))
-                        {
-                            signal.color = static_cast<std::uint32_t>(
-                                ImGui::ColorConvertFloat4ToU32({editable_color[0],
-                                    editable_color[1], editable_color[2], editable_color[3]}));
-                        }
-                        ImGui::EndPopup();
-                    }
-                    ImGui::SameLine();
-                    const std::string visibility_id =
-                        "##signal_visibility_" + std::to_string(index);
-                    ImGui::InvisibleButton(visibility_id.c_str(), {20.0f, 20.0f});
-                    DrawVisibilityEye(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                        ImGui::GetColorU32(signal.visible ? ImGuiCol_Text : ImGuiCol_TextDisabled),
-                        signal.visible);
-                    if (ImGui::IsItemClicked())
-                    {
-                        signal.visible = !signal.visible;
-                        RebuildComposite();
-                    }
-                    if (ImGui::IsItemHovered())
-                    {
-                        ImGui::SetTooltip(signal.visible ? "Hide signal" : "Show signal");
-                    }
-                }
-                if (signals_.empty())
-                {
-                    ImGui::TextDisabled("Generate a waveform to begin.");
-                }
-                ImGui::EndChild();
-
-                ImGui::TableNextColumn();
-                ImGui::BeginChild("##signal_waveform_panel", {0.0f, 0.0f}, true,
-                                  ImGuiWindowFlags_NoScrollbar);
-                const char *display_modes[]{"Scope", "Overlay", "Composite", "Spectrum",
-                                            "Mix", "Phase"};
-                int display_mode = display_mode_ == DisplayMode::Overlay ? 1
-                    : display_mode_ == DisplayMode::Composite ? 2
-                    : display_mode_ == DisplayMode::Spectrum ? 3
-                    : display_mode_ == DisplayMode::Mix ? 4
-                    : display_mode_ == DisplayMode::Phase ? 5 : 0;
-                ImGui::SetNextItemWidth(142.0f);
-                if (ImGui::Combo("View", &display_mode, display_modes, 6))
-                {
-                    display_mode_ = display_mode == 1 ? DisplayMode::Overlay
-                        : display_mode == 2 ? DisplayMode::Composite
-                        : display_mode == 3 ? DisplayMode::Spectrum
-                        : display_mode == 4 ? DisplayMode::Mix
-                        : display_mode == 5 ? DisplayMode::Phase : DisplayMode::Scope;
-                }
-                const bool scope_mode = display_mode_ == DisplayMode::Scope;
-                const bool composite_mode = display_mode_ == DisplayMode::Composite;
-                const bool spectrum_mode = display_mode_ == DisplayMode::Spectrum;
-                const bool mix_mode = display_mode_ == DisplayMode::Mix;
-                const bool phase_mode = display_mode_ == DisplayMode::Phase;
-                const bool pair_mode = mix_mode || phase_mode;
-                if (pair_mode)
-                {
-                    bool pair_changed = false;
-                    ImGui::SameLine();
-                    pair_changed = SelectPairSignal("Signal A", pair_signal_a_, signals_) ||
-                                   pair_changed;
-                    if (ImGui::GetContentRegionAvail().x < 320.0f)
-                    {
-                        ImGui::NewLine();
-                    }
-                    else
-                    {
-                        ImGui::SameLine();
-                    }
-                    pair_changed = SelectPairSignal("Signal B", pair_signal_b_, signals_) ||
-                                   pair_changed;
-                    if (pair_changed)
-                    {
-                        RebuildPairMix();
-                    }
-                }
-                if (spectrum_mode)
-                {
-                    const bool compact_controls =
-                        ImGui::GetContentRegionAvail().x < 760.0f;
-                    const char *window_names[]{"Rectangular", "Periodic Hann"};
-                    int window_index = spectrum_window_ == WindowKind::PeriodicHann ? 1 : 0;
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(126.0f);
-                    if (ImGui::Combo("Window", &window_index, window_names, 2))
-                    {
-                        spectrum_window_ = window_index == 1
-                            ? WindowKind::PeriodicHann : WindowKind::Rectangular;
-                    }
-
-                    constexpr std::array<std::size_t, 4> kFftSizes{512, 1'024, 2'048, 4'096};
-                    int fft_size_index = 0;
-                    for (std::size_t index = 0; index < kFftSizes.size(); ++index)
-                    {
-                        if (spectrum_fft_size_ == kFftSizes[index])
-                        {
-                            fft_size_index = static_cast<int>(index);
-                        }
-                    }
-                    const char *fft_size_names[]{"512", "1024", "2048", "4096"};
-                    if (compact_controls)
-                    {
-                        ImGui::NewLine();
-                    }
-                    else
-                    {
-                        ImGui::SameLine();
-                    }
-                    ImGui::SetNextItemWidth(88.0f);
-                    if (ImGui::Combo("FFT", &fft_size_index, fft_size_names, 4))
-                    {
-                        spectrum_fft_size_ = kFftSizes[static_cast<std::size_t>(fft_size_index)];
-                    }
-
-                    int scale_index = spectrum_show_psd_ ? 1 : 0;
-                    const char *scale_names[]{"Amplitude", "PSD"};
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(104.0f);
-                    if (ImGui::Combo("Scale", &scale_index, scale_names, 2))
-                    {
-                        spectrum_show_psd_ = scale_index == 1;
-                    }
-
-                    if (!signals_.empty())
-                    {
-                        selected_signal_ = std::min(selected_signal_, signals_.size() - 1);
-                        const SignalLabSignal &selected = signals_[selected_signal_];
-                        spectrum = ComputeSpectrum(selected.samples.ChannelSamples(0),
-                            selected.samples.SampleRateHz(), spectrum_window_,
-                            spectrum_fft_size_, spectrum_diagnostic);
-                    }
-                }
-                RenderPanelHeading(scope_mode ? "SCOPE"
-                                              : pair_mode ? "PAIR ANALYSIS" : "GENERATOR VIEW",
-                    spectrum_mode ? spectrum_show_psd_
-                        ? "ONE-SIDED POWER / FREQUENCY"
-                        : "ONE-SIDED PEAK AMPLITUDE / FREQUENCY"
-                    : mix_mode ? "SAMPLE-ALIGNED ADDITION: A + B"
-                    : phase_mode ? "XY / LISSAJOUS: X = A, Y = B"
-                    : scope_mode ? "VOLTAGE / TIME  ·  ADJUSTABLE TIMEBASE"
-                               : composite_mode ? "TIME DOMAIN  /  COMPOSITE SUM"
-                                                : "TIME DOMAIN  /  ALL SIGNALS");
-                if (scope_mode && scope != nullptr)
-                {
-                    const bool visible = !signals_.empty() &&
-                        signals_[std::min(selected_signal_, signals_.size() - 1)].visible;
-                    const std::uint32_t color = signals_.empty() ? kSignalColors[0]
-                        : signals_[std::min(selected_signal_, signals_.size() - 1)].color;
-                    RenderSignalScopePlot(ui, *scope, static_cast<ImU32>(color), visible);
-                    if (scope->capture != nullptr)
-                    {
-                        ImGui::TextColored(kAccent,
-                            "Capture %llu  |  Vpp %.4f V  |  Vrms %.4f V  |  Frequency ",
-                            static_cast<unsigned long long>(scope->capture_id),
-                            scope->measurements.peak_to_peak, scope->measurements.rms);
-                        ImGui::SameLine(0.0f, 0.0f);
-                        if (scope->frequency_available)
-                        {
-                            ImGui::TextColored(kValue, "%.2f ± %.2f Hz",
-                                scope->measured_frequency_hz,
-                                scope->measured_frequency_uncertainty_hz);
-                        }
-                        else
-                        {
-                            ImGui::TextDisabled("unavailable");
-                        }
-                    }
-                }
-                else if (spectrum_mode)
-                {
-                    if (spectrum.has_value())
-                    {
-                        const ImU32 color = signals_.empty() ? kSignalColors[0]
-                            : static_cast<ImU32>(signals_[selected_signal_].color);
-                        RenderSignalSpectrumPlot(ui, *spectrum, color, spectrum_show_psd_);
-                    }
-                    else
-                    {
-                        ImGui::TextDisabled("%s", signals_.empty()
-                            ? "Generate a signal to inspect its spectrum."
-                            : spectrum_diagnostic.c_str());
-                    }
-                }
-                else if (pair_mode)
-                {
-                    if (signals_.size() < 2)
-                    {
-                        ImGui::TextDisabled("Generate two signals to compare a pair.");
-                    }
-                    else if (pair_signal_a_ == pair_signal_b_)
-                    {
-                        ImGui::TextDisabled("Choose two different signals in the pair selectors.");
-                    }
-                    else if (!signals_[pair_signal_a_].visible ||
-                             !signals_[pair_signal_b_].visible)
-                    {
-                        ImGui::TextDisabled("Show both selected signals to analyze the pair.");
-                    }
-                    else if (!pair_mix_.has_value())
-                    {
-                        ImGui::TextDisabled("%s", pair_mix_diagnostic_.c_str());
-                    }
-                    else if (mix_mode)
-                    {
-                        RenderPairMixPlot(signals_[pair_signal_a_],
-                                          signals_[pair_signal_b_], *pair_mix_);
-                    }
-                    else
-                    {
-                        RenderPhasePlot(signals_[pair_signal_a_],
-                                        signals_[pair_signal_b_]);
-                    }
-                }
-                else if (pair_mode)
-                {
-                    RenderPanelHeading(mix_mode ? "PAIR MIX" : "PHASE VIEW",
-                                       "ALIGNED SIGNALS");
-                    if (signals_.size() < 2 || pair_signal_a_ == pair_signal_b_ ||
-                        !pair_mix_.has_value())
-                    {
-                        ImGui::TextDisabled("%s", pair_mix_diagnostic_.empty()
-                            ? "Choose two valid signals to continue."
-                            : pair_mix_diagnostic_.c_str());
-                    }
-                    else
-                    {
-                        const SignalLabSignal &signal_a = signals_[pair_signal_a_];
-                        const SignalLabSignal &signal_b = signals_[pair_signal_b_];
-                        RenderProperty("A", signal_a.name.c_str());
-                        RenderProperty("B", signal_b.name.c_str());
-                        char value[48]{};
-                        if (mix_mode)
-                        {
-                            RenderMeasurement("MIX RMS (V)", pair_mix_statistics_.rms);
-                            RenderMeasurement("MIX PEAK TO PEAK (V)",
-                                              pair_mix_statistics_.peak_to_peak);
-                            RenderProperty("Operation", "A[n] + B[n]");
-                        }
-                        else
-                        {
-                            std::snprintf(value, sizeof(value), "%.3f Hz",
-                                          signal_a.config.frequency_hz);
-                            RenderProperty("Freq A", value);
-                            std::snprintf(value, sizeof(value), "%.3f Hz",
-                                          signal_b.config.frequency_hz);
-                            RenderProperty("Freq B", value);
-                            const double phase_delta = std::remainder(
-                                (signal_b.config.phase_radians - signal_a.config.phase_radians) *
-                                    180.0 / std::numbers::pi_v<double>, 360.0);
-                            std::snprintf(value, sizeof(value), "%.2f deg", phase_delta);
-                            RenderProperty("Start phase Δ", value);
-                            ImGui::TextWrapped("Each point uses the same sample index: "
-                                               "X = A[n], Y = B[n].");
-                        }
-                        std::snprintf(value, sizeof(value), "%zu",
-                                      pair_mix_->SampleCount());
-                        RenderProperty("Samples", value);
-                        std::snprintf(value, sizeof(value), "%.3f ms",
-                            static_cast<double>(pair_mix_->SampleCount()) * 1'000.0 /
-                                pair_mix_->SampleRateHz());
-                        RenderProperty("Window", value);
-                    }
-                }
-                else if (!scope_mode)
-                {
-                    RenderSignalPlot(signals_, composite_mode, composite_samples_,
-                                     composite_valid_);
-                    if (composite_mode && composite_valid_ && !composite_samples_.empty())
-                    {
-                        ImGui::TextColored(ImVec4{0.94f, 0.70f, 0.44f, 1.0f},
-                            "Composite RMS %.4f  |  Peak-to-peak %.4f",
-                            composite_statistics_.rms, composite_statistics_.peak_to_peak);
-                    }
-                    ImGui::TextDisabled("Select a signal on the left to inspect its properties.");
-                }
-                ImGui::EndChild();
-
-                ImGui::TableNextColumn();
-                ImGui::BeginChild("##signal_readout_panel", {0.0f, 0.0f}, true,
-                                  ImGuiWindowFlags_None);
-                if (spectrum_mode)
-                {
-                    RenderPanelHeading("SPECTRUM", "SELECTED SIGNAL");
-                    if (signals_.empty())
-                    {
-                        ImGui::TextDisabled("No signal selected.");
-                    }
-                    else if (!spectrum.has_value())
-                    {
-                        ImGui::TextColored(ImVec4{0.92f, 0.57f, 0.52f, 1.0f},
-                                           "%s", spectrum_diagnostic.c_str());
-                    }
-                    else
-                    {
-                        const SignalLabSignal &selected = signals_[selected_signal_];
-                        RenderProperty("Input", selected.name.c_str());
-                        RenderProperty("Window", spectrum_window_ == WindowKind::PeriodicHann
-                            ? "Periodic Hann" : "Rectangular");
-                        char value[48]{};
-                        std::snprintf(value, sizeof(value), "%zu", spectrum->fft_size);
-                        RenderProperty("FFT size", value);
-                        std::snprintf(value, sizeof(value), "%.3f Hz",
-                            spectrum->sample_rate_hz / static_cast<double>(spectrum->fft_size));
-                        RenderProperty("Bin spacing", value);
-                        std::snprintf(value, sizeof(value), "%.4f",
-                                      spectrum->coherent_gain);
-                        RenderProperty("Coherent gain", value);
-                        auto peak = spectrum->bins.begin();
-                        if (spectrum->bins.size() > 1)
-                        {
-                            peak = std::max_element(spectrum->bins.begin() + 1,
-                                spectrum->bins.end(), [](const SpectrumBin &lhs,
-                                                         const SpectrumBin &rhs)
-                            {
-                                return lhs.peak_amplitude < rhs.peak_amplitude;
-                            });
-                        }
-                        if (peak != spectrum->bins.end())
-                        {
-                            RenderMeasurement("PEAK FREQUENCY (HZ)", peak->frequency_hz);
-                            RenderMeasurement("PEAK AMPLITUDE (V)", peak->peak_amplitude);
-                        }
-                        double integrated_psd = 0.0;
-                        const double bin_width = spectrum->sample_rate_hz /
-                            static_cast<double>(spectrum->fft_size);
-                        for (const SpectrumBin &bin : spectrum->bins)
-                        {
-                            integrated_psd += bin.power_spectral_density * bin_width;
-                        }
-                        RenderMeasurement("INTEGRATED PSD (V^2)", integrated_psd);
-                    }
-                }
-                else if (!scope_mode)
-                {
-                    if (signals_.empty())
-                    {
-                        RenderPanelHeading("DETAILS", "SELECTED SIGNAL");
-                        ImGui::TextDisabled("No signal selected.");
-                    }
-                    else
-                    {
-                        selected_signal_ = std::min(selected_signal_, signals_.size() - 1);
-                        const SignalLabSignal &signal = signals_[selected_signal_];
-                        const SampleBlockView block = signal.samples.View();
-                        char value[48]{};
-                        RenderPanelHeading("DETAILS", "SELECTED SIGNAL");
-                        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(
-                            static_cast<ImU32>(signal.color)), "%s", signal.name.c_str());
-                        RenderProperty("Waveform", SignalKindName(signal.config.kind));
-                        RenderProperty("Model", IsUnbandlimitedKind(signal.config.kind)
-                            ? "Naive / unbandlimited"
-                            : signal.config.harmonic_distortion > 0.0 ||
-                              signal.config.noise_rms > 0.0
-                                ? "Harmonics + noise" : "Ideal");
-                        std::snprintf(value, sizeof(value), "%.3f Hz",
-                                      signal.config.frequency_hz);
-                        RenderProperty("Frequency", value);
-                        std::snprintf(value, sizeof(value), "%.4f", signal.config.amplitude);
-                        RenderProperty("Amplitude", value);
-                        if (signal.config.harmonic_distortion > 0.0 ||
-                            signal.config.noise_rms > 0.0)
-                        {
-                            if (signal.config.harmonic_distortion > 0.0)
-                            {
-                                std::snprintf(value, sizeof(value), "%.1f %%",
-                                    signal.config.harmonic_distortion * 100.0);
-                                RenderProperty("Harmonic level", value);
-                            }
-                            std::snprintf(value, sizeof(value), "%.4f Vrms",
-                                          signal.config.noise_rms);
-                            RenderProperty("Noise", value);
-                        }
-                        std::snprintf(value, sizeof(value), "%.2f deg",
-                            signal.config.phase_radians * 180.0 / std::numbers::pi_v<double>);
-                        RenderProperty("Phase", value);
-                        std::snprintf(value, sizeof(value), "%.0f Hz", block.SampleRateHz());
-                        RenderProperty("Sample rate", value);
-                        std::snprintf(value, sizeof(value), "%zu", block.SampleCount());
-                        RenderProperty("Samples", value);
-                        RenderMeasurement("RMS", signal.statistics.rms);
-                        RenderMeasurement("PEAK TO PEAK", signal.statistics.peak_to_peak);
-                    }
-                }
-                else if (scope == nullptr || scope->capture == nullptr)
-                {
-                    RenderPanelHeading("ACQUISITION", "CAPTURE MEASUREMENTS");
-                    ImGui::TextDisabled("Waiting for a complete triggered capture.");
-                }
-                else
-                {
-                    char value[48]{};
-                    RenderPanelHeading("ACQUISITION", "CAPTURE MEASUREMENTS");
-                    ImGui::TextColored(kAccent, "%s", scope->state_label.c_str());
-                    RenderProperty("Capture", scope->stale ? "STALE" : "CURRENT");
-                    RenderProperty("Waveform", SignalKindName(scope->source.kind));
-                    RenderProperty("Model",
-                        scope->source.harmonic_distortion > 0.0 ||
-                        scope->source.noise_rms > 0.0 ? "Harmonics + noise" : "Ideal");
-                    std::snprintf(value, sizeof(value), "%.3f Hz", scope->source.frequency_hz);
-                    RenderProperty("Source freq", value);
-                    std::snprintf(value, sizeof(value), "%.0f samples/s",
-                                  scope->source.sample_rate_hz);
-                    RenderProperty("Sample rate", value);
-                    std::snprintf(value, sizeof(value), "%llu",
-                        static_cast<unsigned long long>(scope->trigger_sample.value_or(0)));
-                    RenderProperty("Trigger sample", scope->trigger_sample.has_value()
-                        ? value : "Auto window");
-                    std::snprintf(value, sizeof(value), "%llu",
-                        static_cast<unsigned long long>(scope->epoch));
-                    RenderProperty("Epoch", value);
-                    ImGui::Spacing();
-                    ImGui::Separator();
-                    ImGui::Spacing();
-                    RenderPanelHeading("MEASUREMENTS", "CAPTURE WINDOW");
-                    RenderMeasurement("MEAN (V)", scope->measurements.mean);
-                    RenderMeasurement("RMS (V)", scope->measurements.rms);
-                    RenderMeasurement("MINIMUM (V)", scope->measurements.minimum);
-                    RenderMeasurement("MAXIMUM (V)", scope->measurements.maximum);
-                    RenderMeasurement("PEAK TO PEAK (V)", scope->measurements.peak_to_peak);
-                }
-                ImGui::EndChild();
-                ImGui::EndTable();
-            }
-            else
-            {
-                ImGui::TextDisabled("Workspace is too narrow to display panels.");
-            }
-            ImGui::PopStyleVar();
+        });
+    }
+    void SignalLabEditor::RenderLog(editor::ui::UiContext &ui)
+    {
+        if (!log_view_)
+            return;
+        const editor::ui::UiViewportInfo &viewport = ui.Viewport();
+        const editor::ui::UiVec2 position{
+            viewport.logical_origin.x,
+            viewport.logical_origin.y + viewport.logical_extent.y * 0.72F};
+        const editor::ui::UiVec2 size{viewport.logical_extent.x,
+                                      viewport.logical_extent.y * 0.28F};
+        const auto window = ui.Window(
+            {.id = "signal.log.window", .label = "Output Log"}, position, size);
+        if (window.ContentVisible())
+        {
+            log_view_->RenderContent(ui, runtime::global_runtime_context.log_system_.get());
         }
-        ImGui::End();
     }
 }

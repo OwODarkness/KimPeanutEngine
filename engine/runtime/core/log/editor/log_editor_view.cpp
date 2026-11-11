@@ -2,12 +2,12 @@
 
 #include <algorithm>
 #include <cctype>
-#include <imgui.h>
 #include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "editor_ui/ui_backend.h"
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/log/logger.h"
 
@@ -17,32 +17,36 @@ namespace kpengine::editor
     {
         struct LogLevelFilterOption
         {
+            const char *key;
             const char *label;
             bool matches_all;
             program::LogLevel level;
         };
 
         constexpr LogLevelFilterOption kLogLevelFilters[] = {
-            {"All levels", true, program::LogLevel::Debug},
-            {"Debug", false, program::LogLevel::Debug},
-            {"Info", false, program::LogLevel::Info},
-            {"Warning", false, program::LogLevel::Warning},
-            {"Error", false, program::LogLevel::Error},
-            {"Fatal", false, program::LogLevel::Fatal},
+            {"all", "All levels", true, program::LogLevel::Debug},
+            {"debug", "Debug", false, program::LogLevel::Debug},
+            {"info", "Info", false, program::LogLevel::Info},
+            {"warning", "Warning", false, program::LogLevel::Warning},
+            {"error", "Error", false, program::LogLevel::Error},
+            {"fatal", "Fatal", false, program::LogLevel::Fatal},
         };
+
+        const LogLevelFilterOption &FindFilter(const std::string_view key)
+        {
+            const auto found = std::find_if(std::begin(kLogLevelFilters),
+                                            std::end(kLogLevelFilters),
+                [key](const LogLevelFilterOption &option) { return option.key == key; });
+            return found == std::end(kLogLevelFilters) ? kLogLevelFilters[0] : *found;
+        }
 
         bool ContainsCaseInsensitive(const std::string_view text,
                                      const std::string_view substring)
         {
             if (substring.empty())
-            {
                 return true;
-            }
             if (substring.size() > text.size())
-            {
                 return false;
-            }
-
             return std::search(text.begin(), text.end(), substring.begin(), substring.end(),
                                [](const char left, const char right)
                                {
@@ -62,12 +66,28 @@ namespace kpengine::editor
                     break;
                 }
             }
-
             return ContainsCaseInsensitive(log.name, query) ||
                    ContainsCaseInsensitive(log.message, query) ||
                    ContainsCaseInsensitive(log.file, query) ||
                    (level_filter != nullptr && ContainsCaseInsensitive(level_filter->label, query));
         }
+
+        ui::UiTheme LogRowTheme(const LogEditorColor &color)
+        {
+            ui::UiTheme theme{};
+            theme.text = {color.r, color.g, color.b, color.a};
+            return theme;
+        }
+    }
+
+    LogEditorView::LogEditorView()
+        : LogEditorView(LogEditorColorTable{{
+              {0.8431373F, 0.9764706F, 1.0F, 1.0F},
+              {0.2235294F, 1.0F, 0.5333334F, 1.0F},
+              {0.0F, 0.8980392F, 1.0F, 1.0F},
+              {1.0F, 0.3019608F, 0.5529412F, 1.0F},
+              {1.0F, 0.3019608F, 0.5529412F, 1.0F}}})
+    {
     }
 
     LogEditorView::LogEditorView(LogEditorColorTable colors)
@@ -75,198 +95,123 @@ namespace kpengine::editor
     {
     }
 
-    void LogEditorView::RenderContent(LogSystem *log_system)
+    void LogEditorView::RenderContent(ui::UiContext &ui, LogSystem *log_system)
     {
-        // LogSystem is a stateless facade over the process-global logger, so a
-        // null one (hosts that never initialize scene services) still has real
-        // logs to show. Snapshot under the logger's mutex — never iterate the
-        // live vector while a writer thread pushes/clears it.
         const std::vector<program::LogEntry> logs =
             log_system != nullptr ? log_system->GetLogSnapshot()
-                                   : program::Logger::GetLogger().GetSnapshot();
+                                  : program::Logger::GetLogger().GetSnapshot();
 
-        if (ImGui::Checkbox("Follow latest", &follow_latest_) && follow_latest_)
+        const auto follow = ui.Checkbox({.id = "log.follow_latest", .label = "Follow latest"},
+                                        follow_latest_);
+        if (follow.changed)
         {
-            jump_to_latest_ = true;
+            follow_latest_ = follow.value;
+            jump_to_latest_ = follow_latest_;
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Latest"))
+        ui.SameLine();
+        if (ui.Button({.id = "log.latest", .label = "Latest"}).activated)
         {
-            jump_to_latest_ = true;
-        }
-
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(120.0f);
-        if (ImGui::BeginCombo("##log-level-filter",
-                              kLogLevelFilters[level_filter_index_].label))
-        {
-            for (std::size_t index = 0; index < std::size(kLogLevelFilters); ++index)
-            {
-                const bool selected = index == level_filter_index_;
-                if (ImGui::Selectable(kLogLevelFilters[index].label, selected))
-                {
-                    level_filter_index_ = index;
-                    selection_anchor_index_ = -1;
-                    selection_caret_index_ = -1;
-                    jump_to_latest_ = true;
-                }
-                if (selected)
-                {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(180.0f);
-        if (ImGui::InputTextWithHint("##log-search", "Search logs...",
-                                     search_buffer_.data(), search_buffer_.size()))
-        {
-            selection_anchor_index_ = -1;
-            selection_caret_index_ = -1;
+            follow_latest_ = true;
             jump_to_latest_ = true;
         }
 
-        const std::string_view search_query(search_buffer_.data());
+        std::vector<ui::UiChoice> filter_choices;
+        for (const LogLevelFilterOption &option : kLogLevelFilters)
+            filter_choices.push_back({option.key, option.label, ui::UiValue{std::string{option.key}}});
+        const auto filter = ui.Combo<std::string>(
+            {.id = "log.level", .label = "Level"}, level_filter_, std::move(filter_choices));
+        if (filter.changed)
+        {
+            level_filter_ = filter.value;
+            selected_log_index_ = -1;
+            jump_to_latest_ = true;
+        }
+
+        ui.SameLine();
+        const auto search = ui.TextInput(
+            {.id = "log.search", .label = "Search", .hint = "Search logs..."}, search_);
+        if (search.changed)
+        {
+            search_ = search.value;
+            selected_log_index_ = -1;
+            jump_to_latest_ = true;
+        }
+
+        const std::string_view query{search_};
+        const LogLevelFilterOption &selected_filter = FindFilter(level_filter_);
         std::vector<const program::LogEntry *> filtered_logs;
         filtered_logs.reserve(logs.size());
         for (const program::LogEntry &log : logs)
         {
-            const LogLevelFilterOption &filter = kLogLevelFilters[level_filter_index_];
-            if ((!filter.matches_all && filter.level != log.level) ||
-                !MatchesSearch(log, search_query))
-            {
+            if ((!selected_filter.matches_all && selected_filter.level != log.level) ||
+                !MatchesSearch(log, query))
                 continue;
-            }
             filtered_logs.push_back(&log);
         }
 
-        ImGui::SameLine();
         const std::string copy_label = "Copy filtered (" +
-            std::to_string(filtered_logs.size()) + ")";
-        if (ImGui::Button(copy_label.c_str()))
+                                       std::to_string(filtered_logs.size()) + ")";
+        ui.SameLine();
+        if (ui.Button({.id = "log.copy_filtered", .label = copy_label}).activated)
         {
-            std::string clipboard_text;
-            for (const program::LogEntry *const log : filtered_logs)
-            {
-                clipboard_text += program::Logger::FetchStringFromLog(*log);
-                clipboard_text.push_back('\n');
-            }
-            ImGui::SetClipboardText(clipboard_text.c_str());
+            ui.SetClipboardText(FormatLogs(filtered_logs, 0, filtered_logs.size()));
+        }
+        const bool has_selection = selected_log_index_ >= 0 &&
+                                   selected_log_index_ < static_cast<int>(filtered_logs.size());
+        ui.SameLine();
+        if (ui.Button({.id = "log.copy_selected", .label = "Copy selected",
+                       .enabled = has_selection}).activated)
+        {
+            ui.SetClipboardText(FormatLogs(filtered_logs,
+                                           static_cast<std::size_t>(selected_log_index_),
+                                           static_cast<std::size_t>(selected_log_index_) + 1));
         }
 
         if (filtered_logs.empty())
         {
-            selection_anchor_index_ = -1;
-            selection_caret_index_ = -1;
-            ImGui::TextDisabled(logs.empty() ? "No logs" : "No matching logs");
+            selected_log_index_ = -1;
+            ui.Text(logs.empty() ? "No logs" : "No matching logs", ui::UiTextRole::Muted);
             last_log_count_ = logs.size();
             jump_to_latest_ = false;
             return;
         }
 
-        // Virtualized: render + format only the rows visible in the scroll window.
-        // Logs grow past the viewport (there's a scrollbar), so walking every entry
-        // each frame would re-run the timestamp/level formatting below on all of them.
-        ImGui::BeginChild("##log_entries", ImVec2(0.0f, 0.0f), false,
-                          ImGuiWindowFlags_HorizontalScrollbar);
-        ImDrawList *const log_draw_list = ImGui::GetWindowDrawList();
-        ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(filtered_logs.size()));
-        while (clipper.Step())
-        {
-            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+        constexpr float kRowHeight = 20.0F;
+        const bool scroll_to_end = jump_to_latest_ || (follow_latest_ && logs.size() > last_log_count_);
+        ui.VirtualList("log.entries", filtered_logs.size(), kRowHeight, scroll_to_end,
+            [&](const ui::UiListRange range)
             {
-                const program::LogEntry &log = *filtered_logs[static_cast<size_t>(i)];
-                const std::string formatted_log = program::Logger::FetchStringFromLog(log);
-                // Colors come from config/settings.json (loaded by EditorUI, with
-                // defaults as fallback); index by level instead of switching on it.
-                const LogEditorColor &color = colors_[static_cast<size_t>(log.level)];
-                ImGui::PushID(i);
-                const int first_selected = std::min(selection_anchor_index_,
-                                                    selection_caret_index_);
-                const int last_selected = std::max(selection_anchor_index_,
-                                                   selection_caret_index_);
-                const bool selected = selection_anchor_index_ >= 0 &&
-                                      i >= first_selected && i <= last_selected;
-                const ImGuiStyle &style = ImGui::GetStyle();
-                const ImVec2 text_position = ImGui::GetCursorScreenPos();
-                const ImVec2 row_size(
-                    ImGui::GetContentRegionAvail().x,
-                    ImGui::GetTextLineHeight() + style.FramePadding.y * 2.0f);
-                const ImU32 text_color = ImGui::ColorConvertFloat4ToU32(
-                    ImVec4(color.r, color.g, color.b, color.a));
-                const bool clicked = ImGui::Selectable(
-                    "##log-row", selected,
-                    ImGuiSelectableFlags_AllowDoubleClick |
-                        ImGuiSelectableFlags_SpanAllColumns,
-                    row_size);
-                log_draw_list->AddText(
-                    ImVec2(text_position.x + style.FramePadding.x,
-                           text_position.y + style.FramePadding.y),
-                    text_color, formatted_log.c_str());
-                const bool hovered = ImGui::IsItemHovered(
-                    ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+                for (std::size_t index = range.first; index < range.last; ++index)
                 {
-                    selection_anchor_index_ = i;
-                    selection_caret_index_ = i;
+                    const program::LogEntry &log = *filtered_logs[index];
+                    const std::string formatted_log = program::Logger::FetchStringFromLog(log);
+                    const std::string id = "log.entry." + std::to_string(index);
+                    const bool selected = selected_log_index_ == static_cast<int>(index);
+                    [[maybe_unused]] const auto theme = ui.Theme(LogRowTheme(
+                        colors_[static_cast<std::size_t>(log.level)]));
+                    const auto row = ui.Selectable(
+                        {.id = id, .label = formatted_log, .height = kRowHeight,
+                         .span_row = true}, selected);
+                    if (row.activated)
+                        selected_log_index_ = static_cast<int>(index);
                 }
-                else if (hovered && selection_anchor_index_ >= 0 &&
-                         ImGui::IsMouseDragging(ImGuiMouseButton_Left))
-                {
-                    selection_caret_index_ = i;
-                }
-                if (clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                {
-                    ImGui::SetClipboardText(formatted_log.c_str());
-                }
-                if (hovered)
-                {
-                    ImGui::SetTooltip(
-                        "Drag to select log entries; Ctrl+C copies the selection; double-click copies one entry");
-                }
-                if (ImGui::BeginPopupContextItem("##log_entry_context"))
-                {
-                    if (ImGui::MenuItem("Copy log entry"))
-                    {
-                        ImGui::SetClipboardText(formatted_log.c_str());
-                    }
-                    ImGui::EndPopup();
-                }
-                ImGui::PopID();
-            }
-        }
+            });
 
-        if (selection_anchor_index_ >= 0 && ImGui::IsWindowFocused() &&
-            ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C))
-        {
-            const int first_selected = std::min(selection_anchor_index_,
-                                                selection_caret_index_);
-            const int last_selected = std::max(selection_anchor_index_,
-                                               selection_caret_index_);
-            std::string clipboard_text;
-            for (int index = first_selected; index <= last_selected &&
-                                              index < static_cast<int>(filtered_logs.size());
-                 ++index)
-            {
-                clipboard_text += program::Logger::FetchStringFromLog(
-                    *filtered_logs[static_cast<size_t>(index)]);
-                clipboard_text.push_back('\n');
-            }
-            ImGui::SetClipboardText(clipboard_text.c_str());
-        }
-        const bool logs_grew = logs.size() > last_log_count_;
-        if (jump_to_latest_ || (follow_latest_ && logs_grew))
-        {
-            // The clipper has submitted the visible rows, so ImGui can resolve
-            // the final scroll range after this request.
-            ImGui::SetScrollHereY(1.0f);
-        }
-        ImGui::EndChild();
         jump_to_latest_ = false;
         last_log_count_ = logs.size();
     }
 
+    std::string LogEditorView::FormatLogs(
+        const std::vector<const program::LogEntry *> &logs,
+        const std::size_t first, const std::size_t last)
+    {
+        std::string result;
+        const std::size_t end = std::min(last, logs.size());
+        for (std::size_t index = first; index < end; ++index)
+        {
+            result += program::Logger::FetchStringFromLog(*logs[index]);
+            result.push_back('\n');
+        }
+        return result;
+    }
 }

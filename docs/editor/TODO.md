@@ -114,10 +114,18 @@ and independent ED5/SET3 acceptance.
   fields pilot, and shared session/frame plumbing. Independent smoke, full v1
   capability/lifecycle coverage, five-host/backend matrix, and matched performance
   evidence remain open; this stage is not accepted.
-- [ ] **ED6.3 — Workspace composition.** Reuse parameterized headless layout and
-  panel hosting with per-instance contributions, stable identity, correct callback
-  teardown, all-floating-window overlay arbitration and workspace-scoped layouts.
-  Prove a second real workspace without scene-specific regions/factories.
+- [ ] **ED6.3 — Workspace composition.** In progress: Audio now uses the
+  independent `EditorWorkspaceLib` with Audio-supplied region/split IDs and a
+  neutral `UiContext` host for dock tabs, floating panels, close/reopen actions
+  and split-ratio controls. Audio no longer links `EditorUILib`. The ED6.3 fixes
+  now queue panel transitions at frame end, add Canvas tab dragging and splitters,
+  use effective subtree minimums, scope native window identities, and make SceneEditor
+  splitter/dock hit tests respect floating and tool windows with cancel-safe pointer
+  ownership. SceneEditor save failures keep a retryable dirty latch. Audio's Workspace
+  utility window now stops being submitted when closed. Audio layout
+  persistence, float recovery bounds, headless interaction reruns and visible Vulkan/
+  OpenGL acceptance remain open. Migrate SceneEditor before accepting the stage.
+  See the [ED6.3 interaction review](.review/ED6.3.md).
 - [ ] **ED6.4 — Log and Settings.** Move complete model/view/action ownership to
   feature editor targets; generic UI/workspace contains no concrete Log/Settings
   types. Preserve their domain request/save/close semantics and actual consumers.
@@ -126,6 +134,14 @@ and independent ED5/SET3 acceptance.
   viewport/selection tools. Feature addition/removal does not edit generic UI.
   Route all feature/workspace drawing through Editor's general UI API, including
   focused custom-canvas/image/input contracts; retire direct ImGui usage there.
+  The production `EditorUiHostLib` now serves Audio, TTS, Signal Lab, Terrain,
+  Live2D and the UI smoke; Audio still links the SceneEditor aggregate through
+  a legacy docked component workspace. Audio now uses `EditorWorkspaceLib`;
+  Canvas image submission no longer creates a second ImGui item. Visible Canvas
+  input behavior, SceneEditor workspace migration, Console/Asset/Gameplay
+  ownership, Viewport/Gizmo migration and final visual acceptance remain open.
+  [Component migration review](.review/ED6.5.md)
+  records live owners and acceptance gaps.
 - [ ] **ED6.6 — Runtime boundary.** Application composition supplies optional
   presentation through neutral host lifecycle; remove Engine's concrete Editor
   ownership/include and the RuntimeLib-to-EditorLib edge. Preserve core Scene3D,

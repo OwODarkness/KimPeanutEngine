@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "editor/ui/api/editor_ui/ui_types.h"
 #include "runtime/signal/sample_block.h"
 #include "runtime/signal/spectrum.h"
 #include "runtime/signal/signal_mixer.h"
@@ -17,8 +18,8 @@
 
 namespace kpengine::editor
 {
-    class EditorLogComponent;
-    class EditorUI;
+    class LogEditorView;
+    class EditorUiHost;
     namespace ui { class UiContext; }
 }
 
@@ -37,7 +38,7 @@ namespace kpengine::signal
                         SignalGeneratorConfig signal_config,
                         SampleBlock sample_block,
                         SignalStatistics measured,
-                        std::uint32_t trace_color)
+                        editor::ui::UiColor trace_color)
             : name(std::move(signal_name)),
               config(std::move(signal_config)),
               samples(std::move(sample_block)),
@@ -50,7 +51,7 @@ namespace kpengine::signal
         SignalGeneratorConfig config;
         SampleBlock samples;
         SignalStatistics statistics;
-        std::uint32_t color = 0;
+        editor::ui::UiColor color{};
         bool visible = true;
     };
 
@@ -78,12 +79,13 @@ namespace kpengine::signal
         };
 
         void RenderWorkspace(editor::ui::UiContext &ui);
+        void RenderLog(editor::ui::UiContext &ui);
         bool GenerateSignal(std::string &diagnostic);
         void RebuildComposite();
         void RebuildPairMix();
 
-        std::unique_ptr<editor::EditorUI> ui_;
-        std::unique_ptr<editor::EditorLogComponent> log_component_;
+        std::unique_ptr<editor::EditorUiHost> ui_;
+        std::unique_ptr<editor::LogEditorView> log_view_;
         std::shared_ptr<SignalScopeSession> scope_session_;
         std::vector<SignalLabSignal> signals_;
         std::vector<double> composite_samples_;

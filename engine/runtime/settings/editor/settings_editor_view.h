@@ -15,29 +15,24 @@ namespace kpengine::editor
         SettingsEditorView(SettingsEditorModel &model,
                            settings::ISettingsEditorAccess *access);
 
-        void Open();
         void BeforeWindowRender();
-        void RenderContent();
         void RenderContent(ui::UiContext &context);
         bool BeginCloseRequest(bool has_drafts, bool has_pending);
         std::optional<bool> PollCloseRequest(bool has_drafts, bool has_pending);
 
     private:
-        void RenderNavigation(const settings::SettingsEditorSnapshot &snapshot,
-                              float width);
-        void RenderSection(const settings::SettingsEditorSnapshot &snapshot,
-                           const settings::SettingsEditorSection &section,
-                           ui::UiContext *context);
-        void RenderContentImpl(ui::UiContext *context);
-        void RenderCloseConfirmation();
-        void RenderStatus(const EditorSettingsDraft *draft,
+        void RenderNavigation(ui::UiContext &context,
+                              const settings::SettingsEditorSnapshot &snapshot);
+        void RenderSection(ui::UiContext &context,
+                           const settings::SettingsEditorSnapshot &snapshot,
+                           const settings::SettingsEditorSection &section);
+        void RenderCloseConfirmation(ui::UiContext &context);
+        void RenderStatus(ui::UiContext &context, const EditorSettingsDraft *draft,
                           const settings::SettingsEditorSection &section,
                           const settings::SettingsEditorSnapshot &snapshot);
 
         SettingsEditorModel &model_;
         settings::ISettingsEditorAccess *access_ = nullptr;
-        bool focus_requested_ = false;
-        bool search_focus_requested_ = false;
         bool close_confirmation_requested_ = false;
         bool close_after_apply_ = false;
         bool close_retry_pending_ = false;

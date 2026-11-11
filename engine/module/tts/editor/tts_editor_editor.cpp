@@ -2,17 +2,16 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <exception>
 #include <optional>
 #include <string_view>
 
-#include <imgui.h>
-
+#include "editor/asset/editor_asset_file_dialog.h"
 #include "module/audio/editor/audio_transport_controls.h"
-#include "editor/ui/editor_ui.h"
+#include "editor/ui/host/editor_ui_host.h"
+#include "editor/ui/api/editor_ui/ui_plot.h"
 #include "runtime/core/config/path.h"
 #include "runtime/engine.h"
 #include "runtime/image_io/image_io.h"
@@ -24,13 +23,7 @@ namespace kpengine::tts_editor
 {
     namespace
     {
-        const ImVec4 kCyan{0.18f, 0.83f, 0.94f, 1.0f};
-        const ImVec4 kMuted{0.58f, 0.7f, 0.75f, 1.0f};
-        const ImVec4 kText{0.86f, 0.95f, 0.97f, 1.0f};
-        const ImVec4 kError{1.0f, 0.42f, 0.36f, 1.0f};
-        constexpr ImU32 kSelectedAmber = IM_COL32(255, 184, 58, 255);
-        constexpr ImU32 kSelectedRow = IM_COL32(51, 39, 17, 255);
-        constexpr ImU32 kSelectedRowHovered = IM_COL32(70, 49, 18, 255);
+        constexpr editor::ui::UiColor kCyan{0.18F, 0.83F, 0.94F, 1.0F};
 
         bool ContainsCaseInsensitive(const std::string_view text,
                                      const std::string_view query)
@@ -234,23 +227,23 @@ namespace kpengine::tts_editor
         if (avatar.result.success && avatar.image.IsValid() &&
             avatar.image.format == image_io::ImagePixelFormat::Rgba8)
         {
-            constexpr std::uint32_t target_size =
-                static_cast<std::uint32_t>(kAvatarRasterSize);
             const std::uint32_t side = std::min(avatar.image.width, avatar.image.height);
             const std::uint32_t crop_x = (avatar.image.width - side) / 2;
             const std::uint32_t crop_y = (avatar.image.height - side) / 2;
-            for (std::uint32_t y = 0; y < target_size; ++y)
+            for (std::uint32_t y = 0; y < kAvatarRasterSize; ++y)
             {
-                const std::uint32_t source_y = crop_y +
-                    (target_size - 1 - y) * side / target_size;
-                for (std::uint32_t x = 0; x < target_size; ++x)
+                const std::uint32_t source_y = crop_y + side - 1 -
+                    y * side / static_cast<std::uint32_t>(kAvatarRasterSize);
+                for (std::uint32_t x = 0; x < kAvatarRasterSize; ++x)
                 {
-                    const std::uint32_t source_x = crop_x + x * side / target_size;
-                    const std::size_t offset =
+                    const std::uint32_t source_x = crop_x +
+                        x * side / static_cast<std::uint32_t>(kAvatarRasterSize);
+                    const std::size_t source_offset =
                         (static_cast<std::size_t>(source_y) * avatar.image.width + source_x) * 4;
-                    const auto *rgba = avatar.image.pixels.data() + offset;
-                    avatar_pixels_[y * target_size + x] = IM_COL32(
-                        rgba[0], rgba[1], rgba[2], rgba[3]);
+                    const std::size_t target_offset =
+                        (static_cast<std::size_t>(y) * kAvatarRasterSize + x) * 4;
+                    std::copy_n(avatar.image.pixels.data() + source_offset, 4,
+                                avatar_pixels_.data() + target_offset);
                 }
             }
             avatar_loaded_ = true;
@@ -258,18 +251,12 @@ namespace kpengine::tts_editor
         const TtsEditorView initial_view = controller.GetView();
         last_audible_volume_ = std::clamp(initial_view.volume, 0.05f, 1.0f);
         CopySettingsToFields(initial_view.settings);
-        editor::EditorUIInitInfo init{};
-        init.window = context.window_system_->GetNativeHandle();
-        init.editor_presentation_bridge =
-            context.render_system_->GetEditorPresentationBridge();
-        init.log_system = context.log_system_.get();
-        init.engine = &engine;
-        init.render_system = context.render_system_.get();
-        init.window_system = context.window_system_.get();
         try
         {
-            ui_ = std::make_unique<editor::EditorUI>();
-            ui_->InitializeUiViewer(init, [this](editor::ui::UiContext &ui) { RenderWorkspace(ui); });
+            ui_ = std::make_unique<editor::EditorUiHost>();
+            ui_->Initialize({
+                .window = context.window_system_->GetNativeHandle(),
+                .presentation_bridge = context.render_system_->GetEditorPresentationBridge()});
         }
         catch (const std::exception &error)
         {
@@ -284,7 +271,8 @@ namespace kpengine::tts_editor
     bool TtsEditorEditor::Render(std::string &diagnostic)
     {
         diagnostic.clear();
-        if (!ui_ || !ui_->Render())
+        if (!ui_ || !ui_->RenderFrame(
+                [this](editor::ui::UiContext &ui) { RenderWorkspace(ui); }))
         {
             diagnostic = "TTS editor presentation failed";
             return false;
@@ -304,248 +292,163 @@ namespace kpengine::tts_editor
 
     void TtsEditorEditor::RenderPreview(editor::ui::UiContext &ui, const TtsEditorView &view)
     {
-        ImGui::TextColored(kCyan, "// AUDIO PREVIEW");
-        ImGui::Separator();
+        ui.Section("AUDIO PREVIEW");
         const auto selected = std::find_if(view.entries.begin(), view.entries.end(),
             [&view](const TtsEntryView &entry) { return entry.id == view.selected_id; });
         if (selected == view.entries.end())
         {
-            ImGui::TextColored(kMuted, "Generate speech to preview it here.");
+            ui.Text("Generate speech to preview it here.", editor::ui::UiTextRole::Muted);
             return;
         }
-        const float available_width = ImGui::GetContentRegionAvail().x;
-        const float avatar_size = std::clamp(available_width * 0.2f, 112.0f, 176.0f);
-        const float visual_height = std::max(avatar_size, 154.0f);
-        const ImVec2 card_origin = ImGui::GetCursorScreenPos();
-        const float gap = 14.0f;
-        const float card_width = std::max(80.0f, available_width - avatar_size - gap);
-        ImDrawList *draw = ImGui::GetWindowDrawList();
-
-        ImGui::InvisibleButton("##tts_avatar_card", {avatar_size, visual_height});
-        const ImVec2 avatar_min = ImGui::GetItemRectMin();
-        const ImVec2 avatar_max = ImGui::GetItemRectMax();
-        draw->AddRectFilled(avatar_min, avatar_max, IM_COL32(5, 18, 23, 255), 3.0f);
-        if (avatar_loaded_)
-        {
-            const float inset = 4.0f;
-            const float tile = (avatar_size - inset * 2.0f) /
-                static_cast<float>(kAvatarRasterSize);
-            for (std::uint32_t y = 0; y < kAvatarRasterSize; ++y)
-            {
-                for (std::uint32_t x = 0; x < kAvatarRasterSize; ++x)
-                {
-                    const float x0 = avatar_min.x + inset + x * tile;
-                    const float y0 = avatar_min.y + inset + y * tile;
-                    draw->AddRectFilled({x0, y0}, {x0 + tile + 0.4f, y0 + tile + 0.4f},
-                                        avatar_pixels_[y * kAvatarRasterSize + x]);
-                }
-            }
-        }
-        else
-            draw->AddText({avatar_min.x + 12.0f, avatar_min.y + avatar_size * 0.5f},
-                          IM_COL32(48, 211, 239, 255), "TTS VOICE");
-        draw->AddRect(avatar_min, avatar_max, IM_COL32(37, 190, 218, 255), 3.0f, 0, 1.5f);
-        ImGui::SameLine(0.0f, gap);
-        const ImVec2 wave_origin{card_origin.x + avatar_size + gap, card_origin.y};
-        const ImVec2 wave_size{card_width, visual_height};
-        ImGui::SetCursorScreenPos(wave_origin);
-        ImGui::InvisibleButton("##tts_waveform", wave_size);
-        const ImVec2 wave_min = ImGui::GetItemRectMin();
-        const ImVec2 wave_max = ImGui::GetItemRectMax();
-        draw->AddRectFilled(wave_min, wave_max, IM_COL32(3, 14, 19, 255), 3.0f);
-        draw->AddRect(wave_min, wave_max, IM_COL32(17, 97, 115, 255), 3.0f);
-        draw->AddText({wave_min.x + 10.0f, wave_min.y + 8.0f},
-                      IM_COL32(48, 211, 239, 255), selected->voice_name.c_str());
-        const char *mode = selected->streaming ? "STREAM" : "BUFFER";
-        const ImVec2 mode_size = ImGui::CalcTextSize(mode);
-        draw->AddText({wave_max.x - mode_size.x - 10.0f, wave_min.y + 8.0f},
-                      IM_COL32(125, 184, 195, 255), mode);
-        constexpr float text_top = 30.0f;
-        constexpr float text_bottom = 56.0f;
-        const float plot_left = wave_min.x + 10.0f;
-        const float plot_right = wave_max.x - 10.0f;
-        const float plot_top = wave_min.y + text_bottom;
-        const float plot_bottom = wave_max.y - 18.0f;
-        const float plot_center = (plot_top + plot_bottom) * 0.5f;
-        draw->AddLine({plot_left, plot_center}, {plot_right, plot_center},
-                      IM_COL32(17, 97, 115, 255), 1.0f);
-        for (float x = plot_left; x < plot_right; x += 16.0f)
-            draw->AddLine({x, plot_top}, {x, plot_bottom},
-                          IM_COL32(10, 48, 59, 255), 1.0f);
 
         static const std::vector<float> empty_waveform;
         const auto &wave = selected->preview_data
             ? selected->preview_data->waveform_samples : empty_waveform;
-        const float duration = selected->preview_data
+        const double duration = selected->preview_data
             ? selected->preview_data->duration_seconds
-            : view.duration_seconds.value_or(0.0f);
-        const float played = duration > 0.0f
-            ? std::clamp(view.elapsed_seconds / duration, 0.0f, 1.0f) : 0.0f;
-        if (!wave.empty() && plot_right > plot_left)
+            : view.duration_seconds.value_or(0.0F);
+        const double plot_duration = duration > 0.0 ? duration : 1.0;
+        const std::size_t count = std::min<std::size_t>(wave.size(), 180);
+        const double played = duration > 0.0
+            ? std::clamp(static_cast<double>(view.elapsed_seconds) / duration, 0.0, 1.0)
+            : 0.0;
+        std::vector<editor::ui::UiPlotPoint> played_points;
+        std::vector<editor::ui::UiPlotPoint> pending_points;
+        played_points.reserve(count);
+        pending_points.reserve(count);
+        for (std::size_t i = 0; i < count; ++i)
         {
-            const float spacing = std::max(2.0f, (plot_right - plot_left) /
-                static_cast<float>(std::min<std::size_t>(wave.size(), 180)));
-            const std::size_t visible_count = std::min<std::size_t>(wave.size(),
-                static_cast<std::size_t>((plot_right - plot_left) / spacing));
-            for (std::size_t i = 0; i < visible_count; ++i)
-            {
-                const std::size_t sample = i * wave.size() / visible_count;
-                const float x = plot_left + (static_cast<float>(i) + 0.5f) * spacing;
-                const float amplitude = std::clamp(wave[sample], 0.04f, 1.0f) *
-                    (plot_bottom - plot_top) * 0.48f;
-                const bool is_played = duration > 0.0f &&
-                    x <= plot_left + played * (plot_right - plot_left);
-                const ImU32 color = is_played ? IM_COL32(255, 176, 48, 255)
-                                               : IM_COL32(34, 198, 229, 255);
-                draw->AddLine({x, plot_center - amplitude},
-                              {x, plot_center + amplitude}, color, 2.0f);
-            }
-            if (duration > 0.0f)
-            {
-                const float playhead_x = plot_left + played * (plot_right - plot_left);
-                draw->AddLine({playhead_x, plot_top}, {playhead_x, plot_bottom},
-                              IM_COL32(255, 176, 48, 255), 1.5f);
-            }
-            if (ImGui::IsItemHovered() && selected->player.IsValid() && !selected->streaming &&
-                ImGui::IsMouseClicked(ImGuiMouseButton_Left) && duration > 0.0f)
-            {
-                const float fraction = std::clamp((ImGui::GetIO().MousePos.x - plot_left) /
-                    (plot_right - plot_left), 0.0f, 1.0f);
-                controller_->QueueSeek(fraction * duration);
-            }
+            const std::size_t sample_index = i * wave.size() / count;
+            const double x = (static_cast<double>(i) + 0.5) * plot_duration /
+                static_cast<double>(count);
+            const double amplitude = std::clamp(static_cast<double>(wave[sample_index]), 0.02, 1.0);
+            (x / plot_duration <= played ? played_points : pending_points).push_back({x, amplitude});
         }
-        else
+        const editor::ui::UiPlotSeries series[] = {
+            {.label = "Played", .points = played_points,
+             .color = {1.0F, 0.69F, 0.19F, 1.0F},
+             .kind = editor::ui::UiPlotSeriesKind::Bars, .bar_width = 2.0F},
+            {.label = "Waveform", .points = pending_points, .color = kCyan,
+             .kind = editor::ui::UiPlotSeriesKind::Bars, .bar_width = 2.0F}};
+        auto style = editor::ui::UiPlotStyle{};
+        style.background = {0.02F, 0.055F, 0.07F, 1.0F};
+        style.border = {0.08F, 0.38F, 0.45F, 1.0F};
+        style.grid = {0.04F, 0.20F, 0.25F, 1.0F};
+        style.axis = kCyan;
+        style.labels = {0.49F, 0.72F, 0.76F, 1.0F};
+        style.left_margin = 12.0F;
+        style.top_margin = 8.0F;
+        style.right_margin = 8.0F;
+        style.bottom_margin = 22.0F;
+        const float available_width = std::max(1.0F, ui.AvailableContent().x);
+        const float avatar_size = std::clamp(available_width * 0.20F, 112.0F, 176.0F);
+        const editor::ui::UiTableColumn preview_columns[] = {
+            {"Portrait", avatar_size + 14.0F}, {"Waveform", 0.0F}};
+        editor::ui::UiPlotResult plot{};
+        ui.Table("tts.preview.layout", preview_columns, 0.0F, false, [&]
         {
-            const char *waiting = selected->streaming
-                ? "Waveform available when the server WAV arrives"
-                : "Waveform will appear when WAV audio is ready";
-            draw->AddText({plot_left, plot_center - 7.0f},
-                          IM_COL32(125, 184, 195, 255), waiting);
-        }
-        if (!selected->text.empty())
-        {
-            std::string preview_text = selected->text;
-            if (preview_text.size() > 112)
+            ui.TableRow();
+            ui.TableColumn();
+            std::vector<editor::ui::UiCanvasPrimitive> portrait;
+            portrait.reserve(kAvatarRasterSize * kAvatarRasterSize + 2);
+            portrait.push_back({.kind = editor::ui::UiCanvasPrimitiveKind::FilledRect,
+                .first = {0.0F, 0.0F}, .second = {1.0F, 1.0F},
+                .color = {0.02F, 0.06F, 0.08F, 1.0F}});
+            if (avatar_loaded_)
             {
-                std::size_t end = 109;
-                while (end > 0 &&
-                    (static_cast<unsigned char>(preview_text[end]) & 0xC0u) == 0x80u)
-                    --end;
-                preview_text.resize(end);
-                preview_text += "...";
-            }
-            const ImVec2 text_pos{wave_min.x + 10.0f, wave_min.y + text_top};
-            draw->AddText(text_pos, IM_COL32(220, 235, 238, 255), preview_text.c_str());
-        }
-        const auto time_text = [duration](const float seconds)
-        {
-            char value[48]{};
-            std::snprintf(value, sizeof(value), "%02d:%02d / %02d:%02d",
-                static_cast<int>(seconds) / 60, static_cast<int>(seconds) % 60,
-                static_cast<int>(duration) / 60, static_cast<int>(duration) % 60);
-            return std::string(value);
-        };
-        const std::string timing = duration > 0.0f
-            ? time_text(view.elapsed_seconds) : std::string("DURATION PENDING");
-        const ImVec2 timing_size = ImGui::CalcTextSize(timing.c_str());
-        draw->AddText({wave_max.x - timing_size.x - 10.0f, wave_max.y - 16.0f},
-                      IM_COL32(125, 184, 195, 255), timing.c_str());
-        ImGui::SetCursorScreenPos({card_origin.x, card_origin.y + visual_height});
-        if (!selected->error.empty())
-            ImGui::TextColored(kError, "%s", selected->error.c_str());
-        ImGui::Spacing();
-        const auto draw_preview_controls = [&]()
-        {
-            const bool can_change_rate = !selected->streaming && selected->durable;
-            if (can_change_rate)
-            {
-                ImGui::SameLine(0.0f, 12.0f);
-                const float rates[] = {0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f};
-                const char *rate_labels[] = {
-                    "0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"};
-                int selected_rate = 2;
-                for (int i = 0; i < 6; ++i)
+                constexpr float inset = 3.0F;
+                const float scale = (avatar_size - inset * 2.0F) /
+                    static_cast<float>(kAvatarRasterSize);
+                for (std::size_t y = 0; y < kAvatarRasterSize; ++y)
                 {
-                    if (std::abs(view.playback_rate - rates[i]) < 0.001f)
+                    for (std::size_t x = 0; x < kAvatarRasterSize; ++x)
                     {
-                        selected_rate = i;
-                        break;
+                        const std::size_t offset =
+                            (y * kAvatarRasterSize + x) * 4;
+                        const auto channel = [this, offset](const std::size_t index)
+                        {
+                            return static_cast<float>(avatar_pixels_[offset + index]) / 255.0F;
+                        };
+                        portrait.push_back({.kind = editor::ui::UiCanvasPrimitiveKind::FilledRect,
+                            .first = {(inset + static_cast<float>(x) * scale) / avatar_size,
+                                      (inset + static_cast<float>(y) * scale) / avatar_size},
+                            .second = {(inset + static_cast<float>(x + 1) * scale) / avatar_size,
+                                       (inset + static_cast<float>(y + 1) * scale) / avatar_size},
+                            .color = {channel(0), channel(1), channel(2), channel(3)}});
                     }
                 }
-                ImGui::TextUnformatted("SPEED");
-                ImGui::SameLine(0.0f, 8.0f);
-                ImGui::SetNextItemWidth(132.0f);
-                if (ImGui::Combo("##tts_preview_rate", &selected_rate,
-                                 rate_labels, 6))
-                    controller_->QueuePlaybackRate(rates[selected_rate]);
             }
-
-            ImGui::SameLine(0.0f, 12.0f);
-            const bool muted = view.volume <= 0.001f;
-            if (!muted)
-                last_audible_volume_ = view.volume;
-            editor::ui::UiTheme control_theme;
-            control_theme.accent = {48.0F / 255.0F, 211.0F / 255.0F, 239.0F / 255.0F, 1.0F};
-            const auto colors = ui.Theme(control_theme);
-            const bool toggle_mute = ui.Button({.id = "tts.preview.mute",
-                .label = muted ? "Unmute voice" : "Mute voice", .width = 60.0F, .height = 36.0F,
-                .text_role = editor::ui::UiTextRole::Accent,
-                .icon = icons_.Get(muted ? editor::EditorIcon::VolumeOff : editor::EditorIcon::VolumeOn)}).activated;
-            if (toggle_mute)
-                controller_->QueueVolume(muted ? last_audible_volume_ : 0.0f);
-            ImGui::SameLine(0.0f, 12.0f);
-            const float percent_width = ImGui::CalcTextSize("100%").x;
-            const float volume_width = std::max(36.0f,
-                ImGui::GetContentRegionAvail().x - 10.0f - percent_width);
-            if (const auto volume = audio_editor::DrawAudioVolumeProgressControl(
-                    ui, "tts.preview.volume", view.volume, volume_width))
-                controller_->QueueVolume(*volume);
-            ImGui::Unindent(10.0f);
-            ImGui::Dummy({0.0f, 8.0f});
-        };
-        if (!selected->player.IsValid())
-        {
-            if (selected->durable)
+            else
             {
-                ImGui::TextColored(kMuted, "Saved WAV ready for buffer preview.");
-                audio_editor::TransportStripState saved_transport{};
-                saved_transport.instance_id = "tts_saved_preview";
-                saved_transport.playback_state = audio_editor::TransportPlaybackState::Finished;
-                saved_transport.capabilities.toggle_play_pause = true;
-                audio_editor::TransportStripStyle transport_style{};
-                transport_style.button_width = 78.0f;
-                transport_style.button_height = 36.0f;
-                transport_style.stop_before_play = true;
-                ImGui::Indent(10.0f);
-                ImGui::Dummy({0.0f, 8.0f});
-                const auto action = audio_editor::DrawTransportStrip(ui, saved_transport, icons_, transport_style);
-                if (action.toggle_play_pause)
-                    controller_->QueueTogglePlayPause();
-                draw_preview_controls();
-                if (!selected->error.empty()) ImGui::TextColored(kError, "%s", selected->error.c_str());
-                return;
+                portrait.push_back({.kind = editor::ui::UiCanvasPrimitiveKind::Text,
+                    .first = {0.5F, 0.5F}, .color = kCyan,
+                    .text = "TTS VOICE", .text_anchor = {0.5F, 0.5F}});
             }
-            ImGui::Text("Job state: %s", JobLabel(selected->state));
-            if (selected->state == tts::TTSJobState::Playing ||
-                selected->state == tts::TTSJobState::Draining)
-                ImGui::TextColored(kMuted,
-                    "Audio is playing; transport appears after the server response ends.");
-            if (selected->job.IsValid() &&
-                selected->state != tts::TTSJobState::Cancelled &&
-                selected->state != tts::TTSJobState::Failed &&
-                selected->state != tts::TTSJobState::Completed &&
-                ImGui::Button("CANCEL GENERATION"))
-                controller_->QueueCancel();
-            return;
+            portrait.push_back({.kind = editor::ui::UiCanvasPrimitiveKind::Rect,
+                .first = {0.005F, 0.005F}, .second = {0.995F, 0.995F},
+                .color = kCyan, .thickness = 1.5F});
+            ui.Canvas({.id = "tts.preview.portrait", .label = "TTS voice portrait"},
+                      {avatar_size, avatar_size}, std::move(portrait));
+
+            ui.TableColumn();
+            ui.Text(selected->voice_name, editor::ui::UiTextRole::Accent);
+            ui.SameLine();
+            ui.Text(selected->streaming ? "STREAM" : "BUFFER",
+                    editor::ui::UiTextRole::Muted);
+            if (!selected->text.empty())
+                ui.WrappedText(CompactDialogText(selected->text, 112));
+            const float plot_height = std::clamp(avatar_size * 0.72F, 112.0F, 154.0F);
+            plot = editor::ui::Plot(ui, {
+                .control = {.id = "tts.preview.waveform", .label = "Waveform",
+                    .enabled = selected->player.IsValid() && !selected->streaming && duration > 0.0},
+                .size = {std::max(240.0F, ui.AvailableContent().x), plot_height},
+                .x_axis = {.minimum = 0.0, .maximum = plot_duration, .divisions = 4},
+                .y_axis = {.minimum = 0.0, .maximum = 1.0, .divisions = 2},
+                .series = wave.empty() ? std::span<const editor::ui::UiPlotSeries>{}
+                                       : std::span<const editor::ui::UiPlotSeries>{series},
+                .style = style,
+                .empty_label = selected->streaming
+                    ? "Waveform appears when the server WAV arrives"
+                    : "Waveform appears when WAV audio is ready"});
+        });
+        if (plot.canvas.pressed && plot.has_pointer_value && duration > 0.0 &&
+            selected->player.IsValid() && !selected->streaming)
+            controller_->QueueSeek(static_cast<float>(plot.pointer_x));
+        if (duration > 0.0)
+            ui.Text(FormatDuration(view.elapsed_seconds) + " / " +
+                    FormatDuration(static_cast<float>(duration)),
+                    editor::ui::UiTextRole::Muted);
+        if (!selected->error.empty()) ui.Text(selected->error, editor::ui::UiTextRole::Error);
+
+        if (!selected->streaming && selected->durable)
+        {
+            const std::vector<editor::ui::UiChoice> rates{
+                {"0.5", "0.5x", 0.5}, {"0.75", "0.75x", 0.75},
+                {"1.0", "1.0x", 1.0}, {"1.25", "1.25x", 1.25},
+                {"1.5", "1.5x", 1.5}, {"2.0", "2.0x", 2.0}};
+            const auto rate = ui.Combo<double>({.id = "tts.preview.rate", .label = "Speed"},
+                view.playback_rate, rates);
+            if (rate.changed) controller_->QueuePlaybackRate(static_cast<float>(rate.value));
+            ui.SameLine();
         }
+        const bool muted = view.volume <= 0.001F;
+        if (!muted) last_audible_volume_ = view.volume;
+        if (ui.Button({.id = "tts.preview.mute", .label = muted ? "Unmute voice" : "Mute voice",
+                .text_role = editor::ui::UiTextRole::Accent,
+                .icon = icons_.Get(muted ? editor::EditorIcon::VolumeOff : editor::EditorIcon::VolumeOn)}).activated)
+            controller_->QueueVolume(muted ? last_audible_volume_ : 0.0F);
+        if (const auto volume = audio_editor::DrawAudioVolumeProgressControl(
+                ui, "tts.preview.volume", view.volume, ui.AvailableContent().x))
+            controller_->QueueVolume(*volume);
+
         audio_editor::TransportStripState transport{};
         transport.instance_id = "tts_preview";
-        transport.playback_state = TransportState(*selected, view.audio_state);
+        transport.playback_state = selected->player.IsValid()
+            ? TransportState(*selected, view.audio_state)
+            : audio_editor::TransportPlaybackState::Finished;
         transport.elapsed_seconds = view.elapsed_seconds;
         transport.duration_seconds = view.duration_seconds;
-        transport.capabilities.toggle_play_pause = selected->player.IsValid() &&
-            (!selected->streaming || view.audio_state != audio::AudioState::Finished ||
-             selected->durable);
+        transport.capabilities.toggle_play_pause = selected->durable || selected->player.IsValid();
         transport.capabilities.stop_voice = selected->player.IsValid() &&
             selected->state == tts::TTSJobState::Completed;
         transport.capabilities.cancel_job = selected->job.IsValid() &&
@@ -554,320 +457,203 @@ namespace kpengine::tts_editor
             selected->state != tts::TTSJobState::Failed;
         transport.capabilities.seek = selected->player.IsValid() && !selected->streaming;
         audio_editor::TransportStripStyle transport_style{};
-        transport_style.button_width = 78.0f;
-        transport_style.button_height = 36.0f;
+        transport_style.button_width = 78.0F;
+        transport_style.button_height = 36.0F;
         transport_style.stop_before_play = true;
-        ImGui::Indent(10.0f);
-        ImGui::Dummy({0.0f, 8.0f});
         const auto action = audio_editor::DrawTransportStrip(ui, transport, icons_, transport_style);
         if (action.toggle_play_pause) controller_->QueueTogglePlayPause();
         if (action.stop_voice) controller_->QueueStop();
         if (action.cancel_job) controller_->QueueCancel();
         if (action.seek_seconds) controller_->QueueSeek(*action.seek_seconds);
-        draw_preview_controls();
+        if (!selected->player.IsValid() && !selected->durable)
+            ui.Text(std::string("Job state: ") + JobLabel(selected->state), editor::ui::UiTextRole::Muted);
         if (selected->streaming)
-            ImGui::TextColored(kMuted, "Stream preview: seek and speed unavailable.");
+            ui.Text("Stream preview: seek and speed unavailable.", editor::ui::UiTextRole::Muted);
     }
 
-    void TtsEditorEditor::RenderDialogList(const TtsEditorView &view)
+    void TtsEditorEditor::RenderDialogList(editor::ui::UiContext &ui, const TtsEditorView &view)
     {
-        ImGui::TextColored(kCyan, "// DIALOG LIST");
-        ImGui::Separator();
+        ui.Section("DIALOG LIST");
         const auto selected = std::find_if(view.entries.begin(), view.entries.end(),
             [&view](const TtsEntryView &entry) { return entry.id == view.selected_id; });
-
-        if (ImGui::Button("NEW SPEECH"))
-            focus_text_input_ = true;
-        ImGui::SameLine();
-        ImGui::BeginDisabled(selected == view.entries.end() || !selected->durable);
-        if (ImGui::Button("DUPLICATE")) controller_->QueueDuplicate();
-        ImGui::SameLine();
-        if (ImGui::Button("DELETE")) controller_->QueueDelete();
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("IMPORT WAV"))
-            ImGui::OpenPopup("##tts_import_wav_popup");
-        ImGui::SameLine();
-        ImGui::BeginDisabled(selected == view.entries.end() || !selected->durable);
-        if (ImGui::Button("EXPORT WAV"))
+        if (ui.Button({.id = "tts.dialog.new", .label = "NEW SPEECH"}).activated)
+            CopyTo(text_, std::string{});
+        ui.SameLine();
+        if (ui.Button({.id = "tts.dialog.duplicate", .label = "Duplicate",
+                .enabled = selected != view.entries.end() && selected->durable}).activated)
+            controller_->QueueDuplicate();
+        ui.SameLine();
+        if (ui.Button({.id = "tts.dialog.delete", .label = "Delete",
+                .enabled = selected != view.entries.end() && selected->durable}).activated)
+            controller_->QueueDelete();
+        ui.SameLine();
+        if (ui.Button({.id = "tts.dialog.import", .label = "Import WAV"}).activated)
         {
-            std::snprintf(export_basename_.data(), export_basename_.size(),
-                          "speech-%llu", static_cast<unsigned long long>(selected->id));
-            ImGui::OpenPopup("##tts_export_wav_popup");
+            const editor::EditorFileDialogFilter filters[]{{"WAV audio", "*.wav"}};
+            for (const std::string &path : editor::PickFiles({
+                    .title = "Import WAV into dialog library", .filters = filters}))
+                controller_->QueueImport(path);
         }
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        const float search_width = std::clamp(ImGui::GetContentRegionAvail().x * 0.42f,
-                                              150.0f, 300.0f);
-        ImGui::SetNextItemWidth(search_width);
-        ImGui::InputTextWithHint("##tts_dialog_search", "Search dialogs...",
-                                 dialog_search_.data(), dialog_search_.size());
-
-        if (ImGui::BeginPopup("##tts_import_wav_popup"))
+        if (selected != view.entries.end() && selected->durable)
         {
-            ImGui::TextUnformatted("Import a WAV into the dialog library");
-            ImGui::SetNextItemWidth(340.0f);
-            ImGui::InputTextWithHint("##import_wav_path", "WAV file path",
-                                     import_path_.data(), import_path_.size());
-            if (ImGui::Button("IMPORT"))
+            ui.SameLine();
+            if (ui.Button({.id = "tts.dialog.export.quick", .label = "Export WAV"}).activated)
             {
-                controller_->QueueImport(import_path_.data());
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("CANCEL")) ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-        if (ImGui::BeginPopup("##tts_export_wav_popup"))
-        {
-            ImGui::TextUnformatted("Export selected dialog as WAV");
-            ImGui::SetNextItemWidth(240.0f);
-            ImGui::InputText("File name", export_basename_.data(), export_basename_.size());
-            if (ImGui::Button("EXPORT"))
-            {
+                if (export_basename_[0] == '\0')
+                    std::snprintf(export_basename_.data(), export_basename_.size(), "speech-%llu",
+                        static_cast<unsigned long long>(selected->id));
                 controller_->QueueExport(export_basename_.data());
-                ImGui::CloseCurrentPopup();
             }
-            ImGui::SameLine();
-            if (ImGui::Button("CANCEL")) ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
         }
+        ui.SameLine();
+        const auto search = ui.TextInput({.id = "tts.dialog.search", .label = "Search dialogs",
+            .hint = "Search dialogs...", .width = 220.0F}, dialog_search_.data());
+        if (search.changed) CopyTo(dialog_search_, search.value);
 
         filtered_dialog_indices_.clear();
         const std::string_view query{dialog_search_.data()};
         for (std::size_t index = 0; index < view.entries.size(); ++index)
         {
             const TtsEntryView &entry = view.entries[index];
-            const std::string_view state = JobLabel(entry.state);
-            char id_text[24]{};
-            std::snprintf(id_text, sizeof(id_text), "%llu",
-                          static_cast<unsigned long long>(entry.id));
-            if (ContainsCaseInsensitive(id_text, query) ||
-                ContainsCaseInsensitive(entry.text, query) ||
+            const std::string id = std::to_string(entry.id);
+            if (ContainsCaseInsensitive(id, query) || ContainsCaseInsensitive(entry.text, query) ||
                 ContainsCaseInsensitive(entry.voice_name, query) ||
-                ContainsCaseInsensitive(state, query))
+                ContainsCaseInsensitive(JobLabel(entry.state), query))
                 filtered_dialog_indices_.push_back(index);
         }
-        ImGui::TextColored(kMuted, "%zu / %zu dialogs",
-                          filtered_dialog_indices_.size(), view.entries.size());
-        if (view.entries.empty())
-        {
-            ImGui::TextColored(kMuted,
-                "No dialogs yet. Enter speech text and choose Generate Speech.");
-            return;
-        }
+        ui.Text(std::to_string(filtered_dialog_indices_.size()) + " / " +
+            std::to_string(view.entries.size()) + " dialogs", editor::ui::UiTextRole::Muted);
         if (filtered_dialog_indices_.empty())
+            ui.Text(view.entries.empty() ? "No dialogs yet. Enter speech text and generate."
+                                         : "No dialogs match this search.",
+                    editor::ui::UiTextRole::Muted);
+        if (!filtered_dialog_indices_.empty())
         {
-            ImGui::TextColored(kMuted, "No dialogs match this search.");
-            return;
-        }
-        const float max_table_height = std::clamp(
-            ImGui::GetContentRegionAvail().y * 0.62f, 220.0f, 470.0f);
-        const float table_height = std::min(max_table_height,
-            std::max(150.0f, 43.0f + filtered_dialog_indices_.size() * 30.0f));
-        const ImVec2 table_origin = ImGui::GetCursorScreenPos();
-        const float cell_padding_y = ImGui::GetStyle().CellPadding.y;
-        const float header_height = ImGui::GetTextLineHeight() + cell_padding_y * 2.0f;
-        if (ImGui::BeginTable("##dialogs", 6,
-            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
-            ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable,
-            ImVec2(0.0f, table_height)))
-        {
-            ImDrawList *const table_draw_list = ImGui::GetWindowDrawList();
-            ImVec2 body_clip_min = table_draw_list->GetClipRectMin();
-            const ImVec2 body_clip_max = table_draw_list->GetClipRectMax();
-            body_clip_min.y = std::max(body_clip_min.y, table_origin.y + header_height);
-            ImVec2 selection_min{};
-            ImVec2 selection_max{};
-            bool selection_visible = false;
-            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 44.0f);
-            ImGui::TableSetupColumn("Text", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Voice", ImGuiTableColumnFlags_WidthFixed, 88.0f);
-            ImGui::TableSetupColumn("Duration", ImGuiTableColumnFlags_WidthFixed, 74.0f);
-            ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 90.0f);
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 66.0f);
-            ImGui::TableHeadersRow();
-            ImGuiListClipper clipper;
-            clipper.Begin(static_cast<int>(filtered_dialog_indices_.size()), 30.0f);
-            while (clipper.Step())
+            const editor::ui::UiTableColumn columns[] = {{"#", 44.0F}, {"Text", 0.0F},
+                {"Voice", 88.0F}, {"Duration", 74.0F}, {"State", 90.0F}, {"", 66.0F}};
+            const float table_height = std::clamp(
+                42.0F + static_cast<float>(filtered_dialog_indices_.size()) * 30.0F,
+                150.0F, 470.0F);
+            ui.Table("tts.dialog.table", columns, table_height, true, [&]
             {
-                for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+                for (const std::size_t index : filtered_dialog_indices_)
                 {
-                    const auto &entry = view.entries[
-                        filtered_dialog_indices_[static_cast<std::size_t>(row)]];
-                    const std::string row_id = std::to_string(entry.id);
-                    ImGui::PushID(row_id.c_str());
-                    ImGui::TableNextRow(ImGuiTableRowFlags_None, 30.0f);
+                    const TtsEntryView &entry = view.entries[index];
                     const bool is_selected = entry.id == view.selected_id;
-                    if (is_selected)
-                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, kSelectedRow);
-                    ImGui::TableSetColumnIndex(0);
+                    const std::string prefix = "tts.dialog." + std::to_string(entry.id);
+                    const editor::ui::UiTextRole row_role = is_selected
+                        ? editor::ui::UiTextRole::Accent : editor::ui::UiTextRole::Primary;
+                    ui.TableRow(is_selected);
+                    ui.TableColumn();
+                    editor::ui::UiControlDescriptor select_control{};
+                    const std::string select_id = prefix + ".select";
+                    select_control.id = select_id;
                     char row_label[24]{};
                     std::snprintf(row_label, sizeof(row_label), "%03llu",
-                                  static_cast<unsigned long long>(entry.id));
-                    const float row_top = ImGui::GetCursorScreenPos().y -
-                        ImGui::GetStyle().CellPadding.y;
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        is_selected ? ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kCyan);
-                    ImGui::PushStyleColor(ImGuiCol_Header,
-                        ImGui::ColorConvertU32ToFloat4(kSelectedRow));
-                    ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
-                        ImGui::ColorConvertU32ToFloat4(is_selected ?
-                            kSelectedRowHovered : IM_COL32(7, 32, 42, 255)));
-                    const bool clicked = ImGui::Selectable(row_label, is_selected,
-                        ImGuiSelectableFlags_SpanAllColumns |
-                        ImGuiSelectableFlags_AllowDoubleClick);
-                    if (is_selected)
-                    {
-                        selection_min = ImVec2(ImGui::GetItemRectMin().x + 1.0f, row_top);
-                        selection_max = ImVec2(ImGui::GetItemRectMax().x - 1.0f,
-                                               row_top + 30.0f);
-                        selection_visible = true;
-                    }
-                    ImGui::PopStyleColor(3);
-                    if (clicked)
-                    {
+                        static_cast<unsigned long long>(entry.id));
+                    select_control.label = row_label;
+                    select_control.span_row = true;
+                    if (ui.Selectable(select_control, is_selected).activated)
                         controller_->QueueSelect(entry.id);
-                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                        {
-                            controller_->QueueTogglePlayPause();
-                        }
-                    }
-                    ImGui::TableSetColumnIndex(1);
-                    const auto text_capacity = std::max(12, static_cast<int>(
-                        (ImGui::GetColumnWidth() - 20.0f) / ImGui::GetFontSize()));
-                    const std::string row_text = CompactDialogText(entry.text,
-                        static_cast<std::size_t>(text_capacity));
-                    ImGui::TextColored(is_selected ?
-                        ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kText,
-                        "%s", row_text.c_str());
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::TextColored(is_selected ?
-                        ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kText,
-                        "%s", entry.voice_name.c_str());
-                    ImGui::TableSetColumnIndex(3);
-                    std::optional<float> duration;
-                    if (entry.preview_data)
-                        duration = entry.preview_data->duration_seconds;
-                    else if (entry.duration_seconds)
-                        duration = entry.duration_seconds;
-                    else if (entry.id == view.selected_id)
-                        duration = view.duration_seconds;
-                    ImGui::TextColored(is_selected ?
-                        ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kText,
-                        "%s", FormatDuration(duration).c_str());
-                    ImGui::TableSetColumnIndex(4);
-                    ImGui::TextColored(is_selected ?
-                        ImGui::ColorConvertU32ToFloat4(kSelectedAmber) : kText,
-                        "%s", JobLabel(entry.state));
-                    ImGui::TableSetColumnIndex(5);
-                    const bool can_cancel = entry.job.IsValid() &&
+
+                    ui.TableColumn();
+                    ui.Text(CompactDialogText(entry.text, 112), row_role);
+                    ui.TableColumn();
+                    ui.Text(entry.voice_name, row_role);
+                    ui.TableColumn();
+                    const std::optional<float> duration = entry.preview_data
+                        ? std::optional<float>{entry.preview_data->duration_seconds}
+                        : entry.duration_seconds;
+                    ui.Text(FormatDuration(duration), row_role);
+                    ui.TableColumn();
+                    ui.Text(JobLabel(entry.state), row_role);
+                    ui.TableColumn();
+                    const bool cancellable = entry.job.IsValid() &&
                         entry.state != tts::TTSJobState::Completed &&
                         entry.state != tts::TTSJobState::Cancelled &&
                         entry.state != tts::TTSJobState::Failed;
-                    const bool can_play = entry.durable || entry.player.IsValid();
-                    if (can_cancel)
+                    const bool playable = entry.durable || entry.player.IsValid();
+                    if (cancellable)
                     {
-                        if (is_selected)
-                        {
-                            ImGui::PushStyleColor(ImGuiCol_Button,
-                                ImGui::ColorConvertU32ToFloat4(kSelectedRow));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                ImGui::ColorConvertU32ToFloat4(kSelectedRowHovered));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                                ImGui::ColorConvertU32ToFloat4(kSelectedRowHovered));
-                            ImGui::PushStyleColor(ImGuiCol_Text,
-                                ImGui::ColorConvertU32ToFloat4(kSelectedAmber));
-                        }
-                        if (ImGui::SmallButton("CANCEL"))
+                        const std::string cancel_id = prefix + ".cancel";
+                        editor::ui::UiControlDescriptor cancel_control{};
+                        cancel_control.id = cancel_id;
+                        cancel_control.label = "CANCEL";
+                        if (ui.Button(cancel_control).activated)
                         {
                             controller_->QueueSelect(entry.id);
                             controller_->QueueCancel();
                         }
-                        if (is_selected) ImGui::PopStyleColor(4);
                     }
-                    else if (can_play)
+                    else if (playable)
                     {
                         const bool playing = entry.audio_state == audio::AudioState::Playing ||
                             entry.audio_state == audio::AudioState::Buffering;
-                        if (is_selected)
-                        {
-                            ImGui::PushStyleColor(ImGuiCol_Button,
-                                ImGui::ColorConvertU32ToFloat4(kSelectedRow));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                ImGui::ColorConvertU32ToFloat4(kSelectedRowHovered));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                                ImGui::ColorConvertU32ToFloat4(kSelectedRowHovered));
-                            ImGui::PushStyleColor(ImGuiCol_Text,
-                                ImGui::ColorConvertU32ToFloat4(kSelectedAmber));
-                        }
-                        if (ImGui::SmallButton(playing ? "PAUSE" : "PLAY"))
+                        const std::string play_id = prefix + ".play";
+                        editor::ui::UiControlDescriptor play_control{};
+                        play_control.id = play_id;
+                        play_control.label = playing ? "PAUSE" : "PLAY";
+                        if (ui.Button(play_control).activated)
                         {
                             controller_->QueueSelect(entry.id);
                             controller_->QueueTogglePlayPause();
                         }
-                        if (is_selected) ImGui::PopStyleColor(4);
                     }
-                    else
-                        ImGui::TextColored(kMuted, "—");
-                    ImGui::PopID();
                 }
-            }
-            ImGui::EndTable();
-            if (selection_visible && body_clip_max.y > body_clip_min.y)
-            {
-                table_draw_list->PushClipRect(body_clip_min, body_clip_max, true);
-                table_draw_list->AddRect(selection_min, selection_max, kSelectedAmber);
-                table_draw_list->PopClipRect();
-            }
+            });
         }
-        if (!view.last_export_path.empty())
-            ImGui::TextWrapped("Exported: %s", view.last_export_path.c_str());
-        if (!view.error.empty()) ImGui::TextColored(kError, "%s", view.error.c_str());
+        if (selected != view.entries.end() && selected->durable)
+        {
+            if (export_basename_[0] == '\0')
+                std::snprintf(export_basename_.data(), export_basename_.size(), "speech-%llu",
+                    static_cast<unsigned long long>(selected->id));
+            const auto basename = ui.TextInput({.id = "tts.dialog.export_name",
+                .label = "Export file name", .width = 220.0F}, export_basename_.data());
+            if (basename.changed) CopyTo(export_basename_, basename.value);
+            ui.SameLine();
+            if (ui.Button({.id = "tts.dialog.export", .label = "Export WAV"}).activated)
+                controller_->QueueExport(export_basename_.data());
+        }
+        if (!view.last_export_path.empty()) ui.WrappedText("Exported: " + view.last_export_path);
+        if (!view.error.empty()) ui.Text(view.error, editor::ui::UiTextRole::Error);
     }
 
-    void TtsEditorEditor::RenderSettings(const TtsEditorView &view)
+    void TtsEditorEditor::RenderSettings(editor::ui::UiContext &ui, const TtsEditorView &view)
     {
-        ImGui::TextColored(kCyan, "// TTS CONTROL");
-        ImGui::Separator();
+        ui.Section("TTS CONTROL");
         const TtsVoicePreset *selected_voice = SelectedVoice(draft_settings_);
-        std::optional<std::string> chosen_voice;
-        if (ImGui::BeginCombo("Voice preset", selected_voice ?
-            selected_voice->name.c_str() : "Select voice"))
+        std::vector<editor::ui::UiChoice> voices;
+        voices.reserve(draft_settings_.voices.size());
+        for (const auto &voice : draft_settings_.voices)
+            voices.push_back({voice.id, voice.name, voice.id});
+        if (!voices.empty())
         {
-            for (const auto &voice : draft_settings_.voices)
+            const auto voice = ui.Combo<std::string>({.id = "tts.settings.voice_preset",
+                .label = "Voice preset"}, selected_voice ? selected_voice->id : voices.front().key,
+                std::move(voices));
+            if (voice.changed)
             {
-                if (ImGui::Selectable(voice.name.c_str(),
-                                      voice.id == draft_settings_.selected_voice_id))
-                    chosen_voice = voice.id;
+                TtsEditorSettings updated = FieldsToSettings();
+                updated.selected_voice_id = voice.value;
+                CopySettingsToFields(updated);
             }
-            ImGui::EndCombo();
         }
-        if (chosen_voice)
-        {
-            TtsEditorSettings updated = FieldsToSettings();
-            updated.selected_voice_id = *chosen_voice;
-            CopySettingsToFields(updated);
-        }
-        ImGui::BeginDisabled(draft_settings_.voices.size() >= 16);
-        if (ImGui::SmallButton("ADD VOICE"))
+        if (ui.Button({.id = "tts.settings.add_voice", .label = "Add voice",
+                .enabled = draft_settings_.voices.size() < 16}).activated)
         {
             TtsEditorSettings updated = FieldsToSettings();
             std::uint32_t number = 1;
             std::string id;
-            do
-            {
-                id = "voice-" + std::to_string(number++);
-            } while (std::any_of(updated.voices.begin(), updated.voices.end(),
+            do { id = "voice-" + std::to_string(number++); }
+            while (std::any_of(updated.voices.begin(), updated.voices.end(),
                 [&id](const TtsVoicePreset &voice) { return voice.id == id; }));
             updated.voices.push_back({id, "New voice", {}, {}, {}});
             updated.selected_voice_id = id;
             CopySettingsToFields(updated);
         }
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        ImGui::BeginDisabled(draft_settings_.voices.size() <= 1);
-        if (ImGui::SmallButton("REMOVE VOICE"))
+        ui.SameLine();
+        if (ui.Button({.id = "tts.settings.remove_voice", .label = "Remove voice",
+                .enabled = draft_settings_.voices.size() > 1}).activated)
         {
             TtsEditorSettings updated = FieldsToSettings();
             std::erase_if(updated.voices, [&updated](const TtsVoicePreset &voice) {
@@ -876,141 +662,112 @@ namespace kpengine::tts_editor
             updated.selected_voice_id = updated.voices.front().id;
             CopySettingsToFields(updated);
         }
-        ImGui::EndDisabled();
-        ImGui::InputText("Voice", voice_name_.data(), voice_name_.size());
-        ImGui::InputText("Language", text_language_.data(), text_language_.size());
-        if (ImGui::BeginCombo("Playback mode", streaming_ ? "Stream" : "Buffer"))
+        const auto edit_text = [&ui](const std::string_view id, const std::string_view label,
+                                     auto &field, const bool multiline = false)
         {
-            if (ImGui::Selectable("Stream", streaming_)) streaming_ = true;
-            if (ImGui::Selectable("Buffer", !streaming_)) streaming_ = false;
-            ImGui::EndCombo();
-        }
-        if (ImGui::CollapsingHeader("SERVER AND REFERENCE", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            ImGui::InputText("Address", address_.data(), address_.size());
-            ImGui::InputInt("Port", &port_);
-            ImGui::InputText("API path", api_path_.data(), api_path_.size());
-            ImGui::InputInt("Timeout (s)", &timeout_seconds_);
-            ImGui::TextUnformatted("Reference audio (server path)");
-            ImGui::SetNextItemWidth(-1.0f);
-            ImGui::InputText("##reference_audio", ref_audio_path_.data(),
-                             ref_audio_path_.size());
-            ImGui::TextUnformatted("Reference text");
-            ImGui::InputTextMultiline("##reference_text", ref_text_.data(), ref_text_.size(),
-                                      ImVec2(-1.0f, 74.0f));
-            ImGui::TextUnformatted("Reference language");
-            ImGui::SetNextItemWidth(-1.0f);
-            ImGui::InputText("##reference_language", ref_language_.data(),
-                             ref_language_.size());
-        }
-        ImGui::BeginDisabled(!view.settings_loaded);
-        if (ImGui::Button("SAVE SETTINGS"))
+            const auto result = ui.TextInput({.id = id, .label = label,
+                .height = multiline ? 82.0F : 0.0F, .multiline = multiline}, field.data());
+            if (result.changed) CopyTo(field, result.value);
+        };
+        edit_text("tts.settings.voice_name", "Voice", voice_name_);
+        edit_text("tts.settings.language", "Text language", text_language_);
+        const std::vector<editor::ui::UiChoice> modes{
+            {"stream", "Stream", true}, {"buffer", "Buffer", false}};
+        const auto mode = ui.Combo<bool>({.id = "tts.settings.playback_mode", .label = "Playback mode"},
+            streaming_, modes);
+        if (mode.changed) streaming_ = mode.value;
+        ui.Section("SERVER AND REFERENCE");
+        edit_text("tts.settings.address", "Address", address_);
+        const auto port = ui.NumericInput<std::int64_t>({.id = "tts.settings.port", .label = "Port"},
+            port_, 0, 65535, 1);
+        if (port.changed) port_ = static_cast<int>(port.value);
+        edit_text("tts.settings.api_path", "API path", api_path_);
+        const auto timeout = ui.NumericInput<std::int64_t>(
+            {.id = "tts.settings.timeout", .label = "Timeout (s)"}, timeout_seconds_, 1, 3600, 1);
+        if (timeout.changed) timeout_seconds_ = static_cast<int>(timeout.value);
+        edit_text("tts.settings.ref_audio", "Reference audio (server path)", ref_audio_path_);
+        edit_text("tts.settings.ref_text", "Reference text", ref_text_, true);
+        edit_text("tts.settings.ref_language", "Reference language", ref_language_);
+        edit_text("tts.settings.output_directory", "Output folder", output_directory_);
+        if (ui.Button({.id = "tts.settings.save", .label = "Save settings",
+                .enabled = view.settings_loaded}).activated)
             controller_->QueueSettings(FieldsToSettings());
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("RELOAD"))
+        ui.SameLine();
+        if (ui.Button({.id = "tts.settings.reload", .label = "Reload"}).activated)
         {
             controller_->QueueReloadSettings();
             refresh_fields_ = true;
         }
         if (!view.settings_loaded)
-            ImGui::TextColored(kError, "Settings file needs repair before saving.");
+            ui.Text("Settings file needs repair before saving.", editor::ui::UiTextRole::Error);
         else if (!view.generation_blocker.empty())
-            ImGui::TextColored(kMuted, "%s", view.generation_blocker.c_str());
-        ImGui::TextColored(kMuted, "Changes apply to new speech jobs after Save.");
+            ui.Text(view.generation_blocker, editor::ui::UiTextRole::Muted);
+        ui.Text("Changes apply to new speech jobs after Save.", editor::ui::UiTextRole::Muted);
     }
 
-    void TtsEditorEditor::RenderTextInput(const TtsEditorView &view)
+    void TtsEditorEditor::RenderTextInput(editor::ui::UiContext &ui, const TtsEditorView &view)
     {
-        ImGui::TextColored(kCyan, "// TEXT INPUT");
-        ImGui::Separator();
-        if (focus_text_input_)
-        {
-            ImGui::SetKeyboardFocusHere();
-            focus_text_input_ = false;
-        }
-        ImGui::InputTextMultiline("##speech_text", text_.data(), text_.size(),
-                                  ImVec2(-1.0f, 130.0f));
-        const bool text_focused = ImGui::IsItemFocused();
-        ImGui::TextColored(kMuted, "%zu / 4096 bytes", std::strlen(text_.data()));
-        const bool submit_shortcut = text_focused && ImGui::GetIO().KeyCtrl &&
-            ImGui::IsKeyPressed(ImGuiKey_Enter);
+        ui.Section("TEXT INPUT");
+        const auto text = ui.TextInput({.id = "tts.text.input", .label = "Speech text",
+            .hint = "Enter text to synthesize", .height = 136.0F,
+            .multiline = true}, text_.data());
+        if (text.changed) CopyTo(text_, text.value);
+        ui.Text(std::to_string(std::strlen(text_.data())) + " / 4096 bytes",
+                editor::ui::UiTextRole::Muted);
         const bool can_submit = view.can_generate && text_[0] != '\0';
-        ImGui::BeginDisabled(!can_submit);
-        if (ImGui::Button("GENERATE SPEECH", ImVec2(-1.0f, 34.0f)) ||
-            (can_submit && submit_shortcut))
+        if (ui.Button({.id = "tts.text.generate", .label = "Generate speech",
+                .enabled = can_submit, .height = 34.0F}).activated)
             controller_->QueueGenerate(text_.data());
-        ImGui::EndDisabled();
         const auto selected = std::find_if(view.entries.begin(), view.entries.end(),
             [&view](const TtsEntryView &entry) { return entry.id == view.selected_id; });
-        const std::string *message = !view.error.empty() ? &view.error :
-            selected != view.entries.end() && !selected->error.empty() ?
-                &selected->error : nullptr;
-        if (message)
-        {
-            ImGui::PushStyleColor(ImGuiCol_Text, kError);
-            ImGui::TextWrapped("%s", message->c_str());
-            ImGui::PopStyleColor();
-        }
-        else if (!view.status.empty())
-            ImGui::TextColored(kMuted, "%s", view.status.c_str());
-        ImGui::Separator();
-        ImGui::TextColored(kCyan, "// OUTPUT");
-        ImGui::Text("Output folder: %s", output_directory_.data());
+        if (!view.error.empty()) ui.Text(view.error, editor::ui::UiTextRole::Error);
+        else if (selected != view.entries.end() && !selected->error.empty())
+            ui.Text(selected->error, editor::ui::UiTextRole::Error);
+        else if (!view.status.empty()) ui.Text(view.status, editor::ui::UiTextRole::Muted);
+        ui.Section("OUTPUT");
+        ui.WrappedText(std::string("Output folder: ") + output_directory_.data());
     }
 
     void TtsEditorEditor::RenderWorkspace(editor::ui::UiContext &ui)
     {
         if (!controller_) return;
+        const editor::ui::UiViewportInfo &viewport = ui.Viewport();
         const TtsEditorView view = controller_->GetView();
         if (refresh_fields_ && view.status == "Settings reloaded")
         {
             CopySettingsToFields(view.settings);
             refresh_fields_ = false;
         }
-        const ImGuiViewport *viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);
-        ImGui::SetNextWindowSize(viewport->WorkSize);
-        constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
-            ImGuiWindowFlags_NoTitleBar;
-        if (ImGui::Begin("TTS Tool", nullptr, flags))
+        editor::ui::UiTheme theme{};
+        theme.accent = kCyan;
+        theme.font = editor::ui::UiFontRole::Code;
+        const auto theme_scope = ui.Theme(theme);
         {
-            ui.SetHostContainer({.id = editor::ui::StableUiNodeId("tts.workspace"),
-                                 .role = editor::ui::UiRole::Group, .label = "TTS Tool"});
-            if (ui_->GetCodeFont()) ImGui::PushFont(ui_->GetCodeFont());
-            ImGui::TextColored(kCyan, "// TTS TOOL");
-            ImGui::Separator();
-            const float width = ImGui::GetContentRegionAvail().x;
-            if (width >= 900.0f)
+            const auto window = ui.Window({.id = "tts.workspace.main", .label = "TTS Tool"},
+                viewport.logical_origin,
+                {viewport.logical_extent.x * 0.69F, viewport.logical_extent.y});
+            if (window.ContentVisible())
             {
-                if (ImGui::BeginTable("##workspace", 2, ImGuiTableFlags_Resizable))
-                {
-                    ImGui::TableSetupColumn("##content", ImGuiTableColumnFlags_WidthStretch, 0.69f);
-                    ImGui::TableSetupColumn("##controls", ImGuiTableColumnFlags_WidthStretch, 0.31f);
-                    ImGui::TableNextColumn();
-                    RenderPreview(ui, view);
-                    ImGui::Spacing();
-                    RenderDialogList(view);
-                    ImGui::TableNextColumn();
-                    RenderSettings(view);
-                    ImGui::Spacing();
-                    RenderTextInput(view);
-                    ImGui::EndTable();
-                }
-            }
-            else
-            {
-                RenderTextInput(view);
-                ImGui::Spacing();
+                ui.SetHostContainer({.id = editor::ui::StableUiNodeId("tts.workspace.main.content"),
+                    .role = editor::ui::UiRole::Group, .label = "TTS Tool"});
+                ui.Section("TTS TOOL");
                 RenderPreview(ui, view);
-                ImGui::Spacing();
-                RenderDialogList(view);
-                ImGui::Spacing();
-                RenderSettings(view);
+                RenderDialogList(ui, view);
             }
-            if (ui_->GetCodeFont()) ImGui::PopFont();
         }
-        ImGui::End();
+        {
+            const editor::ui::UiVec2 control_origin{
+                viewport.logical_origin.x + viewport.logical_extent.x * 0.69F,
+                viewport.logical_origin.y};
+            const auto window = ui.Window(
+                {.id = "tts.workspace.controls", .label = "TTS Control"},
+                control_origin,
+                {viewport.logical_extent.x * 0.31F, viewport.logical_extent.y});
+            if (!window.ContentVisible()) return;
+            ui.SetHostContainer({.id = editor::ui::StableUiNodeId("tts.workspace.controls.content"),
+                .role = editor::ui::UiRole::Group, .label = "TTS Control"});
+            RenderSettings(ui, view);
+            RenderTextInput(ui, view);
+        }
     }
 }

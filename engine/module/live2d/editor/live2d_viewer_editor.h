@@ -8,12 +8,14 @@
 #include <string_view>
 
 #include "editor/settings/editor_settings.h"
-#include "editor/ui/editor_ui.h"
+#include "editor/ui/host/editor_ui_host.h"
 #include "graphics/backend/common/render_backend.h"
 #include "math/math_header.h"
 #include "module/live2d/render/live2d_render_contract.h"
 #include "module/live2d/runtime/live2d_model_instance.h"
 #include "module/live2d/runtime/live2d_model_resource.h"
+
+namespace kpengine { class LogSystem; }
 
 namespace kpengine::live2d::editor
 {
@@ -39,7 +41,7 @@ namespace kpengine::live2d::editor
         std::uint32_t live_gpu_handles = 0u;
         double frame_total_ms = 0.0;
         double render_work_ms = 0.0;
-        double imgui_work_ms = 0.0;
+        double ui_work_ms = 0.0;
         double game_tick_work_ms = 0.0;
         bool renderer_ready = false;
         Live2DGazeMode gaze_mode = Live2DGazeMode::Neutral;
@@ -69,7 +71,8 @@ namespace kpengine::live2d::editor
         Live2DViewerEditor(const Live2DViewerEditor &) = delete;
         Live2DViewerEditor &operator=(const Live2DViewerEditor &) = delete;
 
-        bool Initialize(const kpengine::editor::EditorUIInitInfo &init_info,
+        bool Initialize(const kpengine::editor::EditorUiHostInitInfo &init_info,
+                        kpengine::LogSystem *log_system,
                         const kpengine::editor::LogLevelColorTable &log_colors,
                         std::string &diagnostic);
         bool Render(const Live2DViewerEditorState &state,
@@ -77,8 +80,6 @@ namespace kpengine::live2d::editor
                     std::string &diagnostic);
         void Close() noexcept;
 
-        double GetLastImGuiBuildTimeMs() const noexcept;
-        double GetLastImGuiSubmitTimeMs() const noexcept;
         double GetLastRenderTimeMs() const noexcept;
 
     private:

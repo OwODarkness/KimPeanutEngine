@@ -24,6 +24,9 @@ namespace kpengine::editor{
                                      const data::ShaderData *fragment) = 0;
         virtual ImTextureID GetTextureID(const graphics::RenderTargetView &view) = 0;
         virtual void DrawSceneImage(ImTextureID texture_id, const ImVec2 &size) = 0;
+        virtual void DrawSceneImagePrimitive(ImDrawList *draw_list, ImTextureID texture_id,
+                                             const ImVec2 &minimum,
+                                             const ImVec2 &maximum) = 0;
     };
 }
 

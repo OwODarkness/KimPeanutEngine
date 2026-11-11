@@ -11,26 +11,15 @@
 #include <tuple>
 #include <utility>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <Windows.h>
-#include <commdlg.h>
-#include <shlobj.h>
-#endif
-
 #include "module/audio/audio_player_controller.h"
 #include "audio_player_theme.h"
 #include "audio_preview_widget.h"
+#include "editor/asset/editor_asset_file_dialog.h"
 #include "editor/ui/api/editor_ui/ui_backend.h"
-#include "editor/ui/editor_ui.h"
-#include "editor/ui/component/editor_docked_workspace.h"
-#include "editor/profile/editor_metric.h"
-#include "editor/profile/editor_profile_metrics.h"
+#include "editor/ui/host/editor_ui_host.h"
+#include "editor/workspace/editor_workspace.h"
 #include "runtime/audio/miniaudio_audio_system.h"
 #include "runtime/core/log/log_system.h"
-#include "runtime/engine.h"
 #include "runtime/runtime_global_context.h"
 #include "runtime/window/window_system.h"
 #include "runtime/render/render_system.h"
@@ -42,6 +31,24 @@ namespace kpengine::audio_player
         using editor::ui::UiContext;
         using editor::ui::UiTableColumn;
         using editor::ui::UiTextRole;
+
+        editor::WorkspaceLayoutPreset AudioWorkspaceLayout()
+        {
+            using editor::WorkspaceAxis;
+            using editor::WorkspaceRegion;
+            using editor::WorkspaceSplit;
+            return {
+                .regions = {{"audio.library", "Library"}, {"audio.playlists", "Playlists"},
+                            {"audio.now_playing", "Now Playing"}, {"audio.queue", "Queue"},
+                            {"audio.info", "Info"}, {"audio.spectrum", "Spectrum"}},
+                .splits = {
+                    {"audio.columns", WorkspaceAxis::Horizontal, 0.18f, 180.0f, 400.0f, 1, 2},
+                    {"audio.left_rows", WorkspaceAxis::Vertical, 0.58f, 120.0f, 120.0f, -1, -2},
+                    {"audio.right_columns", WorkspaceAxis::Horizontal, 0.72f, 300.0f, 200.0f, 3, 4},
+                    {"audio.center_rows", WorkspaceAxis::Vertical, 0.58f, 160.0f, 120.0f, -3, -4},
+                    {"audio.right_rows", WorkspaceAxis::Vertical, 0.58f, 120.0f, 120.0f, -5, -6}},
+                .root = 0};
+        }
 
         std::string CountLabel(const std::size_t count)
         {
@@ -102,73 +109,12 @@ namespace kpengine::audio_player
             return "audio.library.project." + std::string{content_id};
         }
 
-#ifdef _WIN32
-        std::string WideToUtf8(const std::wstring_view wide)
-        {
-            if (wide.empty()) return {};
-            const int bytes = WideCharToMultiByte(CP_UTF8, 0, wide.data(),
-                static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
-            if (bytes <= 0) return {};
-            std::string result(static_cast<std::size_t>(bytes), '\0');
-            WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
-                                result.data(), bytes, nullptr, nullptr);
-            return result;
-        }
-
-        std::vector<std::string> PickAudioFiles()
-        {
-            std::vector<wchar_t> buffer(65536, L'\0');
-            OPENFILENAMEW dialog{};
-            dialog.lStructSize = sizeof(dialog);
-            dialog.lpstrFilter = L"Audio files\0*.wav;*.mp3;*.flac;*.ogg;*.m4a\0All files\0*.*\0\0";
-            dialog.lpstrFile = buffer.data();
-            dialog.nMaxFile = static_cast<DWORD>(buffer.size());
-            dialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT |
-                           OFN_HIDEREADONLY;
-            if (!GetOpenFileNameW(&dialog)) return {};
-            const wchar_t *cursor = buffer.data();
-            const std::wstring directory{cursor};
-            cursor += directory.size() + 1;
-            if (*cursor == L'\0') return {WideToUtf8(directory)};
-
-            std::vector<std::string> result;
-            while (*cursor != L'\0')
-            {
-                const std::wstring filename{cursor};
-                result.push_back(WideToUtf8(directory + L"\\" + filename));
-                cursor += filename.size() + 1;
-            }
-            return result;
-        }
-
-        std::string PickSubtitleFile()
-        {
-            std::array<wchar_t, 32768> path{};
-            OPENFILENAMEW dialog{};
-            dialog.lStructSize = sizeof(dialog);
-            dialog.lpstrFilter = L"Subtitles\0*.srt;*.vtt;*.lrc\0All files\0*.*\0\0";
-            dialog.lpstrFile = path.data();
-            dialog.nMaxFile = static_cast<DWORD>(path.size());
-            dialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-            return GetOpenFileNameW(&dialog) ? WideToUtf8(path.data()) : std::string{};
-        }
-
-        std::string PickAudioFolder()
-        {
-            BROWSEINFOW dialog{};
-            dialog.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-            PIDLIST_ABSOLUTE selected = SHBrowseForFolderW(&dialog);
-            if (selected == nullptr) return {};
-            std::array<wchar_t, MAX_PATH> path{};
-            const bool valid = SHGetPathFromIDListW(selected, path.data()) != FALSE;
-            CoTaskMemFree(selected);
-            return valid ? WideToUtf8(path.data()) : std::string{};
-        }
-#else
-        std::vector<std::string> PickAudioFiles() { return {}; }
-        std::string PickSubtitleFile() { return {}; }
-        std::string PickAudioFolder() { return {}; }
-#endif
+        constexpr std::array<editor::EditorFileDialogFilter, 2> kAudioFileFilters{{
+            {"Audio files", "*.wav;*.mp3;*.flac;*.ogg;*.m4a"},
+            {"All files", "*.*"}}};
+        constexpr std::array<editor::EditorFileDialogFilter, 2> kSubtitleFileFilters{{
+            {"Subtitles", "*.srt;*.vtt;*.lrc"},
+            {"All files", "*.*"}}};
 
         const char *LogLevelName(const program::LogLevel level)
         {
@@ -197,6 +143,7 @@ namespace kpengine::audio_player
                                        AudioPlayerController &controller,
                                        std::string &diagnostic)
     {
+        (void)engine;
         diagnostic.clear();
         runtime::RuntimeContext &context = runtime::global_runtime_context;
         if (context.window_system_ == nullptr || context.render_system_ == nullptr ||
@@ -209,40 +156,29 @@ namespace kpengine::audio_player
         audio_system_ = &audio_system;
         log_system_ = context.log_system_.get();
 
-        editor::EditorUIInitInfo init_info{};
-        init_info.window = context.window_system_->GetNativeHandle();
-        init_info.editor_presentation_bridge =
-            context.render_system_->GetEditorPresentationBridge();
-        init_info.log_system = context.log_system_.get();
-        init_info.engine = &engine;
-        init_info.render_system = context.render_system_.get();
-        init_info.window_system = context.window_system_.get();
-
         try
         {
             icons_.Load();
-            workspace_ = std::make_unique<editor::EditorDockedWorkspace>(
-                editor::CreateEditorProfileMetrics(
-                    &engine, context.memory_sampler_.get(), context.render_system_.get()));
-            using Slot = editor::EditorLayoutSlot;
-            const auto panel = [this](const char *id, const char *title, const Slot slot,
+            workspace_ = std::make_unique<editor::EditorWorkspace>(AudioWorkspaceLayout(), "audio.player");
+            const auto panel = [this](const char *id, const char *title, const char *region,
                                       void (AudioPlayerEditor::*draw)(UiContext &))
             {
-                workspace_->AddPanel(id, title, slot, [this, draw](UiContext &ui) {
+                workspace_->AddPanel(id, title, region, [this, draw](UiContext &ui) {
                     const auto theme = ui.Theme(AudioPlayerTheme::style);
                     (this->*draw)(ui);
                 });
             };
-            panel("audio_library", "Library", Slot::WorldOutliner, &AudioPlayerEditor::RenderLibrary);
-            panel("audio_playlists", "Playlists", Slot::ActorInspector, &AudioPlayerEditor::RenderPlaylists);
-            panel("audio_now_playing", "Now Playing", Slot::Viewport, &AudioPlayerEditor::RenderNowPlaying);
-            panel("audio_queue", "Playlist : All", Slot::ToolRow, &AudioPlayerEditor::RenderQueue);
-            panel("audio_log", "Output Log", Slot::ToolRow, &AudioPlayerEditor::RenderOutputLog);
-            panel("audio_info", "Info", Slot::CameraSettings, &AudioPlayerEditor::RenderInfo);
-            panel("audio_spectrum", "Spectrum", Slot::DebugViewer, &AudioPlayerEditor::RenderSpectrum);
-            ui_ = std::make_unique<editor::EditorUI>();
-            ui_->InitializeUiViewer(init_info,
-                [this](UiContext &ui) { RenderWorkspace(ui); });
+            panel("audio_library", "Library", "audio.library", &AudioPlayerEditor::RenderLibrary);
+            panel("audio_playlists", "Playlists", "audio.playlists", &AudioPlayerEditor::RenderPlaylists);
+            panel("audio_now_playing", "Now Playing", "audio.now_playing", &AudioPlayerEditor::RenderNowPlaying);
+            panel("audio_queue", "Playlist : All", "audio.queue", &AudioPlayerEditor::RenderQueue);
+            panel("audio_log", "Output Log", "audio.queue", &AudioPlayerEditor::RenderOutputLog);
+            panel("audio_info", "Info", "audio.info", &AudioPlayerEditor::RenderInfo);
+            panel("audio_spectrum", "Spectrum", "audio.spectrum", &AudioPlayerEditor::RenderSpectrum);
+            ui_ = std::make_unique<editor::EditorUiHost>();
+            ui_->Initialize({
+                .window = context.window_system_->GetNativeHandle(),
+                .presentation_bridge = context.render_system_->GetEditorPresentationBridge()});
         }
         catch (const std::exception &exception)
         {
@@ -256,7 +192,8 @@ namespace kpengine::audio_player
     bool AudioPlayerEditor::Render(std::string &diagnostic)
     {
         diagnostic.clear();
-        if (ui_ == nullptr || !ui_->Render())
+        if (ui_ == nullptr || !ui_->RenderFrame(
+                [this](UiContext &ui) { RenderWorkspace(ui); }))
         {
             diagnostic = "Audio Player presentation failed";
             return false;
@@ -394,13 +331,17 @@ namespace kpengine::audio_player
         if (ui.Button({.id = "audio.library.browse-files", .label = "ADD FILES",
                        .width = half_button}).activated)
         {
-            for (std::string &file : PickAudioFiles()) ReportImport(std::move(file), subtitle_path_);
+            for (std::string &file : editor::PickFiles({
+                     .title = "Select audio files",
+                     .filters = kAudioFileFilters,
+                     .allow_multiple = true}))
+                ReportImport(std::move(file), subtitle_path_);
         }
         ui.SameLine();
         if (ui.Button({.id = "audio.library.import-folder", .label = "ADD FOLDER",
                        .width = half_button}).activated)
         {
-            const std::string folder = PickAudioFolder();
+            const std::string folder = editor::PickFolder("Select audio folder");
             if (!folder.empty())
             {
                 std::string diagnostic;
@@ -437,8 +378,11 @@ namespace kpengine::audio_player
             if (ui.Button({.id = "audio.library.browse-subtitle", .label = "BROWSE SUBTITLE",
                            .width = field_width}).activated)
             {
-                const auto selected = PickSubtitleFile();
-                if (!selected.empty()) subtitle_path_ = selected;
+                const auto selected = editor::PickFiles({
+                    .title = "Select subtitle file",
+                    .filters = kSubtitleFileFilters,
+                    .allow_multiple = false});
+                if (!selected.empty()) subtitle_path_ = selected.front();
             }
         }
         if (!ui_status_.empty()) ui.Text(ui_status_);

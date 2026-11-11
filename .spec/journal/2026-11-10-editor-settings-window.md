@@ -47,3 +47,31 @@
   visible apply/save failure states, and requested-versus-active reporting when
   those values differ. No settings were saved or edited in the visible engine
   runs.
+
+## 2026-11-11 neutral UI migration follow-up
+
+- Operation and acceptance: move the Settings window, navigation, search,
+  property/status presentation, actions, and close confirmation onto the
+  current Editor `UiContext` API; the Settings sources must contain no direct
+  ImGui calls while draft/apply/save/close behavior remains owned by the
+  existing Settings model and view.
+- Existing candidates inspected: `SettingsEditorView` currently mixes ImGui
+  layout with `SettingsPropertyFieldsView`; `UiContext` already provides
+  windows, tables, search inputs, buttons, choices, status text, and stable IDs;
+  `EditorWindowComponent` owns an ImGui window and is unsuitable as the Settings
+  container once the feature window itself moves to `UiContext::Window`.
+- Placement and reason: extend the existing Settings view and Settings window
+  adapter in their current Editor-only locations. Reuse the typed property
+  renderer and Settings model. Do not add a generic Settings layout abstraction;
+  the Settings view owns search/navigation/confirmation presentation, and its
+  Editor adapter owns neutral window visibility and close lifecycle.
+- Consumers/ownership/validation: `EditorUI` owns the Settings adapter and
+  borrowed Settings model/access lifetimes. The adapter opens a neutral window
+  within the active Editor UI frame. Validate by building the engine, checking
+  source for ImGui leakage, `git diff --check`, and the placement audit; visible
+  runtime review remains separate.
+- Validation: `cmake --build build --config Debug --target KimPeanutEngine -- /m:1`
+  passed after CMake regeneration. `rg` found no ImGui symbols, headers, or
+  legacy `EditorWindowComponent` references in the Settings editor sources;
+  `git diff --check` passed; the final placement audit passed structural checks.
+- Not verified: no visible runtime review was performed for this migration.

@@ -1,8 +1,11 @@
 target_sources(EditorUILib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_layout_settings.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/editor_settings.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/editor_settings_window_component.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/editor_settings_window.cpp
 )
+
+add_library(EditorSettingsConfigLib STATIC editor_settings.cpp)
+target_include_directories(EditorSettingsConfigLib PUBLIC ${CMAKE_SOURCE_DIR}/engine)
+target_link_libraries(EditorSettingsConfigLib PRIVATE Config Log KP::NlohmannJson)
 
 # The feature-specific Settings UI lives with RuntimeSettings, but this
 # editor-only subdirectory contributes sources to EditorUILib, never RuntimeSettings.

@@ -2,6 +2,7 @@
 #include "editor_ui/ui_backend.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <string>
 
@@ -124,6 +125,7 @@ namespace kpengine::editor
 
     void EditorToolRowComponent::RenderImpl(ui::UiContext *context)
     {
+        floating_bounds_.clear();
         // Update every content object, including hidden tabs, before drawing hosts.
         for (std::size_t index = 0; index < panels_.size(); ++index)
         {
@@ -145,6 +147,25 @@ namespace kpengine::editor
         }
         RenderFloatingPanels(context);
 
+        const ImGuiIO &io = ImGui::GetIO();
+        const bool pointer_valid = std::isfinite(io.MousePos.x) && std::isfinite(io.MousePos.y) &&
+                                   io.MousePos.x > -FLT_MAX * 0.5f && io.MousePos.y > -FLT_MAX * 0.5f;
+        if (drag_candidate_index_ >= 0)
+        {
+            if (io.AppFocusLost || ImGui::IsKeyPressed(ImGuiKey_Escape) || !pointer_valid ||
+                (!io.MouseDown[ImGuiMouseButton_Left] && !ImGui::IsMouseReleased(ImGuiMouseButton_Left)))
+                drag_candidate_index_ = -1;
+            else if (io.MouseDown[ImGuiMouseButton_Left] &&
+                std::hypot(io.MousePos.x - drag_press_x_, io.MousePos.y - drag_press_y_) >= kDragThreshold)
+            {
+                drag_index_ = drag_candidate_index_;
+                drag_candidate_index_ = -1;
+            }
+        }
+        if (drag_index_ >= 0 && (io.AppFocusLost || ImGui::IsKeyPressed(ImGuiKey_Escape) || !pointer_valid ||
+            (!io.MouseDown[ImGuiMouseButton_Left] && !ImGui::IsMouseReleased(ImGuiMouseButton_Left))))
+            drag_index_ = -1;
+
         // The bottom dock's destination is its REGION, not its window. The window is not
         // submitted once every panel has been dragged out of it, and the place to drop a
         // panel back into must not vanish with it.
@@ -153,11 +174,14 @@ namespace kpengine::editor
             row_rect_ = layout_->RectOf(EditorLayoutSlot::ToolRow);
         }
 
-        // Both draw on the foreground list, so ordering is call order: targets first, then
-        // the ghost that must land on top of them. Neither is inside a window, because
-        // either has to keep working when no dock window was drawn.
-        RenderPlacementTargets();
-        RenderDragPreview();
+    }
+
+    void EditorToolRowComponent::RenderOverlay(const std::span<const EditorRect> external_occlusions)
+    {
+        std::vector<EditorRect> occlusions = floating_bounds_;
+        occlusions.insert(occlusions.end(), external_occlusions.begin(), external_occlusions.end());
+        RenderPlacementTargets(occlusions);
+        RenderDragPreview(occlusions);
     }
 
     void EditorToolRowComponent::RenderDock(EditorLayoutSlot dock, ui::UiContext *context)
@@ -265,7 +289,14 @@ namespace kpengine::editor
         // teardown could lose. Unlike EditorWindowComponent's default, a hosted panel DOES
         // get a close button: the View menu lists every entry, so a closed one comes back.
         bool open = true;
-        const bool contents_visible = ImGui::Begin(entry->title.c_str(), &open, flags);
+        const std::string window_name = entry->title + "###editor.panel." + entry->id;
+        const bool contents_visible = ImGui::Begin(window_name.c_str(), &open, flags);
+        if (!pinned)
+        {
+            const ImVec2 position = ImGui::GetWindowPos();
+            const ImVec2 size = ImGui::GetWindowSize();
+            floating_bounds_.push_back({position.x, position.y, size.x, size.y});
+        }
         if (contents_visible && model_.ConsumeFocusRequest(index))
         {
             ImGui::SetWindowFocus();
@@ -277,18 +308,9 @@ namespace kpengine::editor
         // a drag instead.
         if (contents_visible)
         {
-            const ImVec2 win_pos = ImGui::GetWindowPos();
-            const float title_h = ImGui::GetFrameHeight();
-            const ImVec2 title_min(win_pos.x, win_pos.y);
-            const ImVec2 title_max(win_pos.x + ImGui::GetWindowWidth() - title_h,
-                                   win_pos.y + title_h);
-            if (!model_.IsLocked(index) && ImGui::IsWindowHovered() &&
-                ImGui::IsMouseHoveringRect(title_min, title_max) &&
-                ImGui::IsMouseDragging(ImGuiMouseButton_Left, kDragThreshold))
-            {
-                drag_index_ = static_cast<int>(index);
-                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-            }
+            const ImVec2 title_min = ImGui::GetWindowPos();
+            const ImVec2 title_max(title_min.x + ImGui::GetWindowWidth(),
+                                   title_min.y + ImGui::GetFrameHeight());
             if (model_.IsLocked(index) && ImGui::IsWindowHovered() &&
                 ImGui::IsMouseHoveringRect(title_min, title_max))
             {
@@ -366,7 +388,7 @@ namespace kpengine::editor
 
             // Grab every item query before drawing or opening a popup, both of which
             // replace the "last item" state.
-            const bool item_active = ImGui::IsItemActive();
+            const bool left_clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
             const bool right_clicked = ImGui::IsItemClicked(ImGuiMouseButton_Right);
             const bool hovered = ImGui::IsItemHovered();
             const ImVec2 tab_min = ImGui::GetItemRectMin();
@@ -397,10 +419,11 @@ namespace kpengine::editor
                     model_.SetActiveInDock(dock, index);
                 }
             }
-            if (!model_.IsDockLocked(dock) && item_active &&
-                ImGui::IsMouseDragging(ImGuiMouseButton_Left, kDragThreshold))
+            if (!model_.IsDockLocked(dock) && left_clicked && !over_close)
             {
-                drag_index_ = static_cast<int>(index);
+                drag_candidate_index_ = static_cast<int>(index);
+                drag_press_x_ = ImGui::GetIO().MousePos.x;
+                drag_press_y_ = ImGui::GetIO().MousePos.y;
             }
             if (right_clicked)
             {
@@ -435,7 +458,7 @@ namespace kpengine::editor
         }
     }
 
-    void EditorToolRowComponent::RenderPlacementTargets()
+    void EditorToolRowComponent::RenderPlacementTargets(const std::span<const EditorRect> occlusions)
     {
         if (layout_ == nullptr)
         {
@@ -445,12 +468,9 @@ namespace kpengine::editor
         // Which dock the drag is over, so it can be highlighted. Computed here rather than
         // in the preview so the dock the user sees lit up is the one the drop resolves to,
         // from one hit test.
-        EditorLayoutSlot hovered = EditorLayoutSlot::Count;
-        if (drag_index_ >= 0)
-        {
-            const ImVec2 mouse = ImGui::GetMousePos();
-            hovered = layout_->HitTestDock(mouse.x, mouse.y);
-        }
+        const ImVec2 mouse = ImGui::GetMousePos();
+        const EditorPlacementTarget target = drag_index_ >= 0
+            ? ResolveTargetAt(mouse.x, mouse.y, occlusions) : EditorPlacementTarget{};
 
         ImDrawList *const foreground = ImGui::GetForegroundDrawList();
 
@@ -459,28 +479,25 @@ namespace kpengine::editor
         // the opposite of what a drop does now.
         const auto draw_target = [&](const EditorRect &rect, bool lit, const char *idle_hint)
         {
-            const ImVec2 min(rect.x, rect.y);
-            const ImVec2 max(rect.x + rect.width, rect.y + rect.height);
-
             // A faint fill as well as the outline. The first capture of this feature drew
             // only a 1 px dashed line at half alpha, which was invisible against the window
             // background — an empty region then reads as a rendering hole rather than as a
             // destination, which is the opposite of the point.
-            foreground->AddRectFilled(
-                min, max, ImGui::GetColorU32(ImGuiCol_NavHighlight, lit ? 0.12f : 0.04f));
-            DrawDashedRect(foreground, min, max,
-                           ImGui::GetColorU32(lit ? ImGuiCol_NavHighlight : ImGuiCol_Border,
-                                              lit ? 1.0f : 0.85f),
-                           7.0f);
-
-            // Always labelled, not only mid-drag: the region is empty whether or not a drag
-            // is in flight, and an unlabelled empty rectangle in the workspace is
-            // indistinguishable from something having failed to draw.
-            const char *const hint = lit ? "Drop here" : idle_hint;
-            const ImVec2 text = ImGui::CalcTextSize(hint);
-            const ImVec2 center((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
-            foreground->AddText(ImVec2(center.x - text.x * 0.5f, center.y - text.y * 0.5f),
-                                ImGui::GetColorU32(ImGuiCol_Text, lit ? 1.0f : 0.45f), hint);
+            for (const EditorRect &piece : SubtractOcclusions(rect, occlusions))
+            {
+                const ImVec2 min(piece.x, piece.y);
+                const ImVec2 max(piece.x + piece.width, piece.y + piece.height);
+                foreground->AddRectFilled(min, max,
+                    ImGui::GetColorU32(ImGuiCol_NavHighlight, lit ? 0.12f : 0.04f));
+                DrawDashedRect(foreground, min, max,
+                    ImGui::GetColorU32(lit ? ImGuiCol_NavHighlight : ImGuiCol_Border,
+                                       lit ? 1.0f : 0.85f), 7.0f);
+                const char *const hint = lit ? "Drop here" : idle_hint;
+                const ImVec2 text = ImGui::CalcTextSize(hint);
+                const ImVec2 center((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+                foreground->AddText(ImVec2(center.x - text.x * 0.5f, center.y - text.y * 0.5f),
+                    ImGui::GetColorU32(ImGuiCol_Text, lit ? 1.0f : 0.45f), hint);
+            }
         };
 
         for (std::size_t slot = 0; slot < kEditorLayoutSlotCount; ++slot)
@@ -491,29 +508,29 @@ namespace kpengine::editor
             {
                 continue;
             }
-            draw_target(layout_->RectOf(dock), dock == hovered,
+            draw_target(layout_->RectOf(dock), target.kind == EditorPlacementTargetKind::Dock &&
+                        target.dock == dock,
                         dock == EditorLayoutSlot::ToolRow
                             ? "Drop a panel here to restore the tool row"
                             : "Drop a panel here");
         }
     }
 
-    void EditorToolRowComponent::RenderDragPreview()
+    void EditorToolRowComponent::RenderDragPreview(const std::span<const EditorRect> occlusions)
     {
         if (drag_index_ < 0)
         {
             return;
         }
 
-        const ImVec2 mouse = ImGui::GetMousePos();
+        const ImGuiIO &io = ImGui::GetIO();
+        const ImVec2 mouse = io.MousePos;
 
         // Resolve on the global release edge, BEFORE anything can return early, so a
         // release anywhere on screen always ends the gesture. Ending it only when a target
         // resolved would strand drag_index_: the gesture would stay "in flight" with no
         // ghost, and the next click anywhere would then apply a drop the user never started.
-        const EditorPlacementTarget target =
-            layout_ != nullptr ? ResolvePlacementDrop(*layout_, mouse.x, mouse.y)
-                               : EditorPlacementTarget{};
+        const EditorPlacementTarget target = ResolveTargetAt(mouse.x, mouse.y, occlusions);
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
         {
             const auto index = static_cast<std::size_t>(drag_index_);
@@ -526,9 +543,10 @@ namespace kpengine::editor
                 (void)model_.MoveToDock(index, target.dock);
                 break;
             case EditorPlacementTargetKind::Float:
+                (void)model_.FloatPanel(index);
+                break;
             case EditorPlacementTargetKind::None:
             default:
-                (void)model_.FloatPanel(index);
                 break;
             }
             drag_index_ = -1;
@@ -571,8 +589,34 @@ namespace kpengine::editor
         }
         }
 
-        foreground->AddRectFilled(ghost_min, ghost_max, fill);
-        foreground->AddRect(ghost_min, ghost_max, border, 0.0f, 0, 2.0f);
+        for (const EditorRect &piece : SubtractOcclusions(
+                 {ghost_min.x, ghost_min.y, ghost_max.x - ghost_min.x,
+                  ghost_max.y - ghost_min.y}, occlusions))
+        {
+            foreground->PushClipRect(ImVec2(piece.x, piece.y),
+                ImVec2(piece.x + piece.width, piece.y + piece.height), true);
+            foreground->AddRectFilled(ghost_min, ghost_max, fill);
+            foreground->AddRect(ghost_min, ghost_max, border, 0.0f, 0, 2.0f);
+            foreground->PopClipRect();
+        }
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    }
+
+    EditorPlacementTarget EditorToolRowComponent::ResolveTargetAt(
+        const float x, const float y, const std::span<const EditorRect> occlusions) const noexcept
+    {
+        if (layout_ == nullptr || !std::isfinite(x) || !std::isfinite(y) ||
+            ImGui::GetIO().AppFocusLost ||
+            ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) ||
+            IsOccluded(x, y, occlusions))
+            return {};
+        const EditorLayoutSlot dock = layout_->HitTestDock(x, y);
+        if (dock != EditorLayoutSlot::Count)
+            return {EditorPlacementTargetKind::Dock, dock};
+        const ImGuiViewport *const viewport = ImGui::GetMainViewport();
+        const EditorRect work{viewport->WorkPos.x, viewport->WorkPos.y,
+                              viewport->WorkSize.x, viewport->WorkSize.y};
+        if (work.Contains(x, y)) return {EditorPlacementTargetKind::Float, EditorLayoutSlot::Count};
+        return {};
     }
 }

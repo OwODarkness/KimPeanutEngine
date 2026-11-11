@@ -17,3 +17,5 @@ function(copy_runtime_dependencies target)
     )
 
 endfunction()
+
+add_subdirectory(smoke/editor_ui)

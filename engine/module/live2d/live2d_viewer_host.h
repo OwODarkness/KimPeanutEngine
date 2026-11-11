@@ -154,7 +154,7 @@ namespace kpengine::live2d
         float elapsed_seconds_ = 0.0f;
         double game_tick_work_ms_ = 0.0;
         double render_work_ms_ = 0.0;
-        double imgui_work_ms_ = 0.0;
+        double ui_work_ms_ = 0.0;
         double frame_total_ms_ = 0.0;
         bool render_initialized_ = false;
         bool window_initialized_ = false;

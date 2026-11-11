@@ -1,10 +1,25 @@
 # Known Dead Code & Stale Paths
 
-**Last audited: 2026-08-16.** One place listing code that is *not in the build*, *not wired*, or *slated for retirement*. Rules of thumb for agents working in this repo:
+**Last audited: 2026-11-11.** One place listing code that is *not in the build*, *not wired*, or *slated for retirement*. Rules of thumb for agents working in this repo:
 
 - **"Not in the build"** → don't fix it as if it were live. Either delete it or (if it's the seed of the intended design) resurrect it deliberately.
 - **"Slated for retirement"** → don't extend it; replace it per the reconstruction docs.
 - When you find new dead/stale code, add it here.
+
+**Removed 2026-11-11 (Audio editor ownership cleanup):** the unbuilt and
+unreferenced `engine/editor/ui/component/editor_audio_component.h/.cpp` duplicate
+was removed. Output-device controls, mixer gain/mute controls and telemetry
+already live in `module/audio/editor/AudioPlayerEditor::RenderInfo`, implemented
+through the neutral Editor UI API.
+
+**Removed 2026-11-11 (ED6.5 wrapper cleanup):** the unreferenced
+`editor_button_component`, `editor_container_component`,
+`editor_listbox_component`, `editor_plot_component`, `editor_text_component`, and
+`editor_tooltip_component` source/header groups were deleted with their
+`EditorUILib` source entries. The unused `editor_camera_component.h`,
+`editor_scene_component.h`, `editor_drag_component.h`, and
+`editor_slider_component.h` declarations were deleted. Current consumers use the
+neutral UI API, shared Plot, and workspace host.
 
 **Removed 2026-08-15 (Phase 0 of the [Vulkan decoupling](graphics/vulkanbackend.md)):** `shader_manager.h/.cpp`, `shader_factory.h`, `vulkan_shader.h/.cpp`, `opengl_shader.h/.cpp`, the `graphics::Shader` base (`common/shader.h`), `ResourceShader`, `ShaderLoader` (`common/shader_loader.h/.cpp`), and the orphaned `backend/vulkan/CMakeLists.txt` / `backend/opengl/CMakeLists.txt` (never `add_subdirectory`'d; listed deleted sources) are gone from the tree. Shaders now arrive as `data::ShaderData*` in `PipelineDesc`.
 
@@ -23,12 +38,6 @@
 | File | Problem |
 |---|---|
 | [`deprecated/vulkan_backend.h/.cpp`](../../engine/runtime/graphics/backend/vulkan/deprecated/vulkan_backend.h) | The pre-Phase-1 fused backend, archived 2026-08-15. **Not in the build** — `Graphics/CMakeLists.txt` compiles the `VulkanDevice`-based reconstruction. Kept as the source reference for the rewrite; the line numbers in [vulkanbackend.md](graphics/vulkanbackend.md) point here. |
-
-## Compiled but never constructed
-
-| File | Problem |
-|---|---|
-| [`editor/ui/component/editor_container_component.h/.cpp`](../../engine/editor/ui/component/editor_container_component.cpp) | In the build (listed in `ui/component/CMakeLists.txt`) but constructed nowhere — no `make_unique`, no `AddComponent` call site, no test. Its `Render()` loops `for (int i = 0; i < items.size() - 1; i++)`, and `items.size()` is `size_t`, so an empty container underflows to `SIZE_MAX` and indexes out of bounds: a latent crash for whoever wires it up first. It is also a horizontal `SameLine` row container, not a tab host, so `ED1` built [`editor_tool_row_component`](../../engine/editor/ui/component/editor_tool_row_component.cpp) instead. Left unrepaired per the rules above; delete it in a dedicated cleanup rather than as a side effect of another change. |
 
 ## Commented-out cruft (live files)
 

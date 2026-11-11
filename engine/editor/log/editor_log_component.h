@@ -12,7 +12,7 @@ namespace kpengine{
         public:
             EditorLogComponent(LogSystem* log_system, const LogLevelColorTable& colors,
                                EditorWindowConfig config = {});
-            void RenderContent() override;
+            void RenderContent(ui::UiContext &context) override;
         private:
             LogSystem* log_system_;
             LogEditorView view_;

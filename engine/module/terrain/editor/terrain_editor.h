@@ -8,9 +8,6 @@
 #include <mutex>
 #include <string>
 
-#include "editor/ui/component/editor_layout_model.h"
-#include "editor/ui/component/editor_splitter_handles.h"
-#include "editor/ui/component/editor_tool_row_model.h"
 #include "heightmap_debug_view.h"
 #include "evaluation/terrain_generation.h"
 
@@ -18,11 +15,9 @@ namespace kpengine
 {
     namespace editor
     {
-        class EditorLogComponent;
-        class EditorGpuProfilerComponent;
-        class EditorProfileBarComponent;
-        class EditorToolRowComponent;
-        class EditorUI;
+        class LogEditorView;
+        namespace ui { class UiContext; }
+        class EditorUiHost;
     }
     namespace runtime
     {
@@ -61,21 +56,17 @@ namespace kpengine::terrain
         void Shutdown() noexcept;
 
     private:
-        void RenderPanels();
-        void RenderTerrainView();
-        void RenderControlPanel();
-        void ApplyLayout();
+        void RenderWorkspace(editor::ui::UiContext &ui);
+        void RenderTerrainView(editor::ui::UiContext &ui);
+        void RenderControlPanel(editor::ui::UiContext &ui);
+        void RenderDiagnostics(editor::ui::UiContext &ui);
+        void RenderPerformance(editor::ui::UiContext &ui);
+        void RenderLog(editor::ui::UiContext &ui);
 
         std::shared_ptr<const ScalarField2D> heightfield_;
         std::shared_ptr<const ScalarField2D> pre_erosion_heightfield_;
-        std::unique_ptr<editor::EditorUI> ui_;
-        std::unique_ptr<editor::EditorLogComponent> log_panel_;
-        std::unique_ptr<editor::EditorGpuProfilerComponent> performance_panel_;
-        std::unique_ptr<editor::EditorProfileBarComponent> profile_bar_;
-        std::unique_ptr<editor::EditorToolRowComponent> dock_host_;
-        editor::EditorLayoutModel layout_;
-        editor::EditorToolRowModel dock_model_;
-        editor::EditorSplitterHandles splitter_handles_;
+        std::unique_ptr<editor::EditorUiHost> ui_;
+        std::unique_ptr<editor::LogEditorView> log_panel_;
         HeightmapDebugView heightmap_view_;
         std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float,
                            float, float, std::uint32_t)> regenerate_;

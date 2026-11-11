@@ -1,24 +1,21 @@
 #include "editor/ui/editor_ui.h"
-#include "editor/ui/api/ui_imgui_inline_backend_internal.h"
-#include "editor/ui/editor_theme.h"
 
+#include "editor/platform/editor_imgui_renderer.h"
 #include <chrono>
 #include <imgui.h>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 #include "config/path.h"
-#include "editor/platform/editor_imgui_glfw_wsi.h"
-#include "editor/platform/editor_imgui_opengl_renderer.h"
-#include "editor/platform/editor_imgui_vulkan_renderer.h"
 #include "editor/ui/component/editor_window_component.h"
 #include "editor/ui/component/editor_layout_participant.h"
 #include "editor/ui/component/editor_camera_settings_component.h"
 #include "editor/ui/component/editor_loading_component.h"
 #include "editor/ui/component/editor_startup_profiler_component.h"
 #include "editor/ui/component/editor_console_component.h"
-#include "editor/ui/component/editor_debug_viewer_component.h"
-#include "editor/ui/component/editor_gpu_profiler_component.h"
+#include "debug_viewer_view.h"
+#include "gpu_profiler_view.h"
 #include "editor/asset/editor_asset_browser_component.h"
 #include "editor/asset/editor_asset_reference_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
@@ -29,7 +26,7 @@
 #include "editor/settings/editor_layout_settings.h"
 #include "editor/settings/editor_settings.h"
 #include "editor_settings_model.h"
-#include "editor/settings/editor_settings_window_component.h"
+#include "editor/settings/editor_settings_window.h"
 #include "editor/profile/editor_builtin_metrics.h"
 #include "editor/profile/editor_profile_bar.h"
 #include "editor/profile/editor_profile_metrics.h"
@@ -51,6 +48,66 @@ namespace kpengine::editor
     namespace
     {
         constexpr std::size_t kMaximumQueuedPanelCommands = 64u;
+
+        class DebugViewerPanel final : public EditorWindowComponent
+        {
+        public:
+            DebugViewerPanel(render::RenderSystem *render_system, EditorUI *editor_ui)
+                : EditorWindowComponent("Debug Viewer"), view_(render_system),
+                  editor_ui_(editor_ui)
+            {
+            }
+
+            void UpdateContent(const bool visible) override { view_.Update(visible); }
+            void RenderContent(ui::UiContext &context) override
+            {
+                view_.Draw(context, [this](const ui::UiImageId id,
+                                           const graphics::RenderTargetView &target)
+                {
+                    if (editor_ui_ != nullptr) editor_ui_->RegisterRenderTargetImage(id, target);
+                });
+            }
+
+        private:
+            render::editor::DebugViewerView view_;
+            EditorUI *editor_ui_ = nullptr;
+        };
+
+        class GpuProfilerPanel final : public EditorWindowComponent
+        {
+        public:
+            GpuProfilerPanel(render::RenderSystem *render_system, runtime::Engine *engine,
+                             const EditorUI *editor_ui)
+                : EditorWindowComponent("Performance Profiler"), view_(render_system),
+                  engine_(engine), editor_ui_(editor_ui)
+            {
+            }
+
+            void RenderContent(ui::UiContext &context) override
+            {
+                runtime::Engine::FrameLoopMetrics frame{};
+                if (engine_ != nullptr) frame = engine_->GetFrameLoopMetrics();
+                const render::editor::SceneEditorTimingSnapshot timings{
+                    .frame_total_ms = frame.frame_total_ms,
+                    .game_wait_ms = frame.game_wait_ms,
+                    .render_work_ms = frame.render_work_ms,
+                    .frame_pacing_ms = frame.frame_pacing_ms,
+                    .game_tick_work_ms = frame.game_tick_work_ms,
+                    .game_tick_pacing_ms = frame.game_tick_pacing_ms,
+                    .ui_total_ms = editor_ui_ != nullptr
+                        ? editor_ui_->GetLastRenderTimeMs() : 0.0,
+                    .ui_build_ms = editor_ui_ != nullptr
+                        ? editor_ui_->GetLastImGuiBuildTimeMs() : 0.0,
+                    .ui_submit_ms = editor_ui_ != nullptr
+                        ? editor_ui_->GetLastImGuiSubmitTimeMs() : 0.0};
+                view_.Draw(context, timings);
+            }
+
+        private:
+            render::editor::GpuProfilerView view_;
+            runtime::Engine *engine_ = nullptr;
+            const EditorUI *editor_ui_ = nullptr;
+        };
 
         std::string PanelLocation(const EditorToolRowEntry &entry)
         {
@@ -163,26 +220,13 @@ namespace kpengine::editor
 
     void EditorUI::InitializePresentation(const EditorUIInitInfo &init_info)
     {
-        if (imgui_context_created_ || renderer_ || wsi_ || !components_.empty())
+        if (presentation_host_.IsInitialized() || !components_.empty())
         {
             Close();
         }
         try
         {
             init_info_ = init_info;
-            IMGUI_CHECKVERSION();
-            ImGui::CreateContext();
-            imgui_context_created_ = true;
-            code_font_ = ApplyCodexTheme();
-
-            CreateImguiBackends(init_info);
-
-            ui_session_ = std::make_unique<ui::UiSession>(ui::CreateImGuiInlineBackend(code_font_));
-            if (!ui_session_->Initialize({}))
-            {
-                throw std::runtime_error("Editor UI widget backend could not attach to ImGui");
-            }
-
             EditorSettings settings{};
             settings.log_colors = DefaultLogColors();
             try
@@ -195,14 +239,13 @@ namespace kpengine::editor
                        "editor settings unavailable (%s), using defaults", e.what());
             }
             log_colors_ = settings.log_colors;
-            renderer_->SetBackgroundColor(init_info.background_color_override.has_value()
-                                              ? *init_info.background_color_override
-                                              : settings.background_color);
-
-            ImGuiIO &io = ImGui::GetIO();
-            io.ConfigWindowsMoveFromTitleBarOnly = true;
-            io.ConfigDragClickToInputText = true;
-            io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+            presentation_host_.Initialize({
+                .window = init_info.window,
+                .presentation_bridge = init_info.editor_presentation_bridge,
+                .renderer_factory = init_info.renderer_factory,
+                .wsi_factory = init_info.wsi_factory,
+                .background_color = init_info.background_color_override.has_value()
+                    ? *init_info.background_color_override : settings.background_color});
 
             BuildLoadingTree();
 
@@ -219,55 +262,6 @@ namespace kpengine::editor
             Close();
             throw;
         }
-    }
-
-    void EditorUI::CreateImguiBackends(const EditorUIInitInfo &init_info)
-    {
-        // This module owns WSI + renderer selection. EditorLib only orchestrates
-        // tools through EditorUI and therefore stays decoupled from GL/Vulkan.
-        if (init_info.editor_presentation_bridge == nullptr)
-        {
-            throw std::runtime_error("Editor presentation bridge is unavailable");
-        }
-        wsi_ = init_info.wsi_factory ? init_info.wsi_factory()
-                                     : std::make_unique<EditorImguiGLFWWSI>();
-        if (!wsi_)
-        {
-            throw std::runtime_error("Editor ImGui window backend is unavailable");
-        }
-        if (init_info.renderer_factory)
-        {
-            renderer_ = init_info.renderer_factory(
-                init_info.editor_presentation_bridge->GetGraphicsAPI());
-        }
-        else if (init_info.editor_presentation_bridge->GetGraphicsAPI() ==
-                 GraphicsAPIType::GRAPHICS_API_OPENGL)
-        {
-            renderer_ = std::make_unique<EditorImguiOpenglRenderer>();
-        }
-        else if (init_info.editor_presentation_bridge->GetGraphicsAPI() ==
-                 GraphicsAPIType::GRAPHICS_API_VULKAN)
-        {
-            renderer_ = std::make_unique<EditorImguiVulkanRenderer>();
-        }
-
-        if (!renderer_)
-        {
-            throw std::runtime_error("Unsupported graphics API for Editor UI");
-        }
-        renderer_init_attempted_ = true;
-        if (!renderer_->Initialize(init_info.editor_presentation_bridge))
-        {
-            throw std::runtime_error("Editor ImGui renderer initialization failed");
-        }
-        renderer_initialized_ = true;
-        wsi_init_attempted_ = true;
-        if (!wsi_->Initialize(init_info.window,
-                              init_info.editor_presentation_bridge->GetGraphicsAPI()))
-        {
-            throw std::runtime_error("Editor ImGui window backend initialization failed");
-        }
-        wsi_initialized_ = true;
     }
 
     void EditorUI::BuildMenuBar(render::RenderSystem *render_system)
@@ -291,7 +285,7 @@ namespace kpengine::editor
         {
             settings_model_->Refresh(*init_info_.settings_access);
         }
-        settings_window_ = std::make_unique<SettingsEditorWindowComponent>(
+        settings_window_ = std::make_unique<SettingsEditorWindow>(
             *settings_model_, init_info_.settings_access);
         Menu settings_menu{"Settings"};
         settings_menu.items.push_back(MenuItem{
@@ -625,7 +619,7 @@ namespace kpengine::editor
         auto window_component = std::make_unique<EditorWindowComponent>(
             "Viewport", EditorWindowConfig{});
         window_component->AddComponent(std::make_shared<EditorViewportComponent>(
-            init_info_.render_system, renderer_.get(), init_info_.window_system,
+            init_info_.render_system, presentation_host_.Renderer(), init_info_.window_system,
             init_info_.input_system, init_info_.camera_control_sink,
             init_info_.scene_selection_sink, actor_model_.get()));
         return window_component;
@@ -654,7 +648,7 @@ namespace kpengine::editor
              GetEditorExtensionRegistry().SnapshotWorkspaceComponentFactories())
         {
             if (std::unique_ptr<EditorUIComponent> component =
-                    factory(init_info_.render_system, renderer_.get()))
+                    factory(init_info_.render_system, presentation_host_.Renderer()))
             {
                 // Deliberately left top-level and self-placing. The factory returns the
                 // base class and carries no id or title, and a dock entry needs both, so
@@ -715,14 +709,13 @@ namespace kpengine::editor
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildDebugViewerPanel()
     {
-        return std::make_unique<EditorDebugViewerComponent>(init_info_.render_system,
-                                                            renderer_.get());
+        return std::make_unique<DebugViewerPanel>(init_info_.render_system, this);
     }
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildGpuProfilerPanel()
     {
-        return std::make_unique<EditorGpuProfilerComponent>(
-            init_info_.engine, init_info_.render_system, this);
+        return std::make_unique<GpuProfilerPanel>(init_info_.render_system,
+                                                  init_info_.engine, this);
     }
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildAssetBrowserPanel()
@@ -872,7 +865,7 @@ namespace kpengine::editor
             // Every workspace panel is one of the host's entries. That is what makes
             // moving one between docks an assignment rather than a change of owner.
             BuildToolRow(init_info_.log_system, log_colors_, init_info_.command_registry,
-                         init_info_.input_system, code_font_, actor_tools_available);
+                         init_info_.input_system, GetCodeFont(), actor_tools_available);
             // AFTER the host: the View menu is generated from the registered panels, so
             // building it first would produce an empty menu.
             BuildMenuBar(init_info_.render_system);
@@ -918,10 +911,7 @@ namespace kpengine::editor
         asset_reference_visibility_.SetOpen(false);
         actor_model_.reset();
         screenshot_service_.reset();
-        if (ui_session_)
-        {
-            ui_session_->BeginClosing();
-        }
+        presentation_host_.BeginClosing();
         closing_ = true;
     }
 
@@ -981,74 +971,30 @@ namespace kpengine::editor
         active_level_asset_pack_.reset();
         loading_components_.clear();
         actor_model_.reset();
-        if (ui_session_)
-        {
-            ui_session_->Shutdown();
-            ui_session_.reset();
-        }
         // The panel rects described a tree that no longer exists.
         layout_.ResetToDefault();
         workspace_promoted_ = false;
         closing_ = false;
         init_info_ = {};
         log_colors_ = {};
-        code_font_ = nullptr;
         last_render_time_ms_ = 0.0;
         last_imgui_build_time_ms_ = 0.0;
         last_imgui_submit_time_ms_ = 0.0;
-        last_ui_observation_.clear();
         viewer_mode_ = false;
         viewer_content_ = {};
         ui_viewer_content_ = {};
         screenshot_service_.reset();
-        if (wsi_ && wsi_init_attempted_)
-        {
-            wsi_->Shutdown();
-        }
-        wsi_initialized_ = false;
-        if (renderer_ && renderer_init_attempted_)
-        {
-            renderer_->Shutdown();
-        }
-        renderer_initialized_ = false;
-        renderer_init_attempted_ = false;
-        wsi_init_attempted_ = false;
-        if (imgui_context_created_)
-        {
-            ImGui::DestroyContext();
-            imgui_context_created_ = false;
-        }
-        renderer_.reset();
-        wsi_.reset();
+        presentation_host_.Close();
     }
 
     void EditorUI::BeginDraw()
     {
-        renderer_->NewFrame();
-        wsi_->NewFrame();
-        ImGui::NewFrame();
-        if (ui_session_)
-        {
-            const ImGuiViewport *const viewport = ImGui::GetMainViewport();
-            const ImVec2 scale = ImGui::GetIO().DisplayFramebufferScale;
-            (void)ui_session_->BeginFrame({
-                .observe = ui_observation_enabled_,
-                .viewport = {{viewport->WorkSize.x, viewport->WorkSize.y},
-                             {scale.x, scale.y},
-                             {viewport->WorkPos.x, viewport->WorkPos.y}}});
-        }
+        presentation_host_.BeginFrame(ui_observation_enabled_);
     }
 
     void EditorUI::EndDraw()
     {
-        if (ui_session_ && ui_session_->State() == ui::UiSessionState::InFrame)
-        {
-            const ui::UiFrameResult frame = ui_session_->EndFrame();
-            if (frame.complete)
-            {
-                last_ui_observation_ = frame.observations;
-            }
-        }
+        presentation_host_.EndFrame();
     }
 
     void EditorUI::SetUiObservationEnabled(const bool enabled) noexcept
@@ -1056,24 +1002,21 @@ namespace kpengine::editor
         ui_observation_enabled_ = enabled;
         if (!enabled)
         {
-            last_ui_observation_.clear();
+            presentation_host_.ClearLastObservation();
         }
     }
 
-    void EditorUI::DrawRenderTarget(const graphics::RenderTargetView &view,
-                                    const ImVec2 &size)
+    void EditorUI::RegisterRenderTargetImage(
+        const ui::UiImageId id, const graphics::RenderTargetView &view)
     {
-        if (renderer_ == nullptr || !view.IsValid())
-        {
-            ImGui::TextDisabled("Live2D render target unavailable");
-            return;
-        }
-        renderer_->DrawSceneImage(renderer_->GetTextureID(view), size);
+        presentation_host_.RegisterRenderTargetImage(id, view);
     }
 
     bool EditorUI::Render()
     {
-        return RenderActiveTree();
+        const bool rendered = RenderActiveTree();
+        presentation_host_.ClearFrameImages();
+        return rendered;
     }
 
     void EditorUI::BuildLoadingTree()
@@ -1150,7 +1093,7 @@ namespace kpengine::editor
         // exist yet. BuildToolRow applies them once every panel is registered.
     }
 
-    void EditorUI::SaveLayoutState()
+    bool EditorUI::SaveLayoutState()
     {
         try
         {
@@ -1158,17 +1101,21 @@ namespace kpengine::editor
             CapturePlacementState(tool_row_model_, state);
             WriteEditorLayoutState(GetEditorLayoutPath(), state);
             saved_placement_revision_ = tool_row_model_.GetPlacementRevision();
+            layout_save_pending_ = false;
+            return true;
         }
         catch (const std::exception &e)
         {
             // A layout preference that cannot be saved must not take the editor down.
             KP_LOG("LogEditorUI", LOG_LEVEL_WARNING, "editor layout not saved (%s)", e.what());
+            layout_save_pending_ = true;
+            return false;
         }
     }
 
     bool EditorUI::RenderActiveTree()
     {
-        if (!imgui_context_created_ || !renderer_ || !wsi_)
+        if (!presentation_host_.IsInitialized())
         {
             return false;
         }
@@ -1199,9 +1146,9 @@ namespace kpengine::editor
                 }
             }
         }
-        if (viewer_mode_ && !closing_ && ui_viewer_content_ && ui_session_)
+        if (viewer_mode_ && !closing_ && ui_viewer_content_)
         {
-            ui_viewer_content_(ui_session_->Context());
+            ui_viewer_content_(presentation_host_.Context());
         }
         else if (viewer_mode_ && !closing_ && viewer_content_)
         {
@@ -1220,79 +1167,78 @@ namespace kpengine::editor
                     auto *const window = dynamic_cast<EditorWindowComponent *>(component.get());
                     content->Update(window == nullptr || window->IsVisible());
                 }
-                if (ui_session_) component->RenderWithContext(ui_session_->Context());
-                else component->Render();
+                component->RenderWithContext(presentation_host_.Context());
             }
             // Render the floating viewer before the splitter pass so the splitter can
             // exclude its actual ImGui bounds from the foreground seam.
             if (asset_reference_panel_ != nullptr)
             {
                 asset_reference_panel_->Update(asset_reference_panel_->IsVisible());
-                if (ui_session_) asset_reference_panel_->RenderWithContext(ui_session_->Context());
-                else asset_reference_panel_->Render();
+                asset_reference_panel_->RenderWithContext(presentation_host_.Context());
             }
+            std::vector<EditorRect> overlay_occlusions;
+            if (asset_reference_panel_ != nullptr && asset_reference_panel_->IsVisible())
+                overlay_occlusions.push_back(asset_reference_panel_->LastScreenRect());
             if (settings_window_ != nullptr)
             {
                 settings_window_->Update(settings_window_->IsVisible());
-                if (ui_session_) settings_window_->RenderWithContext(ui_session_->Context());
-                else settings_window_->Render();
+                settings_window_->RenderWithContext(presentation_host_.Context());
+                if (settings_window_->IsVisible())
+                {
+                    const auto bounds = presentation_host_.Context().WindowBounds("settings.window");
+                    if (bounds)
+                        overlay_occlusions.push_back({bounds->min.x, bounds->min.y,
+                            bounds->max.x - bounds->min.x, bounds->max.y - bounds->min.y});
+                }
             }
-            std::optional<EditorRect> reference_occlusion;
-            if (settings_window_ != nullptr && settings_window_->IsVisible())
+            for (const auto &component : components_)
             {
-                reference_occlusion = settings_window_->LastScreenRect();
+                if (auto *const row = dynamic_cast<EditorToolRowComponent *>(component.get()))
+                    row->RenderOverlay(overlay_occlusions);
             }
-            else if (asset_reference_panel_ != nullptr && asset_reference_panel_->IsVisible())
-            {
-                reference_occlusion = asset_reference_panel_->LastScreenRect();
-            }
-            splitter_handles_.Render(layout_, reference_occlusion);
+            splitter_handles_.Render(layout_, overlay_occlusions);
             // Persist on release, not per frame. The placement latch lives in the model,
             // which outlives the row, so nothing here holds a component pointer.
             if (splitter_handles_.ConsumeDragJustEnded() ||
                 tool_row_model_.GetPlacementRevision() != saved_placement_revision_)
+                layout_save_pending_ = true;
+            if (layout_save_pending_)
             {
-                SaveLayoutState();
+                (void)SaveLayoutState();
             }
         }
         else
         {
             for (const auto &component : loading_components_)
             {
-                if (ui_session_) component->RenderWithContext(ui_session_->Context());
-                else component->Render();
+                component->RenderWithContext(presentation_host_.Context());
             }
         }
-        ImGui::Render();
-        const auto imgui_build_finished = std::chrono::steady_clock::now();
-        if (init_info_.render_system != nullptr)
-        {
-            const auto prepared = init_info_.render_system->GetEditorPresentationAssets();
-            const auto program = prepared != nullptr
-                                     ? prepared->GetEditorUiBloomProgram()
-                                     : nullptr;
-            const auto vertex = program != nullptr
-                                    ? prepared->Get<asset::ShaderResource>(program->GetData(
-                                          ShaderStage::SHADER_STAGE_VERTEX,
-                                          ShaderFormat::SHADER_FORMAT_GLSL))
-                                    : nullptr;
-            const auto fragment = program != nullptr
-                                      ? prepared->Get<asset::ShaderResource>(program->GetData(
-                                            ShaderStage::SHADER_STAGE_FRAGMENT,
-                                            ShaderFormat::SHADER_FORMAT_GLSL))
-                                      : nullptr;
-            renderer_->SetBloomShaders(vertex != nullptr ? vertex->data.get() : nullptr,
-                                       fragment != nullptr ? fragment->data.get() : nullptr);
-        }
-        renderer_->Render();
+        const auto submit_started = std::chrono::steady_clock::now();
+        const auto [host_build_ms, host_submit_ms] = presentation_host_.SubmitFrame(
+            [this](IEditorImguiRenderer &renderer)
+            {
+                if (init_info_.render_system == nullptr) return;
+                const auto prepared = init_info_.render_system->GetEditorPresentationAssets();
+                const auto program = prepared != nullptr
+                                         ? prepared->GetEditorUiBloomProgram() : nullptr;
+                const auto vertex = program != nullptr
+                    ? prepared->Get<asset::ShaderResource>(program->GetData(
+                          ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL))
+                    : nullptr;
+                const auto fragment = program != nullptr
+                    ? prepared->Get<asset::ShaderResource>(program->GetData(
+                          ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL))
+                    : nullptr;
+                renderer.SetBloomShaders(vertex != nullptr ? vertex->data.get() : nullptr,
+                                         fragment != nullptr ? fragment->data.get() : nullptr);
+            });
         const auto imgui_submit_finished = std::chrono::steady_clock::now();
         EndDraw();
         last_imgui_build_time_ms_ =
-            std::chrono::duration<double, std::milli>(imgui_build_finished - render_started)
-                .count();
-        last_imgui_submit_time_ms_ =
-            std::chrono::duration<double, std::milli>(imgui_submit_finished - imgui_build_finished)
-                .count();
+            std::chrono::duration<double, std::milli>(submit_started - render_started).count() +
+            host_build_ms;
+        last_imgui_submit_time_ms_ = host_submit_ms;
         last_render_time_ms_ =
             std::chrono::duration<double, std::milli>(imgui_submit_finished - render_started)
                 .count();

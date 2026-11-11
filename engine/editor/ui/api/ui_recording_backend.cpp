@@ -206,13 +206,16 @@ namespace kpengine::editor::ui
         UiNodeObservation observation{session_, frame_, control.id, parent_, control.role,
                                       control.label, control.description, control.value,
                                       control.enabled, control.disabled_reason};
+        UiCanvasResult result{};
         if (const auto bounds = fixture_bounds_.find(control.id); bounds != fixture_bounds_.end())
         {
             observation.bounds = bounds->second;
             observation.geometry = UiGeometryProvenance::TestFixture;
+            result.bounds = bounds->second;
+            result.geometry = UiGeometryProvenance::TestFixture;
         }
         pending_observations_.push_back(std::move(observation));
-        return {};
+        return result;
     }
 
     void UiRecordingBackend::Text(const std::string_view text)

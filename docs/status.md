@@ -1,15 +1,62 @@
 # Project Status
 
-- **Central settings (2026-11-10; SET2 complete, SET1 acceptance follow-up open)** — RuntimeSettings
+- **Audio module / Editor icons (2026-11-11; scoped task closed)** —
+  Player policy and presentation move to `module/audio`; Runtime Audio no
+  longer builds a player-editor target. Audio Player and TTS share neutral
+  `AudioEditorWidgets`, while `EditorIcons` reads built-in resource paths from
+  `resouce/icon/setting.json` and owns CPU loading/borrowed masks, also reused
+  by Asset Browser. Full Debug build, nine new contracts and visible Vulkan/
+  OpenGL player checks passed. Full CTest passed 1,272/1,283; ordinary-environment
+  rerun cleared two Settings access failures, leaving eight Asset and one
+  Terrain failure. These limits do not close the wider ED6/P1 gates. →
+  [scope](../.spec/specs/audio-module-editor-icons.md),
+  [evidence](../.spec/journal/2026-11-11-audio-module-editor-icons.md)
+
+- **Editor reconstruction (2026-11-10; ED6.0 baseline frozen, ED6.1 accepted)** —
+  ED6 defines reusable UI/presentation, explicit workspace composition,
+  feature-owned editor targets and removal of Runtime's concrete Editor
+  dependency. ED6.1 shares content lifecycle across tab/floating hosts and
+  separates optional layout participation from generic components. The baseline
+  dependency/owner inventories, Debug Editor tests and a RelWithDebInfo UI timing
+  sample are recorded. ED6.2 implementation has started with neutral UI targets,
+  a recording backend and a Settings-fields pilot; its G1–G8 gates remain open.
+  Typed standard controls now use stable string IDs and per-control validation.
+  The feature-view migration has moved Log, TTS and Signal Lab to neutral UI;
+  Signal Lab now uses neutral controls, windows, tables and shared Plot while
+  retaining its theme and signal colors locally. Terrain's workspace uses
+  neutral windows, controls, heightmap Canvas and target presentation. Live2D's
+  viewer, tabs, profiler, log and target presentation also use neutral Editor UI.
+  The new `EditorUiHostLib` now owns production ImGui presentation lifecycle;
+  Audio, TTS, Signal Lab, Terrain, Live2D and the UI smoke use it without
+  including SceneEditor `EditorUI`. Their feature libraries have no ImGui
+  backend symbols. Audio now uses the independent `EditorWorkspaceLib` for
+  region layout, tabs, floating panels and reopen actions; it no longer links
+  `EditorUILib`. Splitter drag, persisted workspace state, floating-window
+  occlusion, visible Canvas input and SceneEditor migration remain open, along
+  with remaining tool ownership and visual acceptance.
+  Later ED6 stages remain open. →
+  [design](editor/.plan/ED6.md),
+  [architecture review](editor/.review/ED6.md),
+  [baseline](editor/.review/ED6.0.md),
+  [ED6.2 execution record](../.spec/journal/2026-11-10-editor-ui-ed6-2.md),
+  [roadmap](editor/TODO.md#ed6--reusable-ui-and-editor-reconstruction)
+
+- **Central settings (2026-11-10; SET2 complete, SET3 implementation present, SET1/SET3 acceptance follow-up open)** — RuntimeSettings
   has Reflection-backed schemas, project/user/session layer resolution and
   provenance, a versioned JSON store, and a per-section provider/edit lifecycle.
   Runtime resolves Render startup policy before device creation. Render owns
   typed path-tracing, SSAO, TAA and fog adapters; existing preference commands
   use the common edit path and report completion after safe-frame application.
-  Debug Vulkan and OpenGL Sponza startup/captures pass. The Settings Editor is
-  SET3; host-owned launch configuration stays separate. →
+  Debug Vulkan and OpenGL Sponza startup/captures pass. SET3 adds a searchable
+  Editor Settings window over copied Runtime snapshots; visible backend checks
+  cover window open, Render navigation, search/no-results, and startup restart
+  messaging. Compact/keyboard interaction, live apply, save/reopen, visible
+  failure states, and requested-versus-active reporting remain to verify.
+  Host-owned launch configuration stays separate. →
   [architecture](settings/PLANS.md), [roadmap](settings/TODO.md),
-  [spec](../.spec/specs/runtime-settings.md)
+  [SET3 spec](../.spec/specs/editor-settings-window.md),
+  [SET3 journal](../.spec/journal/2026-11-10-editor-settings-window.md),
+  [settings spec](../.spec/specs/runtime-settings.md)
 
 - **Core Scene3D host ownership (2026-11-08)** — The built-in `Scene3DHost`
   lives in `engine/runtime/application`; Runtime's global registry installs
@@ -120,8 +167,9 @@
 
 - **Audio Player P1 presentation (2026-10-02; partial)** — Player panels share
   the audio palette while Editor chrome retains its theme. Queue and Output Log
-  share the bottom-center tab dock. The reusable transport strip now lives in
-  `EditorUILib`, with stable IDs, explicit playback states, optional duration,
+  share the bottom-center tab dock. The original transport strip lived in
+  `EditorUILib` (now `AudioEditorWidgets`, see the 2026-11-11 entry), with stable
+  IDs, explicit playback states, optional duration,
   disabled seeking for unknown-duration streams, and separate voice-stop/job-
   cancel intents. RelWithDebInfo engine and TTS builds passed; a visible Vulkan
   real-track capture confirms the composed music preview. A compact TTS

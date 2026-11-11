@@ -1,4 +1,8 @@
+#include <functional>
+#include <memory>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <imgui.h>
@@ -62,7 +66,11 @@ namespace
 
     struct LifecycleProbe
     {
+        int renderer_initialize_attempts = 0;
         int renderer_shutdowns = 0;
+        int texture_requests = 0;
+        int image_draws = 0;
+        int wsi_initialize_attempts = 0;
         int wsi_shutdowns = 0;
     };
 
@@ -73,17 +81,22 @@ namespace
 
         bool Initialize(kpengine::graphics::IEditorPresentationBridge *) override
         {
+            ++probe_.renderer_initialize_attempts;
             throw std::runtime_error("synthetic native renderer failure");
         }
         void Shutdown() override { ++probe_.renderer_shutdowns; }
         void NewFrame() override {}
         void Render() override {}
         void SetBackgroundColor(const kpengine::editor::LogColor &) override {}
+        void SetBloomShaders(const kpengine::data::ShaderData *,
+                             const kpengine::data::ShaderData *) override {}
         ImTextureID GetTextureID(const kpengine::graphics::RenderTargetView &) override
         {
             return ImTextureID{};
         }
         void DrawSceneImage(ImTextureID, const ImVec2 &) override {}
+        void DrawSceneImagePrimitive(ImDrawList *, ImTextureID,
+                                     const ImVec2 &, const ImVec2 &) override {}
 
     private:
         LifecycleProbe &probe_;
@@ -96,6 +109,7 @@ namespace
 
         bool Initialize(kpengine::WindowHandle, kpengine::GraphicsAPIType) override
         {
+            ++probe_.wsi_initialize_attempts;
             return false;
         }
         void Shutdown() override { ++probe_.wsi_shutdowns; }
@@ -104,6 +118,173 @@ namespace
     private:
         LifecycleProbe &probe_;
     };
+
+    class SuccessfulRenderer final : public kpengine::editor::IEditorImguiRenderer
+    {
+    public:
+        explicit SuccessfulRenderer(LifecycleProbe &probe) : probe_(probe) {}
+
+        bool Initialize(kpengine::graphics::IEditorPresentationBridge *) override
+        {
+            ++probe_.renderer_initialize_attempts;
+            ImGuiIO &io = ImGui::GetIO();
+            io.DisplaySize = ImVec2(1280.0f, 720.0f);
+            io.DeltaTime = 1.0f / 60.0f;
+            io.Fonts->AddFontDefault();
+            if (!io.Fonts->Build())
+            {
+                return false;
+            }
+            return true;
+        }
+        void Shutdown() override { ++probe_.renderer_shutdowns; }
+        void NewFrame() override {}
+        void Render() override {}
+        void SetBackgroundColor(const kpengine::editor::LogColor &) override {}
+        void SetBloomShaders(const kpengine::data::ShaderData *,
+                             const kpengine::data::ShaderData *) override {}
+        ImTextureID GetTextureID(const kpengine::graphics::RenderTargetView &) override
+        {
+            ++probe_.texture_requests;
+            return ImTextureID{};
+        }
+        void DrawSceneImage(ImTextureID, const ImVec2 &) override { ++probe_.image_draws; }
+        void DrawSceneImagePrimitive(ImDrawList *, ImTextureID,
+                                     const ImVec2 &, const ImVec2 &) override {}
+
+    private:
+        LifecycleProbe &probe_;
+    };
+
+    class SuccessfulWsi final : public kpengine::editor::IEditorImguiWSI
+    {
+    public:
+        explicit SuccessfulWsi(LifecycleProbe &probe) : probe_(probe) {}
+
+        bool Initialize(kpengine::WindowHandle, kpengine::GraphicsAPIType) override
+        {
+            ++probe_.wsi_initialize_attempts;
+            return true;
+        }
+        void Shutdown() override { ++probe_.wsi_shutdowns; }
+        void NewFrame() override {}
+
+    private:
+        LifecycleProbe &probe_;
+    };
+}
+
+TEST(EditorPresentationLifecycle, RendererFailureDestroysContextAndRollsBackOnce)
+{
+    LifecycleProbe probe{};
+    WrongVulkanBridge bridge;
+    kpengine::editor::EditorUI ui;
+    kpengine::editor::EditorUIInitInfo info{};
+    info.editor_presentation_bridge = &bridge;
+    info.renderer_factory = [&probe](kpengine::GraphicsAPIType)
+    {
+        return std::make_unique<ThrowingRenderer>(probe);
+    };
+    info.wsi_factory = [&probe]
+    {
+        return std::make_unique<FailingWsi>(probe);
+    };
+
+    EXPECT_THROW(ui.InitializePresentation(info), std::runtime_error);
+    EXPECT_EQ(probe.renderer_initialize_attempts, 1);
+    EXPECT_EQ(probe.renderer_shutdowns, 1);
+    EXPECT_EQ(probe.wsi_initialize_attempts, 0);
+    EXPECT_EQ(probe.wsi_shutdowns, 0);
+    EXPECT_EQ(ImGui::GetCurrentContext(), nullptr);
+
+    ui.Close();
+    EXPECT_EQ(probe.renderer_shutdowns, 1);
+    EXPECT_EQ(probe.wsi_shutdowns, 0);
+}
+
+TEST(EditorPresentationLifecycle, WsiFailureShutsDownBothAdaptersAndContextOnce)
+{
+    LifecycleProbe probe{};
+    WrongVulkanBridge bridge;
+    kpengine::editor::EditorUI ui;
+    kpengine::editor::EditorUIInitInfo info{};
+    info.editor_presentation_bridge = &bridge;
+    info.renderer_factory = [&probe](kpengine::GraphicsAPIType)
+    {
+        return std::make_unique<SuccessfulRenderer>(probe);
+    };
+    info.wsi_factory = [&probe]
+    {
+        return std::make_unique<FailingWsi>(probe);
+    };
+
+    EXPECT_THROW(ui.InitializePresentation(info), std::runtime_error);
+    EXPECT_EQ(probe.renderer_initialize_attempts, 1);
+    EXPECT_EQ(probe.renderer_shutdowns, 1);
+    EXPECT_EQ(probe.wsi_initialize_attempts, 1);
+    EXPECT_EQ(probe.wsi_shutdowns, 1);
+    EXPECT_EQ(ImGui::GetCurrentContext(), nullptr);
+
+    ui.Close();
+    EXPECT_EQ(probe.renderer_shutdowns, 1);
+    EXPECT_EQ(probe.wsi_shutdowns, 1);
+}
+
+TEST(EditorImageBindingLifecycle, CloseDropsRegisteredRenderTargetBeforeSessionReuse)
+{
+    LifecycleProbe probe{};
+    WrongVulkanBridge bridge;
+    kpengine::editor::EditorUI ui;
+    kpengine::editor::EditorUIInitInfo info{};
+    info.editor_presentation_bridge = &bridge;
+    info.renderer_factory = [&probe](kpengine::GraphicsAPIType)
+    {
+        return std::make_unique<SuccessfulRenderer>(probe);
+    };
+    info.wsi_factory = [&probe]
+    {
+        return std::make_unique<SuccessfulWsi>(probe);
+    };
+    const kpengine::editor::ui::UiImageId image_id =
+        kpengine::editor::ui::StableUiImageId("smoke.target");
+    kpengine::editor::ui::UiControlDescriptor window_descriptor{};
+    window_descriptor.id = "image.window";
+    window_descriptor.label = "Image";
+    kpengine::editor::ui::UiControlDescriptor canvas_descriptor{};
+    canvas_descriptor.id = "image.canvas";
+    canvas_descriptor.label = "Image";
+    const std::function<void(kpengine::editor::ui::UiContext &)> draw_image =
+        [image_id, window_descriptor, canvas_descriptor](
+            kpengine::editor::ui::UiContext &context)
+    {
+        auto window = context.Window(window_descriptor, {24.0f, 28.0f}, {180.0f, 140.0f});
+        if (!window.ContentVisible())
+        {
+            return;
+        }
+        kpengine::editor::ui::UiCanvasPrimitive image{};
+        image.kind = kpengine::editor::ui::UiCanvasPrimitiveKind::Image;
+        image.first = {0.0f, 0.0f};
+        image.second = {1.0f, 1.0f};
+        image.image = image_id;
+        std::vector<kpengine::editor::ui::UiCanvasPrimitive> primitives{image};
+        (void)context.Canvas(canvas_descriptor, {64.0f, 64.0f}, std::move(primitives));
+    };
+
+    ui.InitializeUiViewer(info, draw_image);
+    kpengine::graphics::RenderTargetView view{};
+    view.width = 64;
+    view.height = 64;
+    view.native_image_view = 1;
+    ui.RegisterRenderTargetImage(image_id, view);
+    ui.Close();
+
+    ui.InitializeUiViewer(info, draw_image);
+    ASSERT_TRUE(ui.Render());
+    EXPECT_EQ(probe.texture_requests, 0);
+    EXPECT_EQ(probe.image_draws, 0);
+    ui.Close();
+    EXPECT_EQ(ImGui::GetCurrentContext(), nullptr);
 }
 
 TEST(EditorLoadingViewModelTest, ReportsStageAssetAndDeterminateProgress)

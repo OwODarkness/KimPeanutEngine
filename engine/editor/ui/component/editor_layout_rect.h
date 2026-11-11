@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
+#include <utility>
+#include <vector>
 
 namespace kpengine::editor
 {
@@ -49,6 +52,44 @@ namespace kpengine::editor
         const float right = std::round(rect.x + rect.width);
         const float bottom = std::round(rect.y + rect.height);
         return EditorRect{left, top, std::max(0.0f, right - left), std::max(0.0f, bottom - top)};
+    }
+
+    inline std::vector<EditorRect> SubtractOcclusions(
+        const EditorRect &source, const std::span<const EditorRect> occlusions)
+    {
+        std::vector<EditorRect> exposed;
+        if (source.IsEmpty()) return exposed;
+        exposed.push_back(source);
+        for (const EditorRect &blocker : occlusions)
+        {
+            std::vector<EditorRect> next;
+            for (const EditorRect &piece : exposed)
+            {
+                if (!piece.Overlaps(blocker)) { next.push_back(piece); continue; }
+                const float left = std::max(piece.x, blocker.x);
+                const float top = std::max(piece.y, blocker.y);
+                const float right = std::min(piece.x + piece.width, blocker.x + blocker.width);
+                const float bottom = std::min(piece.y + piece.height, blocker.y + blocker.height);
+                const EditorRect candidates[] = {
+                    {piece.x, piece.y, piece.width, top - piece.y},
+                    {piece.x, bottom, piece.width, piece.y + piece.height - bottom},
+                    {piece.x, top, left - piece.x, bottom - top},
+                    {right, top, piece.x + piece.width - right, bottom - top}};
+                for (const EditorRect &candidate : candidates)
+                    if (!candidate.IsEmpty()) next.push_back(candidate);
+            }
+            exposed = std::move(next);
+            if (exposed.empty()) break;
+        }
+        return exposed;
+    }
+
+    inline bool IsOccluded(const float x, const float y,
+                           const std::span<const EditorRect> occlusions) noexcept
+    {
+        for (const EditorRect &rect : occlusions)
+            if (rect.Contains(x, y)) return true;
+        return false;
     }
 }
 

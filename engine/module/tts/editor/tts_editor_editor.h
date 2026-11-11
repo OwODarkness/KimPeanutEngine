@@ -11,7 +11,7 @@
 #include "editor/ui/editor_icons.h"
 #include "tts_editor_controller.h"
 
-namespace kpengine::editor { class EditorUI; namespace ui { class UiContext; } }
+namespace kpengine::editor { class EditorUiHost; namespace ui { class UiContext; } }
 namespace kpengine::runtime { class Engine; }
 
 namespace kpengine::tts_editor
@@ -31,16 +31,15 @@ namespace kpengine::tts_editor
     private:
         void RenderWorkspace(editor::ui::UiContext &ui);
         void RenderPreview(editor::ui::UiContext &ui, const TtsEditorView &view);
-        void RenderDialogList(const TtsEditorView &view);
-        void RenderSettings(const TtsEditorView &view);
-        void RenderTextInput(const TtsEditorView &view);
+        void RenderDialogList(editor::ui::UiContext &ui, const TtsEditorView &view);
+        void RenderSettings(editor::ui::UiContext &ui, const TtsEditorView &view);
+        void RenderTextInput(editor::ui::UiContext &ui, const TtsEditorView &view);
         void CopySettingsToFields(const TtsEditorSettings &settings);
         TtsEditorSettings FieldsToSettings() const;
 
-        std::unique_ptr<editor::EditorUI> ui_;
+        std::unique_ptr<editor::EditorUiHost> ui_;
         editor::EditorBuiltinIcons icons_;
-        std::array<std::uint32_t, kAvatarRasterSize * kAvatarRasterSize> avatar_pixels_{};
-        bool avatar_loaded_ = false;
+        std::array<std::uint8_t, kAvatarRasterSize * kAvatarRasterSize * 4> avatar_pixels_{};
         TtsEditorController *controller_ = nullptr;
         float last_audible_volume_ = 0.8f;
         TtsEditorSettings draft_settings_;
@@ -53,15 +52,14 @@ namespace kpengine::tts_editor
         std::array<char, 64> ref_language_{};
         std::array<char, 64> text_language_{};
         std::array<char, 512> output_directory_{};
-        std::array<char, 1024> import_path_{};
         std::array<char, 128> export_basename_{};
         std::array<char, 128> dialog_search_{};
         std::vector<std::size_t> filtered_dialog_indices_;
         int port_ = 0;
         int timeout_seconds_ = 180;
+        bool avatar_loaded_ = false;
         bool streaming_ = true;
         bool refresh_fields_ = false;
-        bool focus_text_input_ = false;
     };
 }
 

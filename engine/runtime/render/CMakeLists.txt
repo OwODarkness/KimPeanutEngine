@@ -56,4 +56,5 @@ target_include_directories(Render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # scenes record through the common command-recorder contract.
 target_link_libraries(Render PUBLIC Core Asset PRIVATE Graphics )
 
+add_subdirectory(editor)
 add_subdirectory(settings)

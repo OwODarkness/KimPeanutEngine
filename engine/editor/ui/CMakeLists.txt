@@ -1,9 +1,20 @@
 target_sources(EditorUILib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_ui.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/editor_theme.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_extension_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_panel_command_provider.cpp
 )
+
+add_library(EditorUiHostLib STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/host/editor_ui_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/editor_theme.cpp
+)
+target_include_directories(EditorUiHostLib PUBLIC
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/engine/runtime)
+target_link_libraries(EditorUiHostLib
+    PUBLIC UIWidgets
+    PRIVATE UIPresentation UIBackendImGui EditorUIPlatform EditorSettingsConfigLib
+            Config KP::ImGui)
 
 add_subdirectory(component)
 add_subdirectory(api)

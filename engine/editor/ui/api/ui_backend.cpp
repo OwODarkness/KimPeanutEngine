@@ -21,6 +21,7 @@ namespace kpengine::editor::ui
             control.hint = descriptor.hint;
             control.width = descriptor.width;
             control.height = descriptor.height;
+            control.multiline = descriptor.multiline;
             control.text_role = descriptor.text_role;
             control.emphasized = descriptor.emphasized;
             control.span_row = descriptor.span_row;
@@ -50,6 +51,9 @@ namespace kpengine::editor::ui
         frame_ = frame;
         frame_info_ = info;
         window_depth_ = 0;
+        in_table_ = false;
+        in_virtual_list_ = false;
+        host_container_set_ = false;
         frame_ids_.clear();
         named_ids_.clear();
         UiFrameInfo frame_info = info;
@@ -149,7 +153,8 @@ namespace kpengine::editor::ui
         const UiNodeId id = HashNamedId(descriptor.id);
         const auto existing = named_ids_.find(id);
         if (existing != named_ids_.end() && existing->second != descriptor.id)
-            throw std::logic_error("stable UI ID hash collision in frame");
+            throw std::logic_error("stable UI ID hash collision in frame: " +
+                existing->second + " vs " + std::string{descriptor.id});
         named_ids_.insert_or_assign(id, std::string{descriptor.id});
         UiControl window{};
         window.id = id;
@@ -158,6 +163,16 @@ namespace kpengine::editor::ui
         window.description = descriptor.description;
         window.enabled = descriptor.enabled;
         window.disabled_reason = descriptor.disabled_reason;
+        window.fixed_geometry = descriptor.fixed_geometry;
+        window.preserve_geometry = descriptor.preserve_geometry;
+        window.window_no_title_bar = descriptor.window_no_title_bar;
+        window.window_no_background = descriptor.window_no_background;
+        window.window_no_border = descriptor.window_no_border;
+        window.window_no_collapse = descriptor.window_no_collapse;
+        window.window_no_saved_settings = descriptor.window_no_saved_settings;
+        window.window_no_bring_to_front = descriptor.window_no_bring_to_front;
+        window.window_no_inputs = descriptor.window_no_inputs;
+        window.window_padding_zero = descriptor.window_padding_zero;
         return WindowScope(*this, window, first_use_position, first_use_size);
     }
 
@@ -169,7 +184,8 @@ namespace kpengine::editor::ui
         const UiNodeId id = HashNamedId(descriptor.id);
         const auto existing = named_ids_.find(id);
         if (existing != named_ids_.end() && existing->second != descriptor.id)
-            throw std::logic_error("stable UI ID hash collision in frame");
+            throw std::logic_error("stable UI ID hash collision in frame: " +
+                existing->second + " vs " + std::string{descriptor.id});
         named_ids_.insert_or_assign(id, std::string{descriptor.id});
         UiControl window{};
         window.id = id;
@@ -178,6 +194,16 @@ namespace kpengine::editor::ui
         window.description = descriptor.description;
         window.enabled = descriptor.enabled;
         window.disabled_reason = descriptor.disabled_reason;
+        window.fixed_geometry = descriptor.fixed_geometry;
+        window.preserve_geometry = descriptor.preserve_geometry;
+        window.window_no_title_bar = descriptor.window_no_title_bar;
+        window.window_no_background = descriptor.window_no_background;
+        window.window_no_border = descriptor.window_no_border;
+        window.window_no_collapse = descriptor.window_no_collapse;
+        window.window_no_saved_settings = descriptor.window_no_saved_settings;
+        window.window_no_bring_to_front = descriptor.window_no_bring_to_front;
+        window.window_no_inputs = descriptor.window_no_inputs;
+        window.window_padding_zero = descriptor.window_padding_zero;
         return WindowScope(*this, window, open, first_use_position, first_use_size);
     }
 
@@ -186,7 +212,8 @@ namespace kpengine::editor::ui
         const UiNodeId id = HashNamedId(descriptor.id);
         const auto existing = named_ids_.find(id);
         if (existing != named_ids_.end() && existing->second != descriptor.id)
-            throw std::logic_error("stable UI ID hash collision in frame");
+            throw std::logic_error("stable UI ID hash collision in frame: " +
+                existing->second + " vs " + std::string{descriptor.id});
         named_ids_.insert_or_assign(id, std::string{descriptor.id});
         UiControl control{};
         control.id = id;
@@ -201,7 +228,8 @@ namespace kpengine::editor::ui
         const UiNodeId id = HashNamedId(descriptor.id);
         const auto existing = named_ids_.find(id);
         if (existing != named_ids_.end() && existing->second != descriptor.id)
-            throw std::logic_error("stable UI ID hash collision in frame");
+            throw std::logic_error("stable UI ID hash collision in frame: " +
+                existing->second + " vs " + std::string{descriptor.id});
         named_ids_.insert_or_assign(id, std::string{descriptor.id});
         UiControl control{};
         control.id = id;
@@ -341,6 +369,14 @@ namespace kpengine::editor::ui
         --window_depth_;
     }
 
+    std::optional<UiRect> UiContext::WindowBounds(const std::string_view id) const
+    {
+        VerifyThread();
+        if (!in_frame_ || id.empty())
+            throw std::logic_error("window bounds require an active frame and stable ID");
+        return backend_.WindowBounds(StableUiNodeId(id));
+    }
+
     void UiContext::SetHostContainer(const UiControl &container)
     {
         VerifyThread();
@@ -356,6 +392,7 @@ namespace kpengine::editor::ui
             throw;
         }
         frame_ids_.insert(container.id);
+        host_container_set_ = true;
     }
 
     UiNodeId UiContext::HashNamedId(const std::string_view name)
@@ -393,9 +430,12 @@ namespace kpengine::editor::ui
         detail::ValidateControlInput(control);
         const auto existing = named_ids_.find(control.id);
         if (existing != named_ids_.end() && existing->second != descriptor.id)
-            throw std::logic_error("stable UI ID hash collision in frame");
+            throw std::logic_error("stable UI ID hash collision in frame: " +
+                existing->second + " vs " + std::string{descriptor.id});
         if (frame_ids_.contains(control.id))
-            throw std::logic_error("duplicate UI node ID in frame");
+            throw std::logic_error("duplicate UI node ID in frame: " +
+                (named_ids_.contains(control.id) ? named_ids_.at(control.id)
+                    : std::string{"<unnamed>"}) + " (" + std::to_string(control.id) + ")");
         named_ids_.insert_or_assign(control.id, std::string{descriptor.id});
         frame_ids_.insert(control.id);
         try
@@ -418,10 +458,13 @@ namespace kpengine::editor::ui
         {
             const auto existing = named_ids_.find(control.id);
             if (existing != named_ids_.end() && existing->second != *named_id)
-                throw std::logic_error("stable UI ID hash collision in frame");
+                throw std::logic_error("stable UI ID hash collision in frame: " +
+                    existing->second + " vs " + std::string{*named_id});
         }
         if (frame_ids_.contains(control.id))
-            throw std::logic_error("duplicate UI node ID in frame");
+            throw std::logic_error("duplicate UI node ID in frame: " +
+                (named_ids_.contains(control.id) ? named_ids_.at(control.id)
+                    : std::string{"<unnamed>"}) + " (" + std::to_string(control.id) + ")");
         if (named_id)
         {
             named_ids_.insert_or_assign(control.id, std::string{*named_id});
@@ -570,9 +613,12 @@ namespace kpengine::editor::ui
                           const float height, const bool headers, const std::function<void()> &draw)
     {
         const UiNodeId id = HashNamedId(name);
-        if (in_table_ || columns.empty() || columns.size() > 32 ||
-            !std::isfinite(height) || height < 0.0F)
-            throw std::logic_error("invalid UI table scope");
+        if (in_table_)
+            throw std::logic_error("invalid UI table scope: nested tables are not supported");
+        if (in_virtual_list_)
+            throw std::logic_error("invalid UI table scope: table cannot begin inside a virtual list");
+        if (columns.empty() || columns.size() > 32 || !std::isfinite(height) || height < 0.0F)
+            throw std::logic_error("invalid UI table scope: invalid columns or height");
         for (const auto &column : columns)
         {
             if (!std::isfinite(column.width) || column.width < 0.0F)
@@ -610,10 +656,71 @@ namespace kpengine::editor::ui
         backend_.TableColumn();
     }
 
+    void UiContext::VirtualList(const std::string_view name, const std::size_t item_count,
+                                const float row_height, const bool scroll_to_end,
+                                const std::function<void(UiListRange)> &draw)
+    {
+        VerifyThread();
+        const UiNodeId id = HashNamedId(name);
+        if (!in_frame_ || (window_depth_ != 1 && !host_container_set_) ||
+            in_virtual_list_ ||
+            !std::isfinite(row_height) || row_height <= 0.0F || !draw)
+            throw std::logic_error("invalid UI virtual list scope");
+        if (!frame_ids_.insert(id).second)
+            throw std::logic_error("duplicate UI virtual list ID in frame");
+
+        UiListRange range{};
+        try
+        {
+            range = backend_.BeginVirtualList(id, item_count, row_height, scroll_to_end);
+        }
+        catch (...)
+        {
+            AbortFrame();
+            throw;
+        }
+        if (range.first > range.last || range.last > item_count)
+        {
+            backend_.EndVirtualList();
+            throw std::logic_error("UI backend returned an invalid virtual list range");
+        }
+
+        in_virtual_list_ = true;
+        try
+        {
+            draw(range);
+        }
+        catch (...)
+        {
+            backend_.EndVirtualList();
+            in_virtual_list_ = false;
+            throw;
+        }
+        backend_.EndVirtualList();
+        in_virtual_list_ = false;
+    }
+
+    void UiContext::SetClipboardText(const std::string_view text)
+    {
+        VerifyThread();
+        if (!in_frame_)
+            throw std::logic_error("clipboard access requires an active UI frame");
+        try
+        {
+            backend_.SetClipboardText(text);
+        }
+        catch (...)
+        {
+            AbortFrame();
+            throw;
+        }
+    }
+
     UiFrameResult UiContext::EndFrame()
     {
         VerifyThread();
-        if (!in_frame_ || window_depth_ != 0 || theme_depth_ != 0 ||
+        if (!in_frame_ || window_depth_ != 0 || theme_depth_ != 0 || in_table_ ||
+            in_virtual_list_ ||
             tab_bar_depth_ != 0 || tab_item_depth_ != 0)
             throw std::logic_error("cannot finish an incomplete UI frame");
         try
@@ -639,6 +746,9 @@ namespace kpengine::editor::ui
         theme_depth_ = 0;
         tab_bar_depth_ = 0;
         tab_item_depth_ = 0;
+        in_table_ = false;
+        in_virtual_list_ = false;
+        host_container_set_ = false;
         frame_ids_.clear();
         named_ids_.clear();
     }

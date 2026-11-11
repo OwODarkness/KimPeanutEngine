@@ -21,6 +21,7 @@
 #include "graphics/backend/common/editor_presentation_bridge.h"
 #include "graphics/backend/common/render_target.h"
 #include "editor/ui/api/editor_ui/ui_session.h"
+#include "editor/ui/host/editor_ui_host.h"
 #include "runtime/runtime_startup.h"
 
 namespace kpengine
@@ -86,7 +87,7 @@ namespace kpengine::editor
     class EditorWindowComponent;  // factory return type only; keeps imgui.h out of here
     class ActorEditorModel;
     class SettingsEditorModel;
-    class SettingsEditorWindowComponent;
+    class SettingsEditorWindow;
 
     // Parameter bundle for EditorUI::Initialize, so the signature doesn't grow with each
     // injected dependency (mirrors EditorContextInitInfo / WindowCreateInfo). Members are
@@ -153,12 +154,13 @@ namespace kpengine::editor
         void SetUiObservationEnabled(bool enabled) noexcept;
         const std::vector<ui::UiNodeObservation> &GetLastUiObservation() const noexcept
         {
-            return last_ui_observation_;
+            return presentation_host_.LastObservation();
         }
-        void DrawRenderTarget(const graphics::RenderTargetView &view, const ImVec2 &size);
+        void RegisterRenderTargetImage(ui::UiImageId id,
+                                       const graphics::RenderTargetView &view);
 
         double GetLastRenderTimeMs() const noexcept { return last_render_time_ms_; }
-        ImFont *GetCodeFont() const noexcept { return code_font_; }
+        ImFont *GetCodeFont() const noexcept { return presentation_host_.CodeFont(); }
         double GetLastImGuiBuildTimeMs() const noexcept
         {
             return last_imgui_build_time_ms_;
@@ -172,7 +174,6 @@ namespace kpengine::editor
         // Backend factory (chosen by the active graphics API) and the panel builders
         // that assemble the tool tree. Each panel is one helper — Initialize stays an
         // orchestration list instead of one long build routine.
-        void CreateImguiBackends(const EditorUIInitInfo &init_info);
         void BuildMenuBar(render::RenderSystem *render_system);
         void BuildRegisteredWorkspaceExtensions();
         // Panel factories: these return a component that EditorUI does not own, so the
@@ -213,7 +214,7 @@ namespace kpengine::editor
         // loading tree keeps placing itself.
         void ApplyLayoutToTree();
         void LoadLayoutState();
-        void SaveLayoutState();
+        bool SaveLayoutState();
         // Binds the Tool > Capture Screenshot command to the runtime export path.
         void TriggerScreenshot();
         void OpenAssetReferenceViewer();
@@ -224,16 +225,8 @@ namespace kpengine::editor
 
         // The UI is decoupled from any graphics API: the WSI feeds ImGui window
         // events, the renderer draws ImGui with the active backend (GL/Vulkan).
-        std::unique_ptr<IEditorImguiRenderer> renderer_;
-        std::unique_ptr<IEditorImguiWSI> wsi_;
-        std::unique_ptr<ui::UiSession> ui_session_;
-        std::vector<ui::UiNodeObservation> last_ui_observation_;
+        EditorUiHost presentation_host_;
         bool ui_observation_enabled_ = false;
-        bool imgui_context_created_ = false;
-        bool renderer_init_attempted_ = false;
-        bool renderer_initialized_ = false;
-        bool wsi_init_attempted_ = false;
-        bool wsi_initialized_ = false;
         bool workspace_promoted_ = false;
         bool closing_ = false;
         bool viewer_mode_ = false;
@@ -242,7 +235,6 @@ namespace kpengine::editor
         std::function<void()> viewer_content_;
         std::function<void(ui::UiContext &)> ui_viewer_content_;
         LogLevelColorTable log_colors_;
-        ImFont *code_font_ = nullptr;
         double last_render_time_ms_ = 0.0;
         double last_imgui_build_time_ms_ = 0.0;
         double last_imgui_submit_time_ms_ = 0.0;
@@ -288,6 +280,7 @@ namespace kpengine::editor
         // once instead of every frame. Seeded after promotion, when the loaded file has
         // been applied and must not be written straight back.
         std::uint64_t saved_placement_revision_ = 0;
+        bool layout_save_pending_ = false;
 
         // This is a true floating window, not a dock member. It renders after the
         // splitter foreground pass so dock seams cannot cover its content or border.
@@ -295,7 +288,7 @@ namespace kpengine::editor
         // The settings window borrows this model and Runtime access interface. It is
         // destroyed first, before either the model or Runtime-owned access can expire.
         std::unique_ptr<SettingsEditorModel> settings_model_;
-        std::unique_ptr<SettingsEditorWindowComponent> settings_window_;
+        std::unique_ptr<SettingsEditorWindow> settings_window_;
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
         std::vector<std::unique_ptr<EditorUIComponent>> loading_components_;
     };

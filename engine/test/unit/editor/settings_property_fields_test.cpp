@@ -64,4 +64,42 @@ namespace kpengine::editor
         EXPECT_FALSE(observations[1].enabled);
         EXPECT_EQ(observations[1].disabled_reason, "Read-only setting");
     }
+
+    TEST(SettingsPropertyFieldsTest, BooleanFieldPreservesProductionObservationSemantics)
+    {
+        settings::SettingPropertyDefinition property{};
+        property.key = "enabled";
+        property.value_type = reflection::ReflectionValueType::Bool;
+        property.metadata.display_name = "Neutral checkbox";
+
+        auto backend = std::make_unique<ui::UiRecordingBackend>();
+        auto *const recorder = backend.get();
+        ui::UiSession session(std::move(backend));
+        ASSERT_TRUE(session.Initialize({}));
+        ASSERT_TRUE(session.BeginFrame({.observe = true}));
+        {
+            auto window = session.Context().Window({
+                .id = ui::StableUiNodeId("smoke.window"), .label = "Editor UI Smoke"});
+            const auto edit = SettingsPropertyFieldsView::Draw(
+                session.Context(), "smoke", property, reflection::ReflectionValue{true});
+            EXPECT_FALSE(edit.changed);
+            EXPECT_TRUE(std::get<bool>(edit.value));
+        }
+        ASSERT_TRUE(session.EndFrame().complete);
+
+        const auto observations = recorder->Observations();
+        ASSERT_EQ(observations.size(), 2U);
+        const auto &checkbox = observations.back();
+        EXPECT_EQ(checkbox.id, SettingsPropertyFieldsView::StableId("smoke", "enabled"));
+        EXPECT_EQ(checkbox.parent, ui::StableUiNodeId("smoke.window"));
+        EXPECT_EQ(checkbox.role, ui::UiRole::CheckBox);
+        EXPECT_EQ(checkbox.label, "Neutral checkbox");
+        EXPECT_EQ(checkbox.value, ui::UiValue{true});
+        EXPECT_TRUE(checkbox.enabled);
+        EXPECT_TRUE(checkbox.disabled_reason.empty());
+        ASSERT_EQ(checkbox.actions.size(), 1U);
+        EXPECT_EQ(checkbox.actions.front(), ui::UiActionKind::Toggle);
+        EXPECT_EQ(checkbox.geometry, ui::UiGeometryProvenance::Unavailable);
+        EXPECT_FALSE(checkbox.last_action.has_value());
+    }
 }

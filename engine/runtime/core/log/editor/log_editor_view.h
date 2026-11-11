@@ -3,13 +3,17 @@
 
 #include <array>
 #include <cstddef>
+#include <string>
+#include <vector>
 
 namespace kpengine
 {
     class LogSystem;
+    namespace program { struct LogEntry; }
 
     namespace editor
     {
+        namespace ui { class UiContext; }
         struct LogEditorColor
         {
             float r = 1.0f;
@@ -23,18 +27,22 @@ namespace kpengine
         class LogEditorView final
         {
         public:
+            LogEditorView();
             explicit LogEditorView(LogEditorColorTable colors);
-            void RenderContent(LogSystem *log_system);
+            void RenderContent(ui::UiContext &ui, LogSystem *log_system);
 
         private:
+            static std::string FormatLogs(
+                const std::vector<const program::LogEntry *> &logs,
+                std::size_t first, std::size_t last);
+
             LogEditorColorTable colors_;
-            std::array<char, 256> search_buffer_{};
-            std::size_t level_filter_index_ = 0;
+            std::string search_;
+            std::string level_filter_ = "all";
             bool follow_latest_ = true;
             bool jump_to_latest_ = false;
             std::size_t last_log_count_ = 0;
-            int selection_anchor_index_ = -1;
-            int selection_caret_index_ = -1;
+            int selected_log_index_ = -1;
         };
     }
 }

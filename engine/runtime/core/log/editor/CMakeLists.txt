@@ -8,5 +8,5 @@ target_include_directories(LogEditor PUBLIC
 
 target_link_libraries(LogEditor
     PUBLIC Log
-    PRIVATE KP::ImGui
+    PRIVATE UIWidgets
 )

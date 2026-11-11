@@ -187,7 +187,7 @@ target_include_directories(Live2DModule PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/emotion"
     "${CMAKE_CURRENT_SOURCE_DIR}/editor")
 target_link_libraries(Live2DModule PUBLIC Live2D Live2DBubble
-    PRIVATE Live2DImport RuntimeScreenshot EditorUILib KP::ImGui KP::NlohmannJson)
+    PRIVATE Live2DImport RuntimeScreenshot EditorUiHostLib LogEditor KP::NlohmannJson)
 set_property(TARGET Live2DModule PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 

@@ -21,14 +21,16 @@ concrete scene tools; the boundaries below are not all implemented yet.
 
 The framework supplies these mechanisms. Each feature supplies the domain
 adapter, model and view that give them meaning. Feature views build UI through
-Editor's general component/drawing API. ImGui calls and types belong inside the
+Editor's neutral context API. ImGui calls and types belong inside the
 Editor ImGui backend implementation. Reuse does not require a class for every
 widget; focused functions can use the same backend-neutral API.
 
 The current neutral API exposes typed Button, Checkbox, Selectable, Combo,
-NumericInput and TextInput operations. A view gives each control a stable string
-ID; the API hashes it to an internal node ID and checks duplicates/collisions
-within the frame. Results preserve the control's value type:
+NumericInput and single- or multiline TextInput operations, plus reusable table,
+virtual-list, window and canvas scopes. Virtual lists can be composed inside a
+table cell. A view gives each control a stable string ID; the API hashes it to
+an internal node ID and checks duplicates/collisions within the frame. Results
+preserve the control's value type:
 
 ```cpp
 auto edit = ui.Checkbox({
@@ -75,11 +77,6 @@ ticks, line/bar/point series and pointer values. A feature supplies its data and
 style tokens; Audio and Signal Lab share the plotting mechanism without sharing
 their palettes or domain-specific waveform/acquisition behavior.
 
-`UIWidgets` now includes a neutral 2D Plot over Canvas for linear/log axes,
-ticks, line/bar/point series and pointer values. A feature supplies its data and
-style tokens; Audio and Signal Lab share the plotting mechanism without sharing
-their palettes or domain-specific waveform/acquisition behavior.
-
 ED6 migrates existing direct calls incrementally; they are legacy dependencies
 until migrated. Completion requires feature/workspace code and public UI
 headers to be free of direct ImGui dependencies. Toolkit-specific implementation
@@ -93,6 +90,10 @@ backend and an agent-readable UI schema are separate follow-up work.
 - **Feature editor tools** live beside their domains, such as `log/editor` and
   `settings/editor`, in separate editor targets. A feature's editor session owns
   its UI state; its runtime service retains domain state and behavior.
+- **Editor Asset tools** provide native file/folder dialogs for editing actions.
+  Callers supply filters and receive UTF-8 paths; platform dialog APIs and wide-
+  string conversion stay inside Editor, while Runtime Asset and AssetImport
+  remain headless.
 - **Scene Editor** is an application composition: viewport interaction, Actor
   selection, gizmos, scene layout and the chosen feature tools. Audio Player,
   TTS, Terrain, Signal Lab and Live2D applications choose the framework

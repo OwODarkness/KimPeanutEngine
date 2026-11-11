@@ -2,6 +2,7 @@
 #define KPENGINE_EDITOR_UI_API_UI_TYPES_H
 
 #include <cstdint>
+#include <cstddef>
 #include <span>
 #include <optional>
 #include <vector>
@@ -14,6 +15,7 @@ namespace kpengine::editor::ui
     using UiSessionId = std::uint64_t;
     using UiNodeId = std::uint64_t;
     using UiActionId = std::uint64_t;
+    using UiImageId = std::uint64_t;
 
     inline UiNodeId StableUiNodeId(const std::string_view name) noexcept
     {
@@ -26,6 +28,11 @@ namespace kpengine::editor::ui
             id *= prime;
         }
         return id == 0 ? 1 : id;
+    }
+
+    inline UiImageId StableUiImageId(const std::string_view name) noexcept
+    {
+        return StableUiNodeId(name);
     }
 
     struct UiVec2 { float x = 0.0F; float y = 0.0F; };
@@ -65,7 +72,14 @@ namespace kpengine::editor::ui
     struct UiTableColumn
     {
         std::string_view label;
+        // Positive widths are fixed logical pixels; zero lets the backend stretch the column.
         float width = 0.0F;
+    };
+
+    struct UiListRange
+    {
+        std::size_t first = 0;
+        std::size_t last = 0;
     };
 
     struct UiControlDescriptor
@@ -78,15 +92,26 @@ namespace kpengine::editor::ui
         std::string_view hint;
         float width = 0.0F;
         float height = 0.0F;
+        bool multiline = false;
+        bool fixed_geometry = false;
+        bool preserve_geometry = false;
         UiTextRole text_role = UiTextRole::Primary;
         bool emphasized = false;
         bool span_row = false;
         UiIconMask icon{};
+        bool window_no_title_bar = false;
+        bool window_no_background = false;
+        bool window_no_border = false;
+        bool window_no_collapse = false;
+        bool window_no_saved_settings = false;
+        bool window_no_bring_to_front = false;
+        bool window_no_inputs = false;
+        bool window_padding_zero = false;
     };
 
     enum class UiCanvasPrimitiveKind : std::uint8_t
     {
-        Line, FilledRect, Rect, Circle, Text
+        Line, FilledRect, Rect, Circle, Text, Image
     };
 
     struct UiCanvasPrimitive
@@ -100,6 +125,7 @@ namespace kpengine::editor::ui
         std::string text;
         UiVec2 text_anchor{};
         float text_scale = 1.0F;
+        UiImageId image = 0;
     };
 
     struct UiCanvas
@@ -115,6 +141,14 @@ namespace kpengine::editor::ui
         bool pressed = false;
         bool dragging = false;
         UiVec2 normalized_pointer{};
+        UiVec2 pointer_delta{};
+        float wheel_delta = 0.0F;
+        bool secondary_dragging = false;
+        UiRect bounds{};
+        UiGeometryProvenance geometry = UiGeometryProvenance::Unavailable;
+        bool released = false;
+        bool cancelled = false;
+        UiVec2 pointer_position{};
     };
 
     struct UiEditResult
@@ -162,9 +196,20 @@ namespace kpengine::editor::ui
         std::vector<UiChoice> choices;
         std::vector<UiActionKind> actions;
         float height = 0.0F;
+        bool multiline = false;
+        bool fixed_geometry = false;
+        bool preserve_geometry = false;
         UiTextRole text_role = UiTextRole::Primary;
         bool emphasized = false;
         bool span_row = false;
+        bool window_no_title_bar = false;
+        bool window_no_background = false;
+        bool window_no_border = false;
+        bool window_no_collapse = false;
+        bool window_no_saved_settings = false;
+        bool window_no_bring_to_front = false;
+        bool window_no_inputs = false;
+        bool window_padding_zero = false;
     };
 
     struct UiNodeObservation

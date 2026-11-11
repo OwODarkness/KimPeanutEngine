@@ -187,7 +187,8 @@ window/Graphics services, on the owning render lane.
 | Asset browser/reference models and views | `runtime/asset/editor`, `AssetEditor`; keep copied catalog/selection contracts, never arbitrary loading from generic UI |
 | Actor inspector/outliner and shared Actor model | `runtime/gameplay/editor`, `GameplayEditor`; keep the existing runtime editor bridge UI-free; SceneEditor coordinates viewport/gizmo selection |
 | Camera controls, viewport and transform interaction | `editor/scene`; these are scene editing interactions rather than general controls |
-| Debug images, GPU profiler and startup metrics | Feature editor adapters beside Render/stats; renderer owns statistics and image lifetime, tool owns presentation |
+| Debug Viewer and GPU Profiler | `runtime/render/editor`, separate `RenderEditor` target. Render supplies render profiles and diagnostic targets. SceneEditor injects frame-loop/UI timings and image presentation. Graphics retains GPU resource lifetime. |
+| Loading view and Startup Profiler | Editor startup presentation, fed by Runtime startup snapshots and platform memory samples. |
 | Tool row, splitters and layout persistence | Reuse in EditorWorkspaceModel/EditorWorkspace; scene defaults move to SceneEditor |
 | `EditorSettings` palette/config reading | Application/feature configuration; plain UI theme colors no longer depend on LogColor or logging entries |
 | Actor/Settings scalar and enum control selection | Optional `UIReflection` adapter after auditing both real consumers; shared value/metadata widgets, feature-owned drafts, validation and transactions |

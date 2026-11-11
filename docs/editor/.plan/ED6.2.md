@@ -1,6 +1,6 @@
 # ED6.2 — Neutral Editor UI API and Private ImGui Backend
 
-- Status: implementation in progress; acceptance gates G1–G8 remain open
+- Status: implementation in progress; ED6.2 is not accepted (G1–G2 and G4 evidence recorded; G3 and G5–G8 remain under audit)
 - Date: 2026-11-10
 - Parent: [ED6](ED6.md); acceptance ledger: [Editor TODO](../TODO.md)
 - Prerequisites: [ED6.0 baseline](../.review/ED6.0.md); preserve accepted ED6.1 lifecycle semantics
@@ -434,7 +434,7 @@ Implementation changes public interfaces and CMake boundaries, so apply
 | G5 Lifecycle | Fail context/font/renderer/WSI steps; callback exceptions; repeated shutdown; wrong thread; ED6.1 regression | Leaks, duplicate cleanup, incomplete frames, blocked close or premature service teardown |
 | G6 Graphics/images | Debug Vulkan validation and OpenGL; resize/minimize/restore, stale image tokens, font/theme rebuild, ED5 on/off | Validation errors, new color/UV regressions, expired bindings or early submitted-resource destruction |
 | G7 Hosts | SceneEditor plus five enabled standalone host families across backends; optional-disabled builds | Duplicate contexts/input/submission, changed host settings/layout, implicit scene-tool construction |
-| G8 Final boundary/performance | Full build/tests, actual dependency audit, explicit legacy allowlist, matched RelWithDebInfo CPU samples | New dependency cycles, API leakage, unexplained sustained overhead or unrecorded migration debt |
+| G8 Final boundary/performance | Full build; complete tests for the affected dependency/consumer closure; actual dependency audit, explicit legacy allowlist, matched RelWithDebInfo CPU samples | New dependency cycles, API leakage, unexplained sustained overhead or unrecorded migration debt |
 
 For G1, inspect compile interfaces and add poison headers containing `#error`
 for imgui.h, imgui_internal.h and relevant backend headers **only to neutral
@@ -452,10 +452,17 @@ Suggested commands, to run only after creating the targets:
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022"
 cmake --build build --config Debug --target UiApiCompileTest UiRecordingContractTest UiPresentationLifecycleTest SettingsPropertyFieldsTest EditorUiSmoke KimPeanutEngine -- /m:1
+ctest --test-dir build -C Debug -N -R "UiApi|UiRecording|UiPresentation|SettingsPropertyFields|EditorPanelContent|EditorUI"
 ctest --test-dir build -C Debug -R "UiApi|UiRecording|UiPresentation|SettingsPropertyFields|EditorPanelContent|EditorUI" --output-on-failure
 cmake --build build --config Debug -- /m:1
-ctest --test-dir build -C Debug --output-on-failure
 ```
+
+The CTest preview is a required scope check: discovery may expand one test
+executable into many CTest entries. Run the complete repository suite only when
+the user or repository task contract explicitly requires full CTest, or when
+the change is too broad to define a defensible affected-test closure. Record
+the previewed count and why the selected tests cover this stage; a full build
+does not imply a full repository test run.
 
 Verify that CTest actually discovers and executes tests. ED6.0/ED6.1 encountered
 missing registration. Record the cause and run the corresponding built

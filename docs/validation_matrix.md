@@ -24,7 +24,7 @@ This document defines the minimum validation required for a change in KimPeanutE
 | 1 | Compile affected target | `cmake --build build --config Debug --target <target>` |
 | 2 | Unit or contract behavior | Run the affected CTest suite |
 | 3 | Runtime smoke behavior | Run an executable such as `GraphicsSmoke` |
-| 4 | Broad integration confidence | Full build and complete test suite |
+| 4 | Broad integration confidence | Full build plus regression tests for the affected dependency and consumer closure; full repository CTest is opt-in |
 
 ## Path-to-validation matrix
 
@@ -68,9 +68,23 @@ Every test carries a label naming its module, taken from the directory under
 ctest --test-dir build -C Debug -L asset   # the equivalent raw command
 ```
 
-The full suite is 957 tests and takes a bit over two minutes. Labels change
-which tests run, never which exist: run the full suite before a change is
-considered validated, and in CI. A labelled run is for the inner loop.
+Before running a CTest selection, preview it and check that its count and names
+match the changed behavior:
+
+```powershell
+ctest --test-dir build -C Debug -N -R "EditorUi|SettingsPropertyFields"
+ctest --test-dir build -C Debug -R "EditorUi|SettingsPropertyFields" --output-on-failure
+```
+
+Test discovery can create many CTest entries from a single executable, so
+inspect the preview rather than assuming a target name selects one test. Build
+the affected targets first, then run tests for those targets, their changed
+public contracts, and direct consumers whose behavior could regress. Do not
+run unrelated module tests merely because they are present in the build tree.
+The full suite remains required in CI; locally, run it only when the user or a
+task contract asks for full CTest, or when a repository-wide change has no
+defensible narrower test set. A full build and a complete test run are separate
+choices.
 
 Configure when no build tree exists or CMake wiring changed:
 
@@ -95,10 +109,12 @@ ctest --test-dir build -C Debug -R AudioUnitTest
 ctest --test-dir build -C Debug -R ScriptUnitTest
 ```
 
-Run all tests only for level 4 validation:
+Run the complete suite only when the full-suite criteria above apply. Preview
+the size before execution:
 
 ```powershell
 cmake --build build --config Debug
+ctest --test-dir build -C Debug -N
 ctest --test-dir build -C Debug
 ```
 
@@ -106,14 +122,18 @@ ctest --test-dir build -C Debug
 
 ## Full-validation triggers
 
-Use level 4 validation when any of the following applies:
+Use level 4 validation when any of the following applies. This means validating
+the affected dependency and consumer closure; it does not automatically mean
+running every unrelated repository test:
 
 - A public header shared by multiple modules changes.
 - A common RHI handle, `PipelineDesc`, command contract, or render-resource lifetime contract changes.
 - CMake target dependencies or library boundaries change.
 - A refactor changes Runtime, Render, Graphics, and Editor together.
 - The changed-file mapping cannot establish a safe validation scope.
-- The user explicitly requests full validation.
+- The user explicitly requests full validation. Run the full suite only when
+  they specify full CTest or the task contract requires it; otherwise validate
+  the complete affected test set.
 
 ## Reporting
 

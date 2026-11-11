@@ -344,6 +344,11 @@ namespace kpengine::editor::ui::detail
                 Require(primitive.text.size() <= 8192 && finite_point(primitive.text_anchor) &&
                             std::isfinite(primitive.text_scale) && primitive.text_scale > 0.0F,
                         "canvas text exceeds its bounded length");
+            if (primitive.kind == UiCanvasPrimitiveKind::Image)
+                Require(primitive.image != 0 &&
+                            primitive.second.x >= primitive.first.x &&
+                            primitive.second.y >= primitive.first.y,
+                        "canvas image requires an ID and ordered bounds");
         }
     }
 }

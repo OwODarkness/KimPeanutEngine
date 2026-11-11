@@ -1,4 +1,5 @@
 #include "editor/log/editor_log_component.h"
+#include "editor_ui/ui_backend.h"
 
 namespace kpengine::editor
 {
@@ -24,9 +25,8 @@ namespace kpengine::editor
     {
     }
 
-    void EditorLogComponent::RenderContent()
+    void EditorLogComponent::RenderContent(ui::UiContext &context)
     {
-        EditorWindowComponent::RenderContent();
-        view_.RenderContent(log_system_);
+        view_.RenderContent(context, log_system_);
     }
 }

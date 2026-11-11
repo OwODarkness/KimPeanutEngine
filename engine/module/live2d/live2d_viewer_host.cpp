@@ -323,15 +323,15 @@ namespace kpengine::live2d
                        "viewer log settings unavailable (%s), using defaults", error.what());
             }
             viewer_editor_ = MakeHostObject<editor::Live2DViewerEditor>();
-            kpengine::editor::EditorUIInitInfo ui_info{};
+            kpengine::editor::EditorUiHostInitInfo ui_info{};
             ui_info.window = window_->GetNativeHandle();
-            ui_info.editor_presentation_bridge = backend_->GetEditorPresentationBridge();
-            ui_info.log_system = runtime::global_runtime_context.log_system_.get();
-            ui_info.engine = &engine;
-            ui_info.background_color_override = kpengine::editor::LogColor{
+            ui_info.presentation_bridge = backend_->GetEditorPresentationBridge();
+            ui_info.background_color = kpengine::editor::LogColor{
                 window_background_color[0], window_background_color[1],
                 window_background_color[2], window_background_color[3]};
-            if (!viewer_editor_->Initialize(ui_info, editor_settings.log_colors, diagnostic))
+            if (!viewer_editor_->Initialize(ui_info,
+                    runtime::global_runtime_context.log_system_.get(),
+                    editor_settings.log_colors, diagnostic))
             {
                 return false;
             }
@@ -645,13 +645,13 @@ namespace kpengine::live2d
         {
             render_capture_service_->EnqueuePendingReadback();
         }
-        // Publish the current frame's CPU work before ImGui draws the profiler;
+        // Publish current frame CPU work before the editor renders its profiler;
         // the final value below includes presentation completion for the next
         // frame's display as well.
         frame_total_ms_ = std::chrono::duration<double, std::milli>(
                               std::chrono::steady_clock::now() - frame_started)
                               .count();
-        const auto imgui_started = std::chrono::steady_clock::now();
+        const auto ui_started = std::chrono::steady_clock::now();
         if (viewer_editor_)
         {
             editor::Live2DViewerEditorActions actions;
@@ -690,8 +690,8 @@ namespace kpengine::live2d
                 return false;
             }
         }
-        imgui_work_ms_ = std::chrono::duration<double, std::milli>(
-                              std::chrono::steady_clock::now() - imgui_started)
+        ui_work_ms_ = std::chrono::duration<double, std::milli>(
+                              std::chrono::steady_clock::now() - ui_started)
                               .count();
         frame.End();
         backend_->EndFrame();
@@ -857,7 +857,7 @@ namespace kpengine::live2d
         }
         state.frame_total_ms = frame_total_ms_;
         state.render_work_ms = render_work_ms_;
-        state.imgui_work_ms = imgui_work_ms_;
+        state.ui_work_ms = ui_work_ms_;
         state.game_tick_work_ms = game_tick_work_ms_;
         state.renderer_ready = renderer_ != nullptr;
         if (renderer_ != nullptr)

@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <span>
 #include <vector>
 
 #include "editor/ui/component/editor_tool_row_model.h"
@@ -33,6 +34,7 @@ namespace kpengine::editor
                                         bool open = true,
                                         EditorLayoutSlot dock = EditorLayoutSlot::ToolRow);
         bool RequestCloseById(std::string_view id);
+        const std::vector<EditorRect> &FloatingBounds() const noexcept { return floating_bounds_; }
         // Borrowed, and must outlive this component: EditorUI declares its layout model
         // before the component vector, so the components are destroyed first. Every dock
         // window's rectangle comes from it. Null is supported and draws nothing.
@@ -40,6 +42,7 @@ namespace kpengine::editor
 
         void Render() override;
         void RenderWithContext(ui::UiContext &context) override;
+        void RenderOverlay(std::span<const EditorRect> external_occlusions = {});
 
     private:
         bool IsDrawnThisFrame(std::size_t index) const noexcept;
@@ -55,14 +58,20 @@ namespace kpengine::editor
         void RenderTabStrip(EditorLayoutSlot dock, const std::vector<std::size_t> &members);
         // Marks dock destinations during a drag (and empty docks while idle). Drawn before the drag preview
         // so the ghost lands on top of the targets rather than under them.
-        void RenderPlacementTargets();
-        void RenderDragPreview();
+        void RenderPlacementTargets(std::span<const EditorRect> occlusions);
+        void RenderDragPreview(std::span<const EditorRect> occlusions);
+        EditorPlacementTarget ResolveTargetAt(float x, float y,
+                                              std::span<const EditorRect> occlusions) const noexcept;
 
         EditorToolRowModel &model_;
         const EditorLayoutModel *layout_ = nullptr;  // borrowed
         std::vector<std::unique_ptr<EditorWindowComponent>> panels_;  // parallel to entries
+        std::vector<EditorRect> floating_bounds_;
         EditorRect row_rect_{};
         int drag_index_ = -1;     // panel being dragged, -1 when idle
+        int drag_candidate_index_ = -1;
+        float drag_press_x_ = 0.0f;
+        float drag_press_y_ = 0.0f;
         int context_index_ = -1;  // tab whose context menu is open
     };
 }

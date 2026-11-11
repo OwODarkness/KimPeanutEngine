@@ -24,6 +24,9 @@ namespace kpengine::editor
                              const data::ShaderData *fragment) override;
         ImTextureID GetTextureID(const graphics::RenderTargetView &view) override;
         void DrawSceneImage(ImTextureID texture_id, const ImVec2 &size) override;
+        void DrawSceneImagePrimitive(ImDrawList *draw_list, ImTextureID texture_id,
+                                     const ImVec2 &minimum,
+                                     const ImVec2 &maximum) override;
 
     private:
         graphics::IEditorPresentationBridge *presentation_bridge_ = nullptr;

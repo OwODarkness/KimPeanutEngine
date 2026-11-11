@@ -78,6 +78,51 @@ namespace kpengine::editor::ui
         EXPECT_EQ(observations[1].geometry, UiGeometryProvenance::Unavailable);
     }
 
+    TEST(UiRecordingContractTest, CompletedObservationOwnsTemporaryControlValues)
+    {
+        auto backend = std::make_unique<UiRecordingBackend>();
+        auto *const recording = backend.get();
+        UiSession session(std::move(backend));
+        ASSERT_TRUE(session.Initialize({}));
+        const UiSessionId session_id = session.Context().SessionId();
+        recording->QueueInput(session_id, 1, 2, std::string{"edited value"},
+                              UiActionKind::Edit);
+
+        ASSERT_TRUE(session.BeginFrame({}));
+        {
+            auto window = session.Context().Window(
+                {.id = 1, .label = std::string{"Temporary window label"}});
+            {
+                std::string label{"Temporary control label"};
+                std::string description{"Temporary control description"};
+                std::string value{"original value"};
+                const UiControl control{.id = 2,
+                                        .role = UiRole::TextInput,
+                                        .label = label,
+                                        .description = description,
+                                        .value = value,
+                                        .actions = {UiActionKind::Edit,
+                                                    UiActionKind::Commit,
+                                                    UiActionKind::Cancel}};
+                const UiEditResult edit = session.Context().Control(control);
+                ASSERT_TRUE(edit.changed);
+                ASSERT_EQ(std::get<std::string>(edit.value), "edited value");
+                label.assign("mutated label");
+                description.assign("mutated description");
+                value.assign("mutated value");
+            }
+        }
+        ASSERT_TRUE(session.EndFrame().complete);
+
+        const auto observations = recording->Observations();
+        ASSERT_EQ(observations.size(), 2U);
+        EXPECT_EQ(observations[0].label, "Temporary window label");
+        EXPECT_EQ(observations[1].label, "Temporary control label");
+        EXPECT_EQ(observations[1].description, "Temporary control description");
+        EXPECT_EQ(std::get<std::string>(observations[1].value), "edited value");
+        EXPECT_EQ(observations[1].parent, 1U);
+    }
+
     TEST(UiRecordingContractTest, TypedControlsUseStableStringIdsAndReturnTypedResults)
     {
         auto backend = std::make_unique<UiRecordingBackend>();

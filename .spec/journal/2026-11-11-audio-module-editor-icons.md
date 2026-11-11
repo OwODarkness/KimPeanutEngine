@@ -110,3 +110,41 @@ Limitations and follow-up:
 - Live network TTS synthesis, perceived audio quality, performance measurements
   and the wider ED6 backend/optional-host acceptance matrix were not tested.
   No performance or full ED6/P1 acceptance claim is made.
+
+## Editor Asset tool file-dialog follow-up — 2026-11-11
+
+- Operation and acceptance: move native open-file/open-folder dialogs and wide/
+  UTF-8 conversion out of Audio Editor into a reusable Editor Asset tool API.
+- Candidates inspected: Audio's `WideToUtf8`, `PickAudioFiles`,
+  `PickSubtitleFile`, and `PickAudioFolder`; `engine/editor/asset` and its
+  `EditorUILib` target; AssetImport's headless boundary; existing filesystem
+  path conversions in Audio and AssetImport. Placement evidence passed with
+  `tools/agent/placement.ps1` before editing.
+- Placement: `engine/editor/asset` owns the editor-facing dialog service because
+  native file dialogs are editing-tool interaction. Asset Runtime/AssetImport
+  remain UI-free. Audio supplies only UTF-8 filters and consumes UTF-8 paths;
+  platform APIs and wide-string conversion stay inside the Editor tool layer.
+- Consumers and validation: Audio Player calls the shared file/folder picker;
+  no picker state escapes its call and selected paths remain owned strings.
+  The selection parser handles both single and multi-select buffers with bounds
+  checks; malformed UTF input fails without returning partial paths. Windows
+  system libraries moved from AudioPlayerEditorUI to EditorUILib.
+- Validation: `cmake --build build --config Debug --target KimPeanutEngine -- /m:1`
+  passed without warnings; `git diff --check` and final placement evidence passed.
+  Repository search confirms `engine/module/audio` no longer contains Win32
+  dialog APIs or direct wide/UTF conversion. The native dialog itself was not
+  manually opened in this follow-up; non-Windows picker behavior remains empty.
+
+## Audio editor ownership cleanup — 2026-11-11
+
+- Operation and acceptance: ensure audio output-device, mixer and telemetry UI is owned by the Audio feature editor, with no duplicate legacy implementation under the general Editor.
+- Candidates inspected: `engine/editor/ui/component/editor_audio_component.{h,cpp}` uses `EditorWindowComponent` and ImGui directly, but has no consumer and is absent from `engine/editor/ui/component/CMakeLists.txt`; `engine/module/audio/editor/audio_player_editor.cpp::AudioPlayerEditor::RenderInfo` is compiled into `AudioPlayerEditorUI` and already provides output-device control, master/bus gain and mute, and mixer telemetry through neutral `UiContext` operations.
+- Placement: keep the live behavior in the existing Audio Player editor view; remove the unbuilt duplicate rather than move its obsolete ImGui implementation into the feature target. No new class, target, or dependency is needed.
+- Consumers, ownership/lifetime, validation: repo-wide symbol search and the explicit component source list confirm there are no consumers/build membership for the legacy files. Update the ED6.2 measured ImGui allowlist after removal and rerun placement/diff checks; no runtime behavior changes.
+
+## Audio editor ownership cleanup result — 2026-11-11
+
+- Removed the orphaned general-Editor `EditorAudioComponent` header and source. The source was absent from the explicit component target source list and had no construction/include sites, so moving it would have resurrected unconnected ImGui code.
+- Confirmed the active Audio-owned `AudioPlayerEditor::RenderInfo` already covers output-device start/stop, master and bus gains, mute state, and mixer telemetry through `UiContext`; no new behavior or module dependency was needed.
+- Removed the deleted source from the current ED6.2 ImGui compatibility inventory and recorded the removal in `docs/dead_code.md`. This narrows the Editor compatibility inventory without moving any Audio responsibility back into the general Editor.
+- Validation: source consumer/CMake searches found no remaining `EditorAudioComponent` references. No build or tests were run: the removed files were not part of any target, and no compiled target changed. `git diff --check` and the post-change placement audit are the remaining checks for this cleanup.

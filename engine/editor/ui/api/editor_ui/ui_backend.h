@@ -56,6 +56,8 @@ namespace kpengine::editor::ui
             return BeginWindow(window);
         }
         virtual void EndWindow() = 0;
+        virtual std::optional<UiRect> WindowBounds(UiNodeId) const noexcept { return std::nullopt; }
+        virtual UiVec2 PointerPosition() const noexcept { return {}; }
         virtual bool BeginTabBar(const UiControl &) { return true; }
         virtual void EndTabBar() {}
         virtual bool BeginTabItem(const UiControl &) { return true; }
@@ -89,6 +91,12 @@ namespace kpengine::editor::ui
         virtual void EndTable() {}
         virtual void TableRow(bool) {}
         virtual void TableColumn() {}
+        virtual UiListRange BeginVirtualList(UiNodeId, std::size_t item_count, float, bool)
+        {
+            return {0, item_count};
+        }
+        virtual void EndVirtualList() {}
+        virtual void SetClipboardText(std::string_view) {}
         virtual UiFrameResult EndFrame(std::uint64_t frame) = 0;
         virtual void AbortFrame() noexcept = 0;
         virtual void Shutdown() noexcept = 0;
@@ -119,6 +127,8 @@ namespace kpengine::editor::ui
         void PushTheme(const UiTheme &theme);
         void PopTheme() noexcept;
         void EndWindow();
+        std::optional<UiRect> WindowBounds(std::string_view id) const;
+        UiVec2 PointerPosition() const noexcept { return backend_.PointerPosition(); }
         bool BeginTabBar(const UiControl &tab_bar);
         void EndTabBar();
         bool BeginTabItem(const UiControl &tab_item);
@@ -189,6 +199,11 @@ namespace kpengine::editor::ui
                    float height, bool headers, const std::function<void()> &draw);
         void TableRow(bool highlighted = false);
         void TableColumn();
+        // Virtual lists may be hosted in a table cell; nested lists remain invalid.
+        void VirtualList(std::string_view id, std::size_t item_count, float row_height,
+                         bool scroll_to_end,
+                         const std::function<void(UiListRange)> &draw);
+        void SetClipboardText(std::string_view text);
         UiFrameResult EndFrame();
         void AbortFrame() noexcept;
         UiSessionId SessionId() const noexcept { return session_; }
@@ -206,6 +221,8 @@ namespace kpengine::editor::ui
         unsigned int tab_item_depth_ = 0;
         bool in_frame_ = false;
         bool in_table_ = false;
+        bool in_virtual_list_ = false;
+        bool host_container_set_ = false;
         std::unordered_set<UiNodeId> frame_ids_;
         std::unordered_map<UiNodeId, std::string> named_ids_;
         std::thread::id owner_thread_ = std::this_thread::get_id();

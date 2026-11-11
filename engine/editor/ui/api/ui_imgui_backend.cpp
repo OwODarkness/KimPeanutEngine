@@ -8,6 +8,8 @@
 #include <type_traits>
 #include <algorithm>
 #include <array>
+#include <cstdio>
+#include <limits>
 #include <unordered_map>
 
 namespace kpengine::editor::ui
@@ -41,7 +43,9 @@ namespace kpengine::editor::ui
 
         struct ImGuiInlineBackend final : IUiBackend
         {
-            explicit ImGuiInlineBackend(ImFont *code_font) noexcept : code_font_(code_font) {}
+            explicit ImGuiInlineBackend(ImFont *code_font,
+                                        UiImageDrawCallback draw_image) noexcept
+                : code_font_(code_font), draw_image_(std::move(draw_image)) {}
 
             bool Initialize(const UiViewportInfo &) override
             {
@@ -57,11 +61,13 @@ namespace kpengine::editor::ui
                 observe_ = frame.observe;
                 viewport_ = frame.viewport;
                 observations_.clear();
+                window_bounds_.clear();
                 window_id_ = 0;
             }
 
             void ApplyWindowGeometry(const UiNodeId id, const UiVec2 position,
-                                     const UiVec2 size)
+                                     const UiVec2 size, const bool fixed_geometry,
+                                     const bool preserve_geometry)
             {
                 const auto previous = window_viewports_.find(id);
                 const bool viewport_changed = previous != window_viewports_.end() &&
@@ -71,8 +77,10 @@ namespace kpengine::editor::ui
                      previous->second.logical_origin.y != viewport_.logical_origin.y ||
                      previous->second.framebuffer_scale.x != viewport_.framebuffer_scale.x ||
                      previous->second.framebuffer_scale.y != viewport_.framebuffer_scale.y);
-                const ImGuiCond condition = previous == window_viewports_.end() || viewport_changed
-                    ? ImGuiCond_Always : ImGuiCond_None;
+                const ImGuiCond condition = fixed_geometry ? ImGuiCond_Always :
+                    preserve_geometry ? ImGuiCond_FirstUseEver :
+                    previous == window_viewports_.end() || viewport_changed
+                        ? ImGuiCond_Always : ImGuiCond_None;
                 if (condition != ImGuiCond_None)
                 {
                     ImGui::SetNextWindowPos({position.x, position.y}, condition);
@@ -90,7 +98,8 @@ namespace kpengine::editor::ui
                              const UiVec2 position, const UiVec2 size) override
             {
                 if (size.x > 0.0F && size.y > 0.0F)
-                    ApplyWindowGeometry(window.id, position, size);
+                    ApplyWindowGeometry(window.id, position, size, window.fixed_geometry,
+                                        window.preserve_geometry);
                 return DrawWindow(window, &open);
             }
 
@@ -98,17 +107,37 @@ namespace kpengine::editor::ui
                              const UiVec2 size) override
             {
                 if (size.x > 0.0F && size.y > 0.0F)
-                    ApplyWindowGeometry(window.id, position, size);
+                    ApplyWindowGeometry(window.id, position, size, window.fixed_geometry,
+                                        window.preserve_geometry);
                 return DrawWindow(window, nullptr);
             }
 
             bool DrawWindow(const UiControl &window, bool *open)
             {
                 window_id_ = window.id;
-                const bool visible = ImGui::Begin(window.label.c_str(), open);
-                if (!observe_) return visible;
+                char suffix[24]{};
+                std::snprintf(suffix, sizeof(suffix), "###ui_%016llx",
+                              static_cast<unsigned long long>(window.id));
+                const std::string internal_name = window.label + suffix;
+                ImGuiWindowFlags flags = window.fixed_geometry
+                    ? ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
+                    : ImGuiWindowFlags_None;
+                if (window.window_no_title_bar) flags |= ImGuiWindowFlags_NoTitleBar;
+                if (window.window_no_background) flags |= ImGuiWindowFlags_NoBackground;
+                if (window.window_no_collapse) flags |= ImGuiWindowFlags_NoCollapse;
+                if (window.window_no_saved_settings) flags |= ImGuiWindowFlags_NoSavedSettings;
+                if (window.window_no_bring_to_front) flags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
+                if (window.window_no_inputs) flags |= ImGuiWindowFlags_NoInputs;
+                if (window.window_padding_zero) ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                if (window.window_no_border) ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
+                const bool visible = ImGui::Begin(internal_name.c_str(), open, flags);
+                window_padding_open_ = window.window_padding_zero;
+                window_border_open_ = window.window_no_border;
                 const ImVec2 position = ImGui::GetWindowPos();
                 const ImVec2 size = ImGui::GetWindowSize();
+                window_bounds_.insert_or_assign(window.id,
+                    UiRect{{position.x, position.y}, {position.x + size.x, position.y + size.y}});
+                if (!observe_) return visible;
                 observations_.push_back({session_, frame_, window.id, 0, window.role,
                     window.label, window.description, window.value, window.enabled,
                     window.disabled_reason, ImGui::IsWindowFocused(),
@@ -118,7 +147,28 @@ namespace kpengine::editor::ui
                 return visible;
             }
 
-            void EndWindow() override { ImGui::End(); window_id_ = 0; }
+            std::optional<UiRect> WindowBounds(const UiNodeId id) const noexcept override
+            {
+                const auto found = window_bounds_.find(id);
+                return found == window_bounds_.end() ? std::nullopt :
+                    std::optional<UiRect>{found->second};
+            }
+
+            UiVec2 PointerPosition() const noexcept override
+            {
+                const ImVec2 mouse = ImGui::GetIO().MousePos;
+                return {mouse.x, mouse.y};
+            }
+
+            void EndWindow() override
+            {
+                ImGui::End();
+                if (window_border_open_) ImGui::PopStyleVar();
+                if (window_padding_open_) ImGui::PopStyleVar();
+                window_border_open_ = false;
+                window_padding_open_ = false;
+                window_id_ = 0;
+            }
 
             static void PushUiId(const UiNodeId id)
             {
@@ -356,8 +406,17 @@ namespace kpengine::editor::ui
                     if (!inserted && !was_active && buffer->second != source)
                         buffer->second = source;
                     buffer->second.resize(4096, '\0');
-                    (void)ImGui::InputTextWithHint(control.label.c_str(), control.hint.c_str(),
-                        buffer->second.data(), buffer->second.size());
+                    if (control.multiline)
+                    {
+                        (void)ImGui::InputTextMultiline(control.label.c_str(),
+                            buffer->second.data(), buffer->second.size(),
+                            ImVec2(control.width, control.height));
+                    }
+                    else
+                    {
+                        (void)ImGui::InputTextWithHint(control.label.c_str(), control.hint.c_str(),
+                            buffer->second.data(), buffer->second.size());
+                    }
                     const std::size_t text_length = buffer->second.find('\0');
                     if (text_length != std::string::npos)
                         buffer->second.resize(text_length);
@@ -447,9 +506,43 @@ namespace kpengine::editor::ui
                 if (!control.enabled) ImGui::EndDisabled();
                 const ImVec2 minimum = ImGui::GetItemRectMin();
                 const ImVec2 maximum = ImGui::GetItemRectMax();
+                UiCanvasResult result{};
+                result.hovered = ImGui::IsItemHovered();
+                result.pressed = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+                const bool item_active = ImGui::IsItemActive();
+                const bool item_focused = ImGui::IsItemFocused();
+                const bool item_visible = ImGui::IsItemVisible();
+                result.dragging = item_active && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+                const ImGuiIO &io = ImGui::GetIO();
+                result.released = active_canvas_id_ == control.id &&
+                                  ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+                result.cancelled = active_canvas_id_ == control.id &&
+                    (io.AppFocusLost || ImGui::IsKeyPressed(ImGuiKey_Escape) ||
+                     (!io.MouseDown[ImGuiMouseButton_Left] && !result.released));
+                if (result.pressed || result.dragging) active_canvas_id_ = control.id;
+                if (result.released || result.cancelled) active_canvas_id_ = 0;
+                result.secondary_dragging = result.hovered &&
+                    ImGui::IsMouseDragging(ImGuiMouseButton_Right);
                 ImDrawList *const draw = ImGui::GetWindowDrawList();
                 const float width = maximum.x - minimum.x;
                 const float height = maximum.y - minimum.y;
+                result.bounds = {{minimum.x, minimum.y}, {maximum.x, maximum.y}};
+                result.geometry = UiGeometryProvenance::ActualBackend;
+                result.pointer_position = {ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y};
+                if (result.hovered || result.dragging || result.secondary_dragging ||
+                    active_canvas_id_ == control.id)
+                {
+                    const ImGuiIO &io = ImGui::GetIO();
+                    result.pointer_delta = {io.MouseDelta.x, io.MouseDelta.y};
+                    result.wheel_delta = io.MouseWheel;
+                }
+                if ((result.hovered || result.dragging) && width > 0.0F && height > 0.0F)
+                {
+                    const ImVec2 mouse = ImGui::GetIO().MousePos;
+                    result.normalized_pointer = {
+                        std::clamp((mouse.x - minimum.x) / width, 0.0F, 1.0F),
+                        std::clamp((mouse.y - minimum.y) / height, 0.0F, 1.0F)};
+                }
                 draw->PushClipRect(minimum, maximum, true);
                 const auto point = [minimum, width, height](const UiVec2 value)
                 {
@@ -489,28 +582,22 @@ namespace kpengine::editor::ui
                              first.y - extent.y * primitive.text_anchor.y}, color, begin, end);
                         break;
                     }
+                    case UiCanvasPrimitiveKind::Image:
+                    {
+                        const UiRect image_bounds{{first.x, first.y}, {second.x, second.y}};
+                        if (draw_image_) draw_image_(primitive.image, image_bounds, draw);
+                        break;
                     }
-                }
-                UiCanvasResult result{};
-                result.hovered = ImGui::IsItemHovered();
-                result.pressed = ImGui::IsItemClicked(ImGuiMouseButton_Left);
-                result.dragging = ImGui::IsItemActive() &&
-                                  ImGui::IsMouseDown(ImGuiMouseButton_Left);
-                if ((result.hovered || result.dragging) && width > 0.0F && height > 0.0F)
-                {
-                    const ImVec2 mouse = ImGui::GetIO().MousePos;
-                    result.normalized_pointer = {
-                        std::clamp((mouse.x - minimum.x) / width, 0.0F, 1.0F),
-                        std::clamp((mouse.y - minimum.y) / height, 0.0F, 1.0F)};
+                    }
                 }
                 if (observe_)
                 {
                     observations_.push_back({session_, frame_, control.id, window_id_,
                         control.role, control.label, control.description, control.value,
-                        control.enabled, control.disabled_reason, ImGui::IsItemFocused(),
-                        result.hovered, !ImGui::IsItemVisible(),
+                        control.enabled, control.disabled_reason, item_focused,
+                        result.hovered, !item_visible,
                         {{minimum.x, minimum.y}, {maximum.x, maximum.y}},
-                        UiGeometryProvenance::ActualBackend, result.dragging});
+                        UiGeometryProvenance::ActualBackend, item_active});
                 }
                 draw->PopClipRect();
                 ImGui::PopID();
@@ -595,6 +682,51 @@ namespace kpengine::editor::ui
             }
 
             void TableColumn() override { ImGui::TableNextColumn(); }
+
+            UiListRange BeginVirtualList(const UiNodeId id, const std::size_t item_count,
+                                         const float row_height,
+                                         const bool scroll_to_end) override
+            {
+                if (virtual_list_open_)
+                    throw std::logic_error("ImGui UI backend virtual lists cannot be nested");
+                PushUiId(id);
+                virtual_list_open_ = true;
+                const bool visible = ImGui::BeginChild(
+                    "##virtual-list", {0.0F, 0.0F}, false,
+                    ImGuiWindowFlags_HorizontalScrollbar);
+                if (!visible || item_count == 0)
+                    return {};
+                if (scroll_to_end)
+                    ImGui::SetScrollY(ImGui::GetScrollMaxY());
+                const std::size_t bounded_count = std::min(
+                    item_count, static_cast<std::size_t>(std::numeric_limits<int>::max()));
+                list_clipper_.Begin(static_cast<int>(bounded_count), row_height);
+                list_clipper_started_ = true;
+                if (!list_clipper_.Step())
+                    return {};
+                return {static_cast<std::size_t>(list_clipper_.DisplayStart),
+                        static_cast<std::size_t>(list_clipper_.DisplayEnd)};
+            }
+
+            void EndVirtualList() override
+            {
+                if (!virtual_list_open_)
+                    throw std::logic_error("ImGui UI backend has no virtual list to end");
+                if (list_clipper_started_)
+                {
+                    list_clipper_.End();
+                    list_clipper_started_ = false;
+                }
+                ImGui::EndChild();
+                PopUiId();
+                virtual_list_open_ = false;
+            }
+
+            void SetClipboardText(const std::string_view text) override
+            {
+                const std::string null_terminated{text};
+                ImGui::SetClipboardText(null_terminated.c_str());
+            }
 
             UiColor TextColor(const UiTextRole role) const noexcept
             {
@@ -684,13 +816,21 @@ namespace kpengine::editor::ui
             UiSessionId session_ = 0;
             std::uint64_t frame_ = 0;
             UiNodeId window_id_ = 0;
+            UiNodeId active_canvas_id_ = 0;
             bool observe_ = false;
+            bool window_padding_open_ = false;
+            bool window_border_open_ = false;
+            bool virtual_list_open_ = false;
+            bool list_clipper_started_ = false;
+            ImGuiListClipper list_clipper_;
             std::vector<UiTheme> theme_stack_;
             UiViewportInfo viewport_{};
             std::unordered_map<UiNodeId, UiViewportInfo> window_viewports_;
+            std::unordered_map<UiNodeId, UiRect> window_bounds_;
             std::unordered_map<UiNodeId, std::string> text_buffers_;
             std::unordered_map<UiNodeId, bool> text_active_;
             std::vector<UiNodeObservation> observations_;
+            UiImageDrawCallback draw_image_;
         };
     }
 
@@ -699,8 +839,9 @@ namespace kpengine::editor::ui
         return CreateImGuiInlineBackend(nullptr);
     }
 
-    std::unique_ptr<IUiBackend> CreateImGuiInlineBackend(ImFont *code_font)
+    std::unique_ptr<IUiBackend> CreateImGuiInlineBackend(
+        ImFont *code_font, UiImageDrawCallback draw_image)
     {
-        return std::make_unique<ImGuiInlineBackend>(code_font);
+        return std::make_unique<ImGuiInlineBackend>(code_font, std::move(draw_image));
     }
 }

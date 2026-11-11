@@ -22,7 +22,7 @@ target_include_directories(TerrainEditor PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}/engine")
 target_link_libraries(TerrainEditor PRIVATE
-    TerrainGeneration TerrainCore EditorUILib RuntimeLib KP::ImGui)
+    TerrainGeneration TerrainCore EditorUiHostLib RuntimeLib LogEditor)
 
 add_library(TerrainBaking STATIC
     import/terrain_baker.cpp

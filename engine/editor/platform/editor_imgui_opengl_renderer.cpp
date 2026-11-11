@@ -160,4 +160,15 @@ namespace kpengine::editor
         draw_list->AddCallback(EditorUiEndSrgbImageCallback, nullptr);
     }
 
+    void EditorImguiOpenglRenderer::DrawSceneImagePrimitive(
+        ImDrawList *const draw_list, const ImTextureID texture_id,
+        const ImVec2 &minimum, const ImVec2 &maximum)
+    {
+        if (draw_list == nullptr) return;
+        draw_list->AddCallback(EditorUiBeginSrgbImageCallback, nullptr);
+        draw_list->AddImage(texture_id, minimum, maximum,
+                            ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
+        draw_list->AddCallback(EditorUiEndSrgbImageCallback, nullptr);
+    }
+
 }

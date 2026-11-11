@@ -179,6 +179,14 @@ namespace kpengine::editor
         ImGui::Image(texture_id, size);
     }
 
+    void EditorImguiVulkanRenderer::DrawSceneImagePrimitive(
+        ImDrawList *const draw_list, const ImTextureID texture_id,
+        const ImVec2 &minimum, const ImVec2 &maximum)
+    {
+        if (draw_list != nullptr)
+            draw_list->AddImage(texture_id, minimum, maximum);
+    }
+
     void EditorImguiVulkanRenderer::CreateDescriptorPool()
     {
         constexpr uint32_t kMaxDescriptorSets = 1'000;

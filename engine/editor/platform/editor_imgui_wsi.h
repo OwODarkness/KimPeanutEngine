@@ -1,5 +1,5 @@
 #ifndef KPENGINE_EDITOR_IMGUI_WSI_H
-#define KPENGINE_RDITOR_IMGUI_WSI_H
+#define KPENGINE_EDITOR_IMGUI_WSI_H
 
 #include "base/type.h"
 

@@ -4,63 +4,28 @@
 #include <cmath>
 #include <cstdio>
 #include <exception>
-#include <functional>
+#include <limits>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include <imgui.h>
-
-#include "editor/log/editor_log_component.h"
-#include "editor/profile/editor_builtin_metrics.h"
-#include "editor/profile/editor_metric.h"
-#include "editor/profile/editor_profile_bar.h"
-#include "editor/settings/editor_settings.h"
-#include "editor/ui/component/editor_gpu_profiler_component.h"
-#include "editor/ui/component/editor_tool_row_component.h"
-#include "editor/ui/component/editor_window_component.h"
-#include "editor/ui/editor_ui.h"
+#include "editor/ui/api/editor_ui/ui_backend.h"
+#include "editor/ui/api/editor_ui/ui_theme.h"
+#include "editor/ui/host/editor_ui_host.h"
+#include "product/terrain_core.h"
 #include "render/render_system.h"
 #include "runtime/engine.h"
-#include "runtime/runtime_global_context.h"
 #include "runtime/platform/memory_stats_sampler.h"
+#include "runtime/runtime_global_context.h"
 #include "runtime/window/window_system.h"
-#include "product/terrain_core.h"
+#include "runtime/core/log/editor/log_editor_view.h"
 
 namespace kpengine::terrain
 {
     namespace
     {
-        class TerrainEditorDockPanel final : public editor::EditorWindowComponent
-        {
-        public:
-            TerrainEditorDockPanel(std::string title, std::function<void()> render_content)
-                : EditorWindowComponent(title), render_content_(std::move(render_content))
-            {
-            }
-
-            void RenderContent() override
-            {
-                if (render_content_)
-                {
-                    render_content_();
-                }
-            }
-
-        private:
-            std::function<void()> render_content_;
-        };
-
-        ImVec2 FitView(const graphics::RenderTargetView &view, const ImVec2 &available)
-        {
-            if (!view.IsValid() || available.x <= 0.0f || available.y <= 0.0f)
-            {
-                return available;
-            }
-            const float aspect = static_cast<float>(view.width) /
-                                 static_cast<float>(view.height);
-            const float available_aspect = available.x / available.y;
-            return available_aspect > aspect
-                       ? ImVec2(available.y * aspect, available.y)
-                       : ImVec2(available.x, available.x / aspect);
-        }
+        const editor::ui::UiImageId kTerrainImageId =
+            editor::ui::StableUiImageId("terrain.scene.output");
 
         std::shared_ptr<const ScalarField2D> AsScalarView(const TerrainValue &value)
         {
@@ -70,6 +35,35 @@ namespace kpengine::terrain
             std::string diagnostic;
             return ScalarField2D::Create(value->Domain(), value->Samples(),
                 value->Samples().size(), diagnostic);
+        }
+
+        std::string Number(const double value, const char *format = "%.3g")
+        {
+            char buffer[64]{};
+            std::snprintf(buffer, sizeof(buffer), format, value);
+            return buffer;
+        }
+
+        void Field(editor::ui::UiContext &ui, const std::string_view label,
+                   const std::string_view value)
+        {
+            ui.Text(std::string(label) + "  " + std::string(value), editor::ui::UiTextRole::Muted);
+        }
+
+        editor::ui::UiTheme TerrainTheme()
+        {
+            editor::ui::UiTheme theme{};
+            theme.surface = {0.065F, 0.067F, 0.060F, 1.0F};
+            theme.panel = {0.095F, 0.100F, 0.087F, 1.0F};
+            theme.raised = {0.145F, 0.148F, 0.126F, 1.0F};
+            theme.border = {0.31F, 0.30F, 0.24F, 1.0F};
+            theme.text = {0.90F, 0.90F, 0.82F, 1.0F};
+            theme.muted = {0.65F, 0.67F, 0.57F, 1.0F};
+            theme.accent = {0.68F, 0.76F, 0.43F, 1.0F};
+            theme.accent_active = {0.93F, 0.68F, 0.30F, 1.0F};
+            theme.selected = {0.25F, 0.25F, 0.15F, 1.0F};
+            theme.selected_hovered = {0.34F, 0.34F, 0.20F, 1.0F};
+            return theme;
         }
     }
 
@@ -92,9 +86,9 @@ namespace kpengine::terrain
         std::function<void()> bake)
     {
         diagnostic.clear();
-        runtime::RuntimeContext &context = runtime::global_runtime_context;
-        if (!heightfield || context.window_system_ == nullptr ||
-            context.render_system_ == nullptr || context.log_system_ == nullptr)
+        runtime::RuntimeContext &runtime_context = runtime::global_runtime_context;
+        if (!heightfield || runtime_context.window_system_ == nullptr ||
+            runtime_context.render_system_ == nullptr || runtime_context.log_system_ == nullptr)
         {
             diagnostic = "Terrain editor presentation services are unavailable";
             return false;
@@ -106,119 +100,18 @@ namespace kpengine::terrain
         execution_control_ = std::move(execution_control);
         camera_control_ = std::move(camera_control);
         bake_ = std::move(bake);
-        editor::EditorUIInitInfo init_info{};
-        init_info.window = context.window_system_->GetNativeHandle();
-        init_info.editor_presentation_bridge =
-            context.render_system_->GetEditorPresentationBridge();
-        init_info.log_system = context.log_system_.get();
-        init_info.engine = &engine;
-        init_info.render_system = context.render_system_.get();
-        init_info.window_system = context.window_system_.get();
 
         try
         {
-            ui_ = std::make_unique<editor::EditorUI>();
-            ui_->InitializeViewer(init_info, [this] { RenderPanels(); });
-            log_panel_ = std::make_unique<editor::EditorLogComponent>(
-                context.log_system_.get(), editor::DefaultLogColors());
-            performance_panel_ =
-                std::make_unique<editor::EditorGpuProfilerComponent>(
-                    &engine, context.render_system_.get(), ui_.get());
-
-            std::vector<std::unique_ptr<editor::EditorMetric>> profile_metrics;
-            profile_metrics.push_back(std::make_unique<editor::EditorFPSMetric>(
-                [&engine] { return engine.GetFPS(); }));
-            profile_metrics.push_back(std::make_unique<editor::EditorFrameTimeMetric>(
-                [&engine] {
-                    const int fps = engine.GetFPS();
-                    return fps > 0 ? 1000.0f / static_cast<float>(fps) : 0.0f;
-                }));
-            profile_metrics.push_back(std::make_unique<editor::EditorFuncMetric>(
-                "CPU", [render_system = context.render_system_.get()] {
-                    char value[32]{};
-                    std::snprintf(value, sizeof(value), "%.2f ms",
-                        render_system->GetMetrics().profile.cpu_total_ms);
-                    return std::string{value};
-                }));
-            profile_metrics.push_back(std::make_unique<editor::EditorFuncMetric>(
-                "GPU", [render_system = context.render_system_.get()] {
-                    const auto profile = render_system->GetMetrics().profile;
-                    double total = 0.0;
-                    bool measured = false;
-                    for (const auto &pass : profile.passes)
-                    {
-                        if (pass.gpu_time_ms.has_value())
-                        {
-                            total += *pass.gpu_time_ms;
-                            measured = true;
-                        }
-                    }
-                    if (!measured) return std::string{"N/A"};
-                    char value[32]{};
-                    std::snprintf(value, sizeof(value), "%.2f ms", total);
-                    return std::string{value};
-                }));
-            profile_metrics.push_back(std::make_unique<editor::EditorFuncMetric>(
-                "API", [render_system = context.render_system_.get()] {
-                    switch (render_system->GetMetrics().profile.graphics_api)
-                    {
-                    case GraphicsAPIType::GRAPHICS_API_OPENGL: return std::string{"OpenGL"};
-                    case GraphicsAPIType::GRAPHICS_API_VULKAN: return std::string{"Vulkan"};
-                    default: return std::string{"Unknown"};
-                    }
-                }));
-            if (context.memory_sampler_)
-            {
-                profile_metrics.push_back(std::make_unique<editor::EditorMemoryMetric>(
-                    [sampler = context.memory_sampler_.get()] {
-                        const MemoryStats stats = sampler->Sample();
-                        return editor::EditorMemoryMetric::Stats{
-                            stats.process_mb, stats.system_available_mb};
-                    }));
-            }
-            profile_bar_ = std::make_unique<editor::EditorProfileBarComponent>(
-                std::move(profile_metrics));
-
-            layout_.ResetToCompactViewerDefault();
-            dock_model_.Clear();
-            dock_host_ = std::make_unique<editor::EditorToolRowComponent>(
-                dock_model_, editor::EditorWindowConfig{});
-            dock_host_->SetLayoutModel(&layout_);
-            dock_host_->AddPanel(
-                "terrain_view", "Terrain View",
-                std::make_unique<TerrainEditorDockPanel>(
-                    "Terrain View", [this] { RenderTerrainView(); }),
-                true, editor::EditorLayoutSlot::Viewport);
-            dock_host_->AddPanel(
-                "heightmap_debug", "Heightmap Debug",
-                std::make_unique<TerrainEditorDockPanel>(
-                    "Heightmap Debug", [this] {
-                        std::lock_guard lock(snapshot_mutex_);
-                        heightmap_view_.RenderContent(heightfield_.get(),
-                                                      pre_erosion_heightfield_.get());
-                    }),
-                true, editor::EditorLayoutSlot::DebugViewer);
-            dock_host_->AddPanel(
-                "terrain_performance", "Performance Profiler",
-                std::make_unique<TerrainEditorDockPanel>(
-                    "Performance Profiler",
-                    [this] { performance_panel_->RenderContent(); }),
-                true, editor::EditorLayoutSlot::GpuProfiler);
-            dock_host_->AddPanel(
-                "terrain_log", "Log",
-                std::make_unique<TerrainEditorDockPanel>(
-                    "Log", [this] { log_panel_->RenderContent(); }),
-                true, editor::EditorLayoutSlot::ToolRow);
-            dock_host_->AddPanel(
-                "terrain_controls", "Terrain Controls",
-                std::make_unique<TerrainEditorDockPanel>(
-                    "Terrain Controls", [this] { RenderControlPanel(); }),
-                true, editor::EditorLayoutSlot::CameraSettings);
+            ui_ = std::make_unique<editor::EditorUiHost>();
+            log_panel_ = std::make_unique<editor::LogEditorView>();
+            ui_->Initialize({
+                .window = runtime_context.window_system_->GetNativeHandle(),
+                .presentation_bridge = runtime_context.render_system_->GetEditorPresentationBridge()});
         }
         catch (const std::exception &error)
         {
-            diagnostic = std::string("Terrain editor UI initialization failed: ") +
-                         error.what();
+            diagnostic = std::string("Terrain editor UI initialization failed: ") + error.what();
             Shutdown();
             return false;
         }
@@ -285,9 +178,10 @@ namespace kpengine::terrain
     bool TerrainEditor::Render(std::string &diagnostic)
     {
         diagnostic.clear();
-        if (!ui_ || !ui_->Render())
+        if (!ui_ || !ui_->RenderFrame(
+                [this](editor::ui::UiContext &ui) { RenderWorkspace(ui); }))
         {
-            diagnostic = "Terrain editor ImGui presentation failed";
+            diagnostic = "Terrain editor UI presentation failed";
             return false;
         }
         return true;
@@ -300,9 +194,6 @@ namespace kpengine::terrain
             ui_->Close();
             ui_.reset();
         }
-        dock_host_.reset();
-        performance_panel_.reset();
-        profile_bar_.reset();
         log_panel_.reset();
         heightfield_.reset();
         pre_erosion_heightfield_.reset();
@@ -313,140 +204,275 @@ namespace kpengine::terrain
         bake_ = {};
     }
 
-    void TerrainEditor::RenderPanels()
+    void TerrainEditor::RenderWorkspace(editor::ui::UiContext &ui)
     {
-        ApplyLayout();
-        if (dock_host_)
+        using namespace editor::ui;
+        const UiViewportInfo &viewport = ui.Viewport();
+        UiTheme theme = TerrainTheme();
+        [[maybe_unused]] const auto theme_scope = ui.Theme(theme);
+        const UiVec2 origin = viewport.logical_origin;
+        const UiVec2 extent = viewport.logical_extent;
+
         {
-            dock_host_->Render();
+            const auto window = ui.Window({.id = "terrain.view.window", .label = "Terrain View"},
+                origin, {extent.x * 0.70F, extent.y * 0.75F});
+            if (window.ContentVisible()) RenderTerrainView(ui);
         }
-        splitter_handles_.Render(layout_);
-        if (profile_bar_) profile_bar_->Render();
-    }
-
-    void TerrainEditor::ApplyLayout()
-    {
-        const ImGuiViewport *const viewport = ImGui::GetMainViewport();
-        layout_.SetFixedExtentPixels(
-            editor::EditorSplitterId::StatusBar,
-            editor::EditorProfileBarComponent::MeasurePreferredHeightPx());
-        layout_.Resolve({viewport->WorkPos.x, viewport->WorkPos.y,
-                         viewport->WorkSize.x, viewport->WorkSize.y});
-        if (profile_bar_)
-            profile_bar_->ApplyLayout(layout_.RectOf(editor::EditorLayoutSlot::ProfileBar));
-    }
-
-    void TerrainEditor::RenderTerrainView()
-    {
-        render::RenderSystem *const render_system =
-            runtime::global_runtime_context.render_system_.get();
-        const ImVec2 available = ImGui::GetContentRegionAvail();
-        if (render_system != nullptr && available.x > 0.0f && available.y > 0.0f)
         {
-            render_system->RequestSceneRenderTargetExtent(
-                static_cast<std::uint32_t>(available.x),
-                static_cast<std::uint32_t>(available.y));
-            const graphics::RenderTargetView view = render_system->GetSceneRenderTargetView();
-            const ImVec2 image_size = FitView(view, available);
-            ImGui::SetCursorPos(ImVec2(
-                ImGui::GetCursorPosX() + std::max(0.0f, (available.x - image_size.x) * 0.5f),
-                ImGui::GetCursorPosY() + std::max(0.0f, (available.y - image_size.y) * 0.5f)));
-            ui_->DrawRenderTarget(view, image_size);
-            if (ImGui::IsItemHovered())
+            const UiVec2 position{origin.x + extent.x * 0.70F, origin.y};
+            const auto window = ui.Window({.id = "terrain.controls.window", .label = "Terrain Controls"},
+                position, {extent.x * 0.30F, extent.y * 0.43F});
+            if (window.ContentVisible()) RenderControlPanel(ui);
+        }
+        {
+            const UiVec2 position{origin.x + extent.x * 0.70F,
+                                  origin.y + extent.y * 0.43F};
+            const auto window = ui.Window({.id = "terrain.heightmap.window", .label = "Heightmap Debug"},
+                position, {extent.x * 0.30F, extent.y * 0.32F});
+            if (window.ContentVisible())
             {
-                bool changed = false;
-                const float wheel = ImGui::GetIO().MouseWheel;
-                if (wheel != 0.0f)
-                {
-                    camera_distance_ = std::clamp(camera_distance_ *
-                        std::pow(0.88f, wheel), 20.0f, 4000.0f);
-                    changed = true;
-                }
-                if (ImGui::IsMouseDragging(ImGuiMouseButton_Right))
-                {
-                    const ImVec2 delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
-                    camera_yaw_degrees_ += delta.x * 0.25f;
-                    camera_pitch_degrees_ = std::clamp(
-                        camera_pitch_degrees_ - delta.y * 0.25f, -85.0f, -5.0f);
-                    ImGui::ResetMouseDragDelta(ImGuiMouseButton_Right);
-                    changed = true;
-                }
-                if (changed && camera_control_)
-                    camera_control_(camera_yaw_degrees_, camera_pitch_degrees_, camera_distance_);
+                std::lock_guard lock(snapshot_mutex_);
+                heightmap_view_.RenderContent(ui, heightfield_.get(),
+                                              pre_erosion_heightfield_.get());
             }
         }
+        {
+            const UiVec2 position{origin.x, origin.y + extent.y * 0.75F};
+            const auto window = ui.Window({.id = "terrain.log.window", .label = "Log"},
+                position, {extent.x, extent.y * 0.25F});
+            if (window.ContentVisible()) RenderLog(ui);
+        }
     }
 
-    void TerrainEditor::RenderControlPanel()
+    void TerrainEditor::RenderTerrainView(editor::ui::UiContext &ui)
     {
-        std::lock_guard lock(snapshot_mutex_);
-        ImGui::Text("Generation: %s", generation_status_.c_str());
-        if (!generation_diagnostic_.empty())
-            ImGui::TextWrapped("%s", generation_diagnostic_.c_str());
-        ImGui::InputScalar("Seed", ImGuiDataType_U64, &seed_);
-        ImGui::TextDisabled("Fine detail noise");
-        ImGui::InputScalar("Lattice size", ImGuiDataType_U32, &lattice_size_);
-        int detail_octaves = static_cast<int>(octaves_);
-        if (ImGui::SliderInt("Detail octaves", &detail_octaves, 1, 16))
-            octaves_ = static_cast<std::uint32_t>(detail_octaves);
-        ImGui::InputFloat("Detail persistence", &persistence_, 0.05f, 0.1f, "%.2f");
-        ImGui::InputFloat("Detail lacunarity", &lacunarity_, 0.1f, 0.5f, "%.2f");
-        if (thermal_erosion_enabled_)
+        using namespace editor::ui;
+        render::RenderSystem *const render_system =
+            runtime::global_runtime_context.render_system_.get();
+        if (render_system == nullptr)
         {
-            ImGui::SeparatorText("Thermal Erosion");
-            ImGui::SliderFloat("Talus Angle", &talus_angle_degrees_, 5.0f, 60.0f, "%.1f deg");
-            ImGui::SliderFloat("Thermal Rate", &thermal_rate_, 0.01f, 1.0f, "%.2f");
-            int iterations = static_cast<int>(thermal_iterations_);
-            if (ImGui::SliderInt("Iteration Count", &iterations, 1, 100))
-                thermal_iterations_ = static_cast<std::uint32_t>(iterations);
+            ui.Text("Render system is unavailable.", UiTextRole::Warning);
+            return;
+        }
+        UiVec2 available = ui.AvailableContent();
+        available.x = std::max(available.x, 1.0F);
+        available.y = std::max(available.y, 1.0F);
+        render_system->RequestSceneRenderTargetExtent(
+            static_cast<std::uint32_t>(available.x),
+            static_cast<std::uint32_t>(available.y));
+        const graphics::RenderTargetView view = render_system->GetSceneRenderTargetView();
+        std::vector<UiCanvasPrimitive> primitives;
+        UiCanvasPrimitive background{};
+        background.kind = UiCanvasPrimitiveKind::FilledRect;
+        background.first = {0.0F, 0.0F};
+        background.second = {1.0F, 1.0F};
+        background.color = {0.035F, 0.040F, 0.035F, 1.0F};
+        primitives.push_back(std::move(background));
+        UiVec2 image_min{};
+        UiVec2 image_max{1.0F, 1.0F};
+        if (view.IsValid())
+        {
+            ui_->RegisterRenderTargetImage(kTerrainImageId, view);
+            const float aspect = static_cast<float>(view.width) / view.height;
+            const float available_aspect = available.x / available.y;
+            const UiVec2 image_size = available_aspect > aspect
+                ? UiVec2{available.y * aspect, available.y}
+                : UiVec2{available.x, available.x / aspect};
+            image_min = {(available.x - image_size.x) * 0.5F / available.x,
+                         (available.y - image_size.y) * 0.5F / available.y};
+            image_max = {image_min.x + image_size.x / available.x,
+                         image_min.y + image_size.y / available.y};
+            UiCanvasPrimitive image{};
+            image.kind = UiCanvasPrimitiveKind::Image;
+            image.first = image_min;
+            image.second = image_max;
+            image.image = kTerrainImageId;
+            primitives.push_back(std::move(image));
         }
         else
         {
-            ImGui::TextDisabled("Thermal erosion disabled for this recipe");
+            UiCanvasPrimitive message{};
+            message.kind = UiCanvasPrimitiveKind::Text;
+            message.first = {0.5F, 0.5F};
+            message.color = {0.65F, 0.67F, 0.57F, 1.0F};
+            message.text = "Terrain render target unavailable";
+            message.text_anchor = {0.5F, 0.5F};
+            primitives.push_back(std::move(message));
         }
-        if (ImGui::Button("Regenerate") && regenerate_)
-            regenerate_(seed_, lattice_size_, octaves_, persistence_, lacunarity_,
-                        talus_angle_degrees_, thermal_rate_, thermal_iterations_);
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel") && cancel_) cancel_();
-        if (ImGui::Button("Pause at node") && execution_control_) execution_control_(0);
-        ImGui::SameLine();
-        if (ImGui::Button("Step node") && execution_control_) execution_control_(1);
-        ImGui::SameLine();
-        if (ImGui::Button("Resume") && execution_control_) execution_control_(2);
-        ImGui::SameLine();
-        if (ImGui::Button("Bake Native Asset") && bake_) bake_();
-        if (ImGui::CollapsingHeader("Node diagnostics", ImGuiTreeNodeFlags_DefaultOpen))
+        const UiCanvasResult canvas = ui.Canvas(
+            {.id = "terrain.view.canvas", .label = "Terrain viewport"},
+            available, std::move(primitives));
+        if (view.IsValid())
         {
-            for (const auto &[node_id, node] : node_diagnostics_)
+            const bool changed = canvas.hovered && canvas.wheel_delta != 0.0F;
+            if (changed)
+                camera_distance_ = std::clamp(camera_distance_ *
+                    std::pow(0.88F, canvas.wheel_delta), 20.0F, 4000.0F);
+            if (canvas.secondary_dragging)
             {
-                if (ImGui::TreeNode(node_id.c_str()))
-                {
-                    for (const auto &[output_name, field] : node.outputs)
-                    {
-                        const std::string label = output_name + "##" + node_id;
-                        if (ImGui::SmallButton(label.c_str()) && field)
-                        {
-                            auto scalar = AsScalarView(field);
-                            if (scalar)
-                            {
-                                heightfield_ = std::move(scalar);
-                                selected_field_name_ = node_id + "." + output_name;
-                            }
-                        }
-                    }
-                    for (const auto &[name, value] : node.scalar_metadata)
-                        ImGui::Text("%s: %.9g", name.c_str(), value);
-                    ImGui::TreePop();
-                }
-                ImGui::Text("%s: %.3f ms | %zu bytes | [%.3f, %.3f] | %s | %016llx",
-                    node_id.c_str(), node.evaluation_time_ms, node.output_bytes,
-                    static_cast<double>(node.minimum_value),
-                    static_cast<double>(node.maximum_value),
-                    node.all_values_finite ? "finite" : "non-finite",
-                    static_cast<unsigned long long>(node.content_hash));
+                camera_yaw_degrees_ += canvas.pointer_delta.x * 0.25F;
+                camera_pitch_degrees_ = std::clamp(
+                    camera_pitch_degrees_ - canvas.pointer_delta.y * 0.25F, -85.0F, -5.0F);
             }
-            ImGui::Text("Heightmap selection: %s", selected_field_name_.c_str());
+            if ((changed || canvas.secondary_dragging) && camera_control_)
+                camera_control_(camera_yaw_degrees_, camera_pitch_degrees_, camera_distance_);
         }
+    }
+
+    void TerrainEditor::RenderControlPanel(editor::ui::UiContext &ui)
+    {
+        using namespace editor::ui;
+        const auto tabs = ui.TabBar({.id = "terrain.controls.tabs", .label = "Terrain controls"});
+        if (!tabs.Visible()) return;
+        {
+            const auto tab = ui.TabItem({.id = "terrain.controls.generation", .label = "Generation"});
+            if (tab.ContentVisible())
+            {
+                std::lock_guard lock(snapshot_mutex_);
+                ui.Text("Generation: " + generation_status_, UiTextRole::Accent);
+                if (!generation_diagnostic_.empty()) ui.WrappedText(generation_diagnostic_);
+                auto seed = ui.NumericInput<std::uint64_t>(
+                    {.id = "terrain.generation.seed", .label = "Seed"}, seed_,
+                    0ULL, std::numeric_limits<std::uint64_t>::max(), 1ULL);
+                auto lattice = ui.NumericInput<std::uint64_t>(
+                    {.id = "terrain.generation.lattice", .label = "Lattice size"}, lattice_size_,
+                    1ULL, 1024ULL, 1ULL);
+                auto octaves = ui.Slider<std::int64_t>(
+                    {.id = "terrain.generation.octaves", .label = "Detail octaves"},
+                    octaves_, 1, 16);
+                auto persistence = ui.NumericInput<double>(
+                    {.id = "terrain.generation.persistence", .label = "Persistence"},
+                    persistence_, 0.01, 1.0, 0.01);
+                auto lacunarity = ui.NumericInput<double>(
+                    {.id = "terrain.generation.lacunarity", .label = "Lacunarity"},
+                    lacunarity_, 0.1, 8.0, 0.1);
+                if (seed.changed) seed_ = seed.value;
+                if (lattice.changed) lattice_size_ = static_cast<std::uint32_t>(lattice.value);
+                if (octaves.changed) octaves_ = static_cast<std::uint32_t>(octaves.value);
+                if (persistence.changed) persistence_ = static_cast<float>(persistence.value);
+                if (lacunarity.changed) lacunarity_ = static_cast<float>(lacunarity.value);
+                if (thermal_erosion_enabled_)
+                {
+                    ui.Section("THERMAL EROSION");
+                    auto talus = ui.Slider<double>(
+                        {.id = "terrain.erosion.talus", .label = "Talus angle (deg)"},
+                        talus_angle_degrees_, 5.0, 60.0);
+                    auto rate = ui.Slider<double>(
+                        {.id = "terrain.erosion.rate", .label = "Thermal rate"},
+                        thermal_rate_, 0.01, 1.0);
+                    auto iterations = ui.Slider<std::int64_t>(
+                        {.id = "terrain.erosion.iterations", .label = "Iterations"},
+                        thermal_iterations_, 1, 100);
+                    if (talus.changed) talus_angle_degrees_ = static_cast<float>(talus.value);
+                    if (rate.changed) thermal_rate_ = static_cast<float>(rate.value);
+                    if (iterations.changed) thermal_iterations_ = static_cast<std::uint32_t>(iterations.value);
+                }
+                else ui.Text("Thermal erosion is disabled for this recipe.", UiTextRole::Muted);
+                if (ui.Button({.id = "terrain.generation.regenerate", .label = "Regenerate"}).activated && regenerate_)
+                    regenerate_(seed_, lattice_size_, octaves_, persistence_, lacunarity_,
+                                talus_angle_degrees_, thermal_rate_, thermal_iterations_);
+                if (ui.Button({.id = "terrain.generation.cancel", .label = "Cancel"}).activated && cancel_)
+                    cancel_();
+                if (ui.Button({.id = "terrain.generation.bake", .label = "Bake Native Asset"}).activated && bake_)
+                    bake_();
+            }
+        }
+        {
+            const auto tab = ui.TabItem({.id = "terrain.controls.execution", .label = "Execution"});
+            if (tab.ContentVisible())
+            {
+                ui.Text("Control the active recipe evaluation.", UiTextRole::Muted);
+                if (ui.Button({.id = "terrain.execution.pause", .label = "Pause at node"}).activated && execution_control_)
+                    execution_control_(0);
+                if (ui.Button({.id = "terrain.execution.step", .label = "Step node"}).activated && execution_control_)
+                    execution_control_(1);
+                if (ui.Button({.id = "terrain.execution.resume", .label = "Resume"}).activated && execution_control_)
+                    execution_control_(2);
+                if (ui.Button({.id = "terrain.execution.cancel", .label = "Cancel"}).activated && cancel_)
+                    cancel_();
+            }
+        }
+        {
+            const auto tab = ui.TabItem({.id = "terrain.controls.diagnostics", .label = "Diagnostics"});
+            if (tab.ContentVisible()) RenderDiagnostics(ui);
+        }
+        {
+            const auto tab = ui.TabItem({.id = "terrain.controls.performance", .label = "Performance"});
+            if (tab.ContentVisible()) RenderPerformance(ui);
+        }
+    }
+
+    void TerrainEditor::RenderDiagnostics(editor::ui::UiContext &ui)
+    {
+        std::lock_guard lock(snapshot_mutex_);
+        for (const auto &[node_id, node] : node_diagnostics_)
+        {
+            ui.Section(node_id);
+            for (const auto &[output_name, value] : node.outputs)
+            {
+                const std::string id = "terrain.diagnostic.field." + node_id + "." + output_name;
+                const std::string label = "Select output: " + output_name;
+                if (ui.Selectable({.id = id, .label = label},
+                                  selected_field_name_ == node_id + "." + output_name).changed && value)
+                {
+                    auto scalar = AsScalarView(value);
+                    if (scalar)
+                    {
+                        heightfield_ = std::move(scalar);
+                        selected_field_name_ = node_id + "." + output_name;
+                    }
+                }
+            }
+            for (const auto &[name, value] : node.scalar_metadata)
+                Field(ui, name, Number(value, "%.9g"));
+            Field(ui, "Evaluation", Number(node.evaluation_time_ms, "%.3f") + " ms");
+            Field(ui, "Output bytes", std::to_string(node.output_bytes));
+            Field(ui, "Range", "[" + Number(node.minimum_value) + ", " +
+                Number(node.maximum_value) + "]");
+            Field(ui, "Values", node.all_values_finite ? "finite" : "non-finite");
+            char hash[32]{};
+            std::snprintf(hash, sizeof(hash), "%016llx",
+                static_cast<unsigned long long>(node.content_hash));
+            Field(ui, "Content hash", hash);
+        }
+        Field(ui, "Heightmap selection", selected_field_name_);
+    }
+
+    void TerrainEditor::RenderPerformance(editor::ui::UiContext &ui)
+    {
+        render::RenderSystem *const render_system =
+            runtime::global_runtime_context.render_system_.get();
+        if (render_system == nullptr)
+        {
+            ui.Text("Render system is unavailable.", editor::ui::UiTextRole::Warning);
+            return;
+        }
+        const auto profile = render_system->GetMetrics().profile;
+        Field(ui, "API", profile.graphics_api == GraphicsAPIType::GRAPHICS_API_VULKAN
+            ? "Vulkan" : profile.graphics_api == GraphicsAPIType::GRAPHICS_API_OPENGL
+                ? "OpenGL" : "Unknown");
+        Field(ui, "Viewport", std::to_string(profile.viewport_width) + " x " +
+            std::to_string(profile.viewport_height));
+        Field(ui, "CPU total", Number(profile.cpu_total_ms, "%.2f") + " ms");
+        Field(ui, "CPU render", Number(profile.cpu_record_ms, "%.2f") + " ms");
+        Field(ui, "Draw calls", std::to_string(profile.draw_calls));
+        Field(ui, "Sections", std::to_string(profile.sections));
+        double gpu_total = 0.0;
+        std::size_t gpu_passes = 0;
+        for (const auto &pass : profile.passes)
+        {
+            if (!pass.gpu_time_ms) continue;
+            gpu_total += *pass.gpu_time_ms;
+            ++gpu_passes;
+        }
+        Field(ui, "GPU pass total", gpu_passes == 0
+            ? "N/A" : Number(gpu_total, "%.2f") + " ms");
+        Field(ui, "Timed passes", std::to_string(gpu_passes));
+    }
+
+    void TerrainEditor::RenderLog(editor::ui::UiContext &ui)
+    {
+        if (!log_panel_) return;
+        log_panel_->RenderContent(ui, runtime::global_runtime_context.log_system_.get());
     }
 }
