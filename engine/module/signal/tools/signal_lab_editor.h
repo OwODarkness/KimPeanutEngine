@@ -19,6 +19,7 @@ namespace kpengine::editor
 {
     class EditorLogComponent;
     class EditorUI;
+    namespace ui { class UiContext; }
 }
 
 namespace kpengine::runtime
@@ -76,7 +77,7 @@ namespace kpengine::signal
             Phase
         };
 
-        void RenderWorkspace();
+        void RenderWorkspace(editor::ui::UiContext &ui);
         bool GenerateSignal(std::string &diagnostic);
         void RebuildComposite();
         void RebuildPairMix();

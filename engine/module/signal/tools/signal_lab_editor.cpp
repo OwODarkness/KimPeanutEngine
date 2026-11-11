@@ -14,6 +14,7 @@
 #include "editor/log/editor_log_component.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/ui/editor_ui.h"
+#include "editor/ui/api/editor_ui/ui_plot.h"
 #include "runtime/engine.h"
 #include "runtime/runtime_global_context.h"
 #include "runtime/window/window_system.h"
@@ -32,6 +33,156 @@ namespace kpengine::signal
             IM_COL32(205, 151, 235, 255), IM_COL32(239, 178, 111, 255),
             IM_COL32(235, 124, 150, 255), IM_COL32(126, 174, 239, 255),
             IM_COL32(200, 205, 119, 255), IM_COL32(120, 205, 207, 255)};
+
+        double NiceAxisStep(double approximate_step);
+
+        editor::ui::UiColor PlotColor(const ImU32 color)
+        {
+            constexpr float scale = 1.0F / 255.0F;
+            return {static_cast<float>(color & 0xFFU) * scale,
+                    static_cast<float>((color >> 8U) & 0xFFU) * scale,
+                    static_cast<float>((color >> 16U) & 0xFFU) * scale,
+                    static_cast<float>((color >> 24U) & 0xFFU) * scale};
+        }
+
+        editor::ui::UiPlotStyle SignalPlotStyle()
+        {
+            editor::ui::UiPlotStyle style;
+            style.background = {0.035F, 0.047F, 0.058F, 1.0F};
+            style.border = PlotColor(IM_COL32(64, 78, 88, 255));
+            style.grid = PlotColor(IM_COL32(67, 82, 91, 135));
+            style.axis = PlotColor(IM_COL32(167, 192, 203, 255));
+            style.labels = PlotColor(IM_COL32(155, 175, 186, 255));
+            return style;
+        }
+
+        void RenderSignalScopePlot(editor::ui::UiContext &ui,
+                                   const SignalScopeSnapshot &snapshot,
+                                   const ImU32 trace_color, const bool trace_visible)
+        {
+            using namespace editor::ui;
+            const std::span<const double> samples = snapshot.capture != nullptr
+                ? std::span<const double>(*snapshot.capture) : std::span<const double>{};
+            double limit = 1.0;
+            if (!samples.empty())
+            {
+                const auto bounds = std::minmax_element(samples.begin(), samples.end());
+                const double peak = std::max(std::abs(*bounds.first), std::abs(*bounds.second));
+                limit = NiceAxisStep(std::max(peak * 1.1 / 4.0, 1.0e-9)) * 4.0;
+            }
+            const double rate = snapshot.source.sample_rate_hz;
+            const double duration_ms = !samples.empty() && rate > 0.0
+                ? static_cast<double>(samples.size()) * 1000.0 / rate : 10.0;
+            std::vector<UiPlotPoint> trace;
+            const std::size_t count = std::min<std::size_t>(samples.size(), 2'048);
+            trace.reserve(count);
+            for (std::size_t point = 0; point < count; ++point)
+            {
+                const std::size_t sample = count <= 1 ? 0
+                    : point * (samples.size() - 1) / (count - 1);
+                const double x = samples.size() <= 1 ? 0.0
+                    : duration_ms * static_cast<double>(sample) /
+                        static_cast<double>(samples.size() - 1);
+                trace.push_back({x, samples[sample]});
+            }
+            std::array<UiPlotPoint, 2> trigger_points{};
+            std::array<UiPlotSeries, 2> series{};
+            std::size_t series_count = 0;
+            if (trace_visible && !trace.empty())
+                series[series_count++] = {.label = "Signal", .points = trace,
+                    .color = PlotColor(trace_color), .kind = UiPlotSeriesKind::Line,
+                    .thickness = 1.8F};
+            if (snapshot.trigger_sample && !samples.empty() && rate > 0.0)
+            {
+                const double trigger_ms = static_cast<double>(snapshot.pretrigger_samples) *
+                                          1000.0 / rate;
+                trigger_points = {{{trigger_ms, -limit}, {trigger_ms, limit}}};
+                series[series_count++] = {.label = "Trigger", .points = trigger_points,
+                    .color = PlotColor(IM_COL32(239, 166, 82, 190)),
+                    .kind = UiPlotSeriesKind::Line, .thickness = 1.2F};
+            }
+            UiPlotStyle style = SignalPlotStyle();
+            style.top_margin = 24.0F;
+            style.bottom_margin = 42.0F;
+            const UiVec2 available = ui.AvailableContent();
+            const UiPlotResult result = Plot(ui, {
+                .control = {.id = "signal.lab.scope.plot", .label = "Signal scope",
+                            .enabled = !trace.empty()},
+                .size = {std::max(available.x, 240.0F),
+                         std::max(available.y - 42.0F, 220.0F)},
+                .x_axis = {.minimum = 0.0, .maximum = std::max(duration_ms, 0.001),
+                           .label = "TIME (ms)", .divisions = 10},
+                .y_axis = {.minimum = -limit, .maximum = limit,
+                           .label = "VOLTAGE (V)", .divisions = 8},
+                .series = {series.data(), series_count},
+                .style = style,
+                .empty_label = !trace_visible ? "Selected signal is hidden"
+                    : samples.empty() ? snapshot.state_label : std::string_view{}});
+            if (result.has_pointer_value && !samples.empty())
+            {
+                const double fraction = std::clamp(result.pointer_x / duration_ms, 0.0, 1.0);
+                const std::size_t sample = static_cast<std::size_t>(
+                    fraction * static_cast<double>(samples.size() - 1));
+                ui.Text("Sample " + std::to_string(sample) + "  |  " +
+                    std::to_string(samples[sample]) + " V", UiTextRole::Muted);
+            }
+        }
+
+        void RenderSignalSpectrumPlot(editor::ui::UiContext &ui,
+                                      const Spectrum &spectrum, const ImU32 trace_color,
+                                      const bool show_psd)
+        {
+            using namespace editor::ui;
+            if (spectrum.bins.empty())
+            {
+                ui.Text("No spectrum bins available", UiTextRole::Muted);
+                return;
+            }
+            const auto value_for = [show_psd](const SpectrumBin &bin)
+            {
+                return show_psd ? bin.power_spectral_density : bin.peak_amplitude;
+            };
+            double maximum = 0.0;
+            for (const SpectrumBin &bin : spectrum.bins)
+                maximum = std::max(maximum, value_for(bin));
+            const double limit = NiceAxisStep(std::max(maximum * 1.1 / 4.0, 1.0e-12)) * 4.0;
+            std::vector<UiPlotPoint> points;
+            points.reserve(spectrum.bins.size());
+            for (const SpectrumBin &bin : spectrum.bins)
+                points.push_back({bin.frequency_hz, value_for(bin)});
+            UiPlotStyle style = SignalPlotStyle();
+            style.top_margin = 30.0F;
+            style.bottom_margin = 48.0F;
+            const UiVec2 available = ui.AvailableContent();
+            const std::array<UiPlotSeries, 1> series{{
+                {.label = "Spectrum", .points = points,
+                 .color = PlotColor(trace_color), .kind = UiPlotSeriesKind::Line,
+                 .thickness = 2.0F}}};
+            const UiPlotResult result = Plot(ui, {
+                .control = {.id = "signal.lab.spectrum.plot", .label = "Signal spectrum",
+                            .enabled = true},
+                .size = {std::max(available.x, 240.0F),
+                         std::max(available.y - 42.0F, 220.0F)},
+                .x_axis = {.minimum = 0.0,
+                           .maximum = std::max(spectrum.sample_rate_hz * 0.5, 1.0),
+                           .label = "FREQUENCY (Hz)", .divisions = 6},
+                .y_axis = {.minimum = 0.0, .maximum = limit,
+                           .label = show_psd ? "POWER DENSITY (V^2/Hz)"
+                                             : "PEAK AMPLITUDE (V)", .divisions = 4},
+                .series = series,
+                .style = style});
+            if (result.has_pointer_value)
+            {
+                const auto nearest = std::min_element(spectrum.bins.begin(), spectrum.bins.end(),
+                    [&](const SpectrumBin &left, const SpectrumBin &right)
+                    {
+                        return std::abs(left.frequency_hz - result.pointer_x) <
+                               std::abs(right.frequency_hz - result.pointer_x);
+                    });
+                ui.Text(std::to_string(nearest->frequency_hz) + " Hz  |  " +
+                    std::to_string(value_for(*nearest)), UiTextRole::Muted);
+            }
+        }
 
         const char *SignalKindName(const SignalKind kind) noexcept
         {
@@ -621,136 +772,6 @@ namespace kpengine::signal
             }
         }
 
-        void RenderSpectrumPlot(const Spectrum &spectrum,
-                                const ImU32 trace_color,
-                                const bool show_psd)
-        {
-            const ImVec2 available = ImGui::GetContentRegionAvail();
-            const ImVec2 size{std::max(available.x, 240.0f),
-                              std::max(available.y - 42.0f, 220.0f)};
-            ImGui::InvisibleButton("##spectrum_plot", size);
-            const ImVec2 origin = ImGui::GetItemRectMin();
-            const ImVec2 end = ImGui::GetItemRectMax();
-            ImDrawList *draw = ImGui::GetWindowDrawList();
-            draw->AddRectFilled(origin, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 6.0f);
-            draw->AddRect(origin, end, ImGui::GetColorU32(ImGuiCol_Border), 6.0f);
-
-            if (spectrum.bins.empty())
-            {
-                const char *message = "No spectrum bins available";
-                const ImVec2 text = ImGui::CalcTextSize(message);
-                draw->AddText({(origin.x + end.x - text.x) * 0.5f,
-                               (origin.y + end.y - text.y) * 0.5f},
-                              ImGui::GetColorU32(kMuted), message);
-                return;
-            }
-
-            const ImVec2 graph_min{origin.x + 62.0f, origin.y + 24.0f};
-            const ImVec2 graph_max{end.x - 14.0f, end.y - 48.0f};
-            const float width = std::max(graph_max.x - graph_min.x, 1.0f);
-            const float height = std::max(graph_max.y - graph_min.y, 1.0f);
-            const auto value_for = [show_psd](const SpectrumBin &bin)
-            {
-                return show_psd ? bin.power_spectral_density : bin.peak_amplitude;
-            };
-            double maximum = 0.0;
-            for (const SpectrumBin &bin : spectrum.bins)
-            {
-                maximum = std::max(maximum, value_for(bin));
-            }
-            const double tick = NiceAxisStep(std::max(maximum * 1.1 / 4.0, 1.0e-12));
-            const double limit = tick * 4.0;
-            const ImU32 grid = ImGui::GetColorU32(ImGuiCol_Border, 0.65f);
-            const ImU32 axis = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-            const ImU32 labels = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-
-            for (int division = 0; division <= 4; ++division)
-            {
-                const float fraction = static_cast<float>(division) / 4.0f;
-                const float y = graph_min.y + fraction * height;
-                draw->AddLine({graph_min.x, y}, {graph_max.x, y}, grid);
-                char value[32]{};
-                std::snprintf(value, sizeof(value), "%.3g", limit * (1.0 - fraction));
-                const ImVec2 text = ImGui::CalcTextSize(value);
-                draw->AddText({graph_min.x - text.x - 7.0f, y - text.y * 0.5f}, labels, value);
-            }
-            const double max_frequency = spectrum.sample_rate_hz * 0.5;
-            constexpr int kFrequencyDivisions = 6;
-            for (int division = 0; division <= kFrequencyDivisions; ++division)
-            {
-                const float fraction = static_cast<float>(division) /
-                    static_cast<float>(kFrequencyDivisions);
-                const float x = graph_min.x + fraction * width;
-                draw->AddLine({x, graph_min.y}, {x, graph_max.y}, grid);
-                char frequency[32]{};
-                const double hz = max_frequency * fraction;
-                if (max_frequency >= 1'000.0)
-                {
-                    std::snprintf(frequency, sizeof(frequency), "%.3g kHz", hz / 1'000.0);
-                }
-                else
-                {
-                    std::snprintf(frequency, sizeof(frequency), "%.3g Hz", hz);
-                }
-                const ImVec2 text = ImGui::CalcTextSize(frequency);
-                draw->AddText({x - text.x * 0.5f, graph_max.y + 7.0f}, labels, frequency);
-            }
-            draw->AddLine({graph_min.x, graph_min.y}, {graph_min.x, graph_max.y}, axis, 1.3f);
-            draw->AddText({graph_min.x, origin.y + 3.0f}, labels,
-                          show_psd ? "POWER DENSITY (V^2/Hz)" : "PEAK AMPLITUDE (V)");
-            const char *frequency_label = "FREQUENCY";
-            const ImVec2 frequency_text = ImGui::CalcTextSize(frequency_label);
-            draw->AddText({graph_max.x - frequency_text.x,
-                           graph_max.y + 26.0f}, labels, frequency_label);
-
-            std::array<ImVec2, 2'049> points{};
-            const std::size_t point_count = std::min(points.size(), spectrum.bins.size());
-            const auto map_y = [&](const double value)
-            {
-                return graph_max.y - static_cast<float>(value / limit) * height;
-            };
-            draw->PushClipRect(graph_min, graph_max, true);
-            for (std::size_t point = 0; point < point_count; ++point)
-            {
-                const std::size_t bin = point_count == 1
-                    ? 0 : point * (spectrum.bins.size() - 1) / (point_count - 1);
-                const float x = point_count == 1
-                    ? (graph_min.x + graph_max.x) * 0.5f
-                    : graph_min.x + width * static_cast<float>(point) /
-                          static_cast<float>(point_count - 1);
-                points[point] = {x, map_y(value_for(spectrum.bins[bin]))};
-            }
-            if (point_count == 1)
-            {
-                draw->AddCircleFilled(points[0], 3.0f, trace_color);
-            }
-            else
-            {
-                draw->AddPolyline(points.data(), static_cast<int>(point_count),
-                    (trace_color & 0x00FFFFFFU) | 0x28000000U, ImDrawFlags_None, 5.0f);
-                draw->AddPolyline(points.data(), static_cast<int>(point_count),
-                    trace_color, ImDrawFlags_None, 2.0f);
-            }
-            draw->PopClipRect();
-
-            if (ImGui::IsItemHovered())
-            {
-                const float cursor = std::clamp(ImGui::GetIO().MousePos.x - graph_min.x,
-                                                0.0f, width);
-                const std::size_t bin = static_cast<std::size_t>(cursor / width *
-                    static_cast<float>(spectrum.bins.size() - 1));
-                const float x = graph_min.x + cursor;
-                draw->AddLine({x, graph_min.y}, {x, graph_max.y},
-                              IM_COL32(210, 229, 229, 110));
-                const SpectrumBin &selected = spectrum.bins[bin];
-                ImGui::BeginTooltip();
-                ImGui::Text("Bin %zu  |  %.3f Hz", bin, selected.frequency_hz);
-                ImGui::Text("Peak amplitude %.6g V", selected.peak_amplitude);
-                ImGui::Text("PSD %.6g V^2/Hz", selected.power_spectral_density);
-                ImGui::EndTooltip();
-            }
-        }
-
         void RenderMeasurement(const char *label, const double value)
         {
             ImGui::TextDisabled("%s", label);
@@ -758,109 +779,7 @@ namespace kpengine::signal
             ImGui::Spacing();
         }
 
-        void RenderScopePlot(const SignalScopeSnapshot &snapshot, const ImU32 trace_color,
-                             const bool trace_visible)
-        {
-            const ImVec2 available = ImGui::GetContentRegionAvail();
-            const ImVec2 size{std::max(available.x, 260.0f),
-                              std::max(available.y - 42.0f, 220.0f)};
-            ImGui::InvisibleButton("##scope_capture_plot", size);
-            const ImVec2 origin = ImGui::GetItemRectMin();
-            const ImVec2 end = ImGui::GetItemRectMax();
-            ImDrawList *draw = ImGui::GetWindowDrawList();
-            draw->AddRectFilled(origin, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 6.0f);
-            draw->AddRect(origin, end, ImGui::GetColorU32(ImGuiCol_Border), 6.0f);
-            const ImVec2 graph_min{origin.x + 52.0f, origin.y + 20.0f};
-            const ImVec2 graph_max{end.x - 14.0f, end.y - 42.0f};
-            const float width = std::max(graph_max.x - graph_min.x, 1.0f);
-            const float height = std::max(graph_max.y - graph_min.y, 1.0f);
-            const ImU32 grid = ImGui::GetColorU32(ImGuiCol_Border, 0.65f);
-            const ImU32 axis = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-            const ImU32 labels = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-            const std::span<const double> samples = snapshot.capture != nullptr
-                ? std::span<const double>(*snapshot.capture) : std::span<const double>{};
-            double minimum = -1.0;
-            double maximum = 1.0;
-            if (!samples.empty())
-            {
-                const auto bounds = std::minmax_element(samples.begin(), samples.end());
-                const double peak = std::max(std::abs(*bounds.first), std::abs(*bounds.second));
-                const double tick = NiceAxisStep(std::max(peak * 1.1 / 4.0, 1.0e-9));
-                minimum = -tick * 4.0;
-                maximum = tick * 4.0;
-            }
-            const double rate = snapshot.source.sample_rate_hz;
-            const double duration_ms = !samples.empty() && rate > 0.0
-                ? static_cast<double>(samples.size()) * 1000.0 / rate : 10.0;
-            for (int i = 0; i <= 8; ++i)
-            {
-                const float fraction = static_cast<float>(i) / 8.0f;
-                const float y = graph_min.y + fraction * height;
-                draw->AddLine({graph_min.x, y}, {graph_max.x, y}, grid);
-                char label[32]{};
-                std::snprintf(label, sizeof(label), "%.3g", maximum - fraction * (maximum - minimum));
-                const ImVec2 text = ImGui::CalcTextSize(label);
-                draw->AddText({graph_min.x - text.x - 7.0f, y - text.y * 0.5f}, labels, label);
-            }
-            for (int i = 0; i <= 10; ++i)
-            {
-                const float fraction = static_cast<float>(i) / 10.0f;
-                const float x = graph_min.x + fraction * width;
-                draw->AddLine({x, graph_min.y}, {x, graph_max.y}, grid);
-                char label[32]{};
-                std::snprintf(label, sizeof(label), "%.3g", duration_ms * fraction);
-                const ImVec2 text = ImGui::CalcTextSize(label);
-                draw->AddText({x - text.x * 0.5f, graph_max.y + 7.0f}, labels, label);
-            }
-            draw->AddLine({graph_min.x, graph_min.y}, {graph_min.x, graph_max.y}, axis, 1.3f);
-            draw->AddText({graph_min.x, origin.y + 2.0f}, labels, "VOLTAGE (V)");
-            draw->AddText({graph_max.x - 64.0f, graph_max.y + 24.0f}, labels, "TIME (ms)");
-            if (samples.empty())
-            {
-                const ImVec2 text = ImGui::CalcTextSize(snapshot.state_label.c_str());
-                draw->AddText({graph_min.x + (width - text.x) * 0.5f,
-                               graph_min.y + (height - text.y) * 0.5f},
-                              ImGui::GetColorU32(kMuted), snapshot.state_label.c_str());
-                return;
-            }
-            if (!trace_visible)
-            {
-                const char *message = "Selected signal is hidden";
-                const ImVec2 text = ImGui::CalcTextSize(message);
-                draw->AddText({graph_min.x + (width - text.x) * 0.5f,
-                               graph_min.y + (height - text.y) * 0.5f},
-                              ImGui::GetColorU32(kMuted), message);
-                return;
-            }
-            const std::size_t trigger_offset = snapshot.trigger_sample.has_value()
-                ? snapshot.pretrigger_samples : samples.size() / 4;
-            const float trigger_x = graph_min.x + width * static_cast<float>(trigger_offset) /
-                                    static_cast<float>(samples.size());
-            draw->AddLine({trigger_x, graph_min.y}, {trigger_x, graph_max.y},
-                          IM_COL32(239, 166, 82, 190), 1.2f);
-            const auto map_y = [&](const double value)
-            {
-                return graph_min.y + static_cast<float>((maximum - value) /
-                    (maximum - minimum)) * height;
-            };
-            draw->PushClipRect(graph_min, graph_max, true);
-            for (std::size_t i = 1; i < samples.size(); ++i)
-            {
-                const float x0 = graph_min.x + width * static_cast<float>(i - 1) /
-                                 static_cast<float>(samples.size() - 1);
-                const float x1 = graph_min.x + width * static_cast<float>(i) /
-                                 static_cast<float>(samples.size() - 1);
-                draw->AddLine({x0, map_y(samples[i - 1])}, {x1, map_y(samples[i])},
-                              trace_color, 1.8f);
-            }
-            for (std::size_t i = 0; i < samples.size(); i += 24)
-            {
-                const float x = graph_min.x + width * static_cast<float>(i) /
-                                static_cast<float>(samples.size() - 1);
-                draw->AddCircleFilled({x, map_y(samples[i])}, 2.2f, trace_color);
-            }
-            draw->PopClipRect();
-        }
+
     }
 
     SignalLabEditor::SignalLabEditor() = default;
@@ -911,9 +830,9 @@ namespace kpengine::signal
             log_component_ = std::make_unique<editor::EditorLogComponent>(
                 context.log_system_.get(), editor::DefaultLogColors(), log_config);
             ui_ = std::make_unique<editor::EditorUI>();
-            ui_->InitializeViewer(init, [this]
+            ui_->InitializeUiViewer(init, [this](editor::ui::UiContext &ui)
             {
-                RenderWorkspace();
+                RenderWorkspace(ui);
                 if (log_component_ != nullptr)
                 {
                     log_component_->Render();
@@ -1113,7 +1032,7 @@ namespace kpengine::signal
         }
     }
 
-    void SignalLabEditor::RenderWorkspace()
+    void SignalLabEditor::RenderWorkspace(editor::ui::UiContext &ui)
     {
         const ImGuiViewport *viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -1569,7 +1488,7 @@ namespace kpengine::signal
                         signals_[std::min(selected_signal_, signals_.size() - 1)].visible;
                     const std::uint32_t color = signals_.empty() ? kSignalColors[0]
                         : signals_[std::min(selected_signal_, signals_.size() - 1)].color;
-                    RenderScopePlot(*scope, static_cast<ImU32>(color), visible);
+                    RenderSignalScopePlot(ui, *scope, static_cast<ImU32>(color), visible);
                     if (scope->capture != nullptr)
                     {
                         ImGui::TextColored(kAccent,
@@ -1595,7 +1514,7 @@ namespace kpengine::signal
                     {
                         const ImU32 color = signals_.empty() ? kSignalColors[0]
                             : static_cast<ImU32>(signals_[selected_signal_].color);
-                        RenderSpectrumPlot(*spectrum, color, spectrum_show_psd_);
+                        RenderSignalSpectrumPlot(ui, *spectrum, color, spectrum_show_psd_);
                     }
                     else
                     {

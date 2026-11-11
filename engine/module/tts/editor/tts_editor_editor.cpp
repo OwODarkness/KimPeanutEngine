@@ -11,7 +11,7 @@
 
 #include <imgui.h>
 
-#include "editor/ui/audio_transport_strip.h"
+#include "module/audio/editor/audio_transport_controls.h"
 #include "editor/ui/editor_ui.h"
 #include "runtime/core/config/path.h"
 #include "runtime/engine.h"
@@ -141,34 +141,34 @@ namespace kpengine::tts_editor
             return "Unknown";
         }
 
-        editor::TransportPlaybackState TransportState(const TtsEntryView &entry,
+        audio_editor::TransportPlaybackState TransportState(const TtsEntryView &entry,
                                                        const audio::AudioState audio_state)
         {
             if (entry.player.IsValid())
             {
                 switch (audio_state)
                 {
-                case audio::AudioState::Playing: return editor::TransportPlaybackState::Playing;
-                case audio::AudioState::Buffering: return editor::TransportPlaybackState::Buffering;
-                case audio::AudioState::Paused: return editor::TransportPlaybackState::Paused;
-                case audio::AudioState::Finished: return editor::TransportPlaybackState::Finished;
-                case audio::AudioState::Cancelled: return editor::TransportPlaybackState::Cancelled;
-                default: return editor::TransportPlaybackState::Ready;
+                case audio::AudioState::Playing: return audio_editor::TransportPlaybackState::Playing;
+                case audio::AudioState::Buffering: return audio_editor::TransportPlaybackState::Buffering;
+                case audio::AudioState::Paused: return audio_editor::TransportPlaybackState::Paused;
+                case audio::AudioState::Finished: return audio_editor::TransportPlaybackState::Finished;
+                case audio::AudioState::Cancelled: return audio_editor::TransportPlaybackState::Cancelled;
+                default: return audio_editor::TransportPlaybackState::Ready;
                 }
             }
             switch (entry.state)
             {
-            case tts::TTSJobState::Queued: return editor::TransportPlaybackState::Queued;
+            case tts::TTSJobState::Queued: return audio_editor::TransportPlaybackState::Queued;
             case tts::TTSJobState::Connecting:
-            case tts::TTSJobState::Generating: return editor::TransportPlaybackState::Generating;
-            case tts::TTSJobState::Buffering: return editor::TransportPlaybackState::Buffering;
-            case tts::TTSJobState::Playing: return editor::TransportPlaybackState::Playing;
-            case tts::TTSJobState::Draining: return editor::TransportPlaybackState::Draining;
-            case tts::TTSJobState::Completed: return editor::TransportPlaybackState::Finished;
-            case tts::TTSJobState::Cancelled: return editor::TransportPlaybackState::Cancelled;
-            case tts::TTSJobState::Failed: return editor::TransportPlaybackState::Failed;
+            case tts::TTSJobState::Generating: return audio_editor::TransportPlaybackState::Generating;
+            case tts::TTSJobState::Buffering: return audio_editor::TransportPlaybackState::Buffering;
+            case tts::TTSJobState::Playing: return audio_editor::TransportPlaybackState::Playing;
+            case tts::TTSJobState::Draining: return audio_editor::TransportPlaybackState::Draining;
+            case tts::TTSJobState::Completed: return audio_editor::TransportPlaybackState::Finished;
+            case tts::TTSJobState::Cancelled: return audio_editor::TransportPlaybackState::Cancelled;
+            case tts::TTSJobState::Failed: return audio_editor::TransportPlaybackState::Failed;
             }
-            return editor::TransportPlaybackState::Idle;
+            return audio_editor::TransportPlaybackState::Idle;
         }
     }
 
@@ -228,7 +228,7 @@ namespace kpengine::tts_editor
             return false;
         }
         controller_ = &controller;
-        transport_icons_ = editor::LoadAudioTransportIconMasks();
+        icons_.Load();
         const auto avatar = image_io::DecodeImageFile(
             (project_root / "resouce/icon/tts/kurisu-avatar.jpg").string());
         if (avatar.result.success && avatar.image.IsValid() &&
@@ -269,7 +269,7 @@ namespace kpengine::tts_editor
         try
         {
             ui_ = std::make_unique<editor::EditorUI>();
-            ui_->InitializeViewer(init, [this] { RenderWorkspace(); });
+            ui_->InitializeUiViewer(init, [this](editor::ui::UiContext &ui) { RenderWorkspace(ui); });
         }
         catch (const std::exception &error)
         {
@@ -302,7 +302,7 @@ namespace kpengine::tts_editor
         controller_ = nullptr;
     }
 
-    void TtsEditorEditor::RenderPreview(const TtsEditorView &view)
+    void TtsEditorEditor::RenderPreview(editor::ui::UiContext &ui, const TtsEditorView &view)
     {
         ImGui::TextColored(kCyan, "// AUDIO PREVIEW");
         ImGui::Separator();
@@ -484,32 +484,21 @@ namespace kpengine::tts_editor
             const bool muted = view.volume <= 0.001f;
             if (!muted)
                 last_audible_volume_ = view.volume;
-            const editor::EditorControlIcon voice_icon = transport_icons_.Get(
-                muted ? editor::AudioTransportIcon::VoiceClosed :
-                        editor::AudioTransportIcon::VoiceOpen);
-            const ImVec2 mute_button_size{60.0f, 36.0f};
-            const bool toggle_mute = ImGui::Button(
-                muted ? "##tts_unmute" : "##tts_mute", mute_button_size);
-            const ImVec2 button_min = ImGui::GetItemRectMin();
-            const ImVec2 button_max = ImGui::GetItemRectMax();
-            constexpr float icon_size = 18.0f;
-            const ImVec2 icon_origin{
-                button_min.x + (mute_button_size.x - icon_size) * 0.5f,
-                button_min.y + (mute_button_size.y - icon_size) * 0.5f};
-            editor::DrawEditorControlIcon(voice_icon,
-                icon_origin, icon_size,
-                IM_COL32(48, 211, 239, 255));
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", muted ? "Unmute voice" : "Mute voice");
+            editor::ui::UiTheme control_theme;
+            control_theme.accent = {48.0F / 255.0F, 211.0F / 255.0F, 239.0F / 255.0F, 1.0F};
+            const auto colors = ui.Theme(control_theme);
+            const bool toggle_mute = ui.Button({.id = "tts.preview.mute",
+                .label = muted ? "Unmute voice" : "Mute voice", .width = 60.0F, .height = 36.0F,
+                .text_role = editor::ui::UiTextRole::Accent,
+                .icon = icons_.Get(muted ? editor::EditorIcon::VolumeOff : editor::EditorIcon::VolumeOn)}).activated;
             if (toggle_mute)
                 controller_->QueueVolume(muted ? last_audible_volume_ : 0.0f);
             ImGui::SameLine(0.0f, 12.0f);
             const float percent_width = ImGui::CalcTextSize("100%").x;
             const float volume_width = std::max(36.0f,
                 ImGui::GetContentRegionAvail().x - 10.0f - percent_width);
-            const editor::AudioVolumeProgressStyle volume_style{};
-            if (const auto volume = editor::DrawAudioVolumeProgressControl(
-                    "##tts_volume_progress", view.volume, volume_width, volume_style))
+            if (const auto volume = audio_editor::DrawAudioVolumeProgressControl(
+                    ui, "tts.preview.volume", view.volume, volume_width))
                 controller_->QueueVolume(*volume);
             ImGui::Unindent(10.0f);
             ImGui::Dummy({0.0f, 8.0f});
@@ -519,19 +508,17 @@ namespace kpengine::tts_editor
             if (selected->durable)
             {
                 ImGui::TextColored(kMuted, "Saved WAV ready for buffer preview.");
-                editor::TransportStripState saved_transport{};
+                audio_editor::TransportStripState saved_transport{};
                 saved_transport.instance_id = "tts_saved_preview";
-                saved_transport.playback_state = editor::TransportPlaybackState::Finished;
+                saved_transport.playback_state = audio_editor::TransportPlaybackState::Finished;
                 saved_transport.capabilities.toggle_play_pause = true;
-                saved_transport.icons = transport_icons_.GetTransportIcons();
-                editor::TransportStripStyle transport_style{};
+                audio_editor::TransportStripStyle transport_style{};
                 transport_style.button_width = 78.0f;
                 transport_style.button_height = 36.0f;
                 transport_style.stop_before_play = true;
                 ImGui::Indent(10.0f);
                 ImGui::Dummy({0.0f, 8.0f});
-                const auto action = editor::DrawTransportStrip(saved_transport,
-                                                                transport_style);
+                const auto action = audio_editor::DrawTransportStrip(ui, saved_transport, icons_, transport_style);
                 if (action.toggle_play_pause)
                     controller_->QueueTogglePlayPause();
                 draw_preview_controls();
@@ -551,7 +538,7 @@ namespace kpengine::tts_editor
                 controller_->QueueCancel();
             return;
         }
-        editor::TransportStripState transport{};
+        audio_editor::TransportStripState transport{};
         transport.instance_id = "tts_preview";
         transport.playback_state = TransportState(*selected, view.audio_state);
         transport.elapsed_seconds = view.elapsed_seconds;
@@ -566,14 +553,13 @@ namespace kpengine::tts_editor
             selected->state != tts::TTSJobState::Cancelled &&
             selected->state != tts::TTSJobState::Failed;
         transport.capabilities.seek = selected->player.IsValid() && !selected->streaming;
-        transport.icons = transport_icons_.GetTransportIcons();
-        editor::TransportStripStyle transport_style{};
+        audio_editor::TransportStripStyle transport_style{};
         transport_style.button_width = 78.0f;
         transport_style.button_height = 36.0f;
         transport_style.stop_before_play = true;
         ImGui::Indent(10.0f);
         ImGui::Dummy({0.0f, 8.0f});
-        const auto action = editor::DrawTransportStrip(transport, transport_style);
+        const auto action = audio_editor::DrawTransportStrip(ui, transport, icons_, transport_style);
         if (action.toggle_play_pause) controller_->QueueTogglePlayPause();
         if (action.stop_voice) controller_->QueueStop();
         if (action.cancel_job) controller_->QueueCancel();
@@ -973,7 +959,7 @@ namespace kpengine::tts_editor
         ImGui::Text("Output folder: %s", output_directory_.data());
     }
 
-    void TtsEditorEditor::RenderWorkspace()
+    void TtsEditorEditor::RenderWorkspace(editor::ui::UiContext &ui)
     {
         if (!controller_) return;
         const TtsEditorView view = controller_->GetView();
@@ -990,6 +976,8 @@ namespace kpengine::tts_editor
             ImGuiWindowFlags_NoTitleBar;
         if (ImGui::Begin("TTS Tool", nullptr, flags))
         {
+            ui.SetHostContainer({.id = editor::ui::StableUiNodeId("tts.workspace"),
+                                 .role = editor::ui::UiRole::Group, .label = "TTS Tool"});
             if (ui_->GetCodeFont()) ImGui::PushFont(ui_->GetCodeFont());
             ImGui::TextColored(kCyan, "// TTS TOOL");
             ImGui::Separator();
@@ -1001,7 +989,7 @@ namespace kpengine::tts_editor
                     ImGui::TableSetupColumn("##content", ImGuiTableColumnFlags_WidthStretch, 0.69f);
                     ImGui::TableSetupColumn("##controls", ImGuiTableColumnFlags_WidthStretch, 0.31f);
                     ImGui::TableNextColumn();
-                    RenderPreview(view);
+                    RenderPreview(ui, view);
                     ImGui::Spacing();
                     RenderDialogList(view);
                     ImGui::TableNextColumn();
@@ -1015,7 +1003,7 @@ namespace kpengine::tts_editor
             {
                 RenderTextInput(view);
                 ImGui::Spacing();
-                RenderPreview(view);
+                RenderPreview(ui, view);
                 ImGui::Spacing();
                 RenderDialogList(view);
                 ImGui::Spacing();

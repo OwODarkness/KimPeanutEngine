@@ -121,7 +121,11 @@ and stops/uninitializes before its callback target is destroyed. `Mix` performs
 bounded block mixing with independent Speech/Music and master gain ramps.
 
 The standalone Audio Player is an application host, separate from the Scene3D
-Editor workspace. Its host owns a `MiniAudioSystem` and supplies the Runtime
+Editor workspace. Its controller and host reside in `engine/module/audio`,
+with presentation and shared audio widgets in `engine/module/audio/editor`;
+none of these are compiled as part of Runtime Audio. The shared transport,
+progress and volume widgets use the neutral UI API and Editor's built-in CPU
+icon catalog. Its host owns a `MiniAudioSystem` and supplies the Runtime
 error material as a render-catalog root so startup needs no game level. Its
 presentation borrows that instance, starts output only after an explicit user
 action, and displays copied device/mixer telemetry. The M1.4 library imports

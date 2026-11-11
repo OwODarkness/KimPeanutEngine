@@ -41,6 +41,10 @@ is accepted; record resolution evidence in those review files.
   [reuse review](.review/P1.md)). Complete the
   six-dock ImGui player based on the [draft](../../save/audio_gui.png), with local queue,
   waveform, transport, and a reusable Audio-module playback component.
+  Module ownership and the shared neutral widgets are tracked in the
+  [2026-11-11 execution record](../../.spec/journal/2026-11-11-audio-module-editor-icons.md):
+  Runtime Audio stays infrastructure-only, with player policy/presentation in
+  `module/audio` and built-in icon loading owned by Editor.
   Add separate speech status and music ducking for the integrated demo;
   verify visible layout, audible controls, interruption, and clean shutdown.
   The played bar is fully orange with bloom, and waveform timeline ticks/labels

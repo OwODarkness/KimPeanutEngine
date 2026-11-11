@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "editor/ui/audio_transport_icons.h"
+#include "editor/ui/editor_icons.h"
 #include "tts_editor_controller.h"
 
-namespace kpengine::editor { class EditorUI; }
+namespace kpengine::editor { class EditorUI; namespace ui { class UiContext; } }
 namespace kpengine::runtime { class Engine; }
 
 namespace kpengine::tts_editor
@@ -29,8 +29,8 @@ namespace kpengine::tts_editor
         void Shutdown() noexcept;
 
     private:
-        void RenderWorkspace();
-        void RenderPreview(const TtsEditorView &view);
+        void RenderWorkspace(editor::ui::UiContext &ui);
+        void RenderPreview(editor::ui::UiContext &ui, const TtsEditorView &view);
         void RenderDialogList(const TtsEditorView &view);
         void RenderSettings(const TtsEditorView &view);
         void RenderTextInput(const TtsEditorView &view);
@@ -38,7 +38,7 @@ namespace kpengine::tts_editor
         TtsEditorSettings FieldsToSettings() const;
 
         std::unique_ptr<editor::EditorUI> ui_;
-        editor::AudioTransportIconMasks transport_icons_;
+        editor::EditorBuiltinIcons icons_;
         std::array<std::uint32_t, kAvatarRasterSize * kAvatarRasterSize> avatar_pixels_{};
         bool avatar_loaded_ = false;
         TtsEditorController *controller_ = nullptr;

@@ -65,7 +65,7 @@ of sampled signals. Acceptance requires independently verified numerical
 results and stable instrument semantics under different UI frame rates.
 
 - Audio Player's `BuildWaveform` and `SampleSignal` in
-  [audio_player_controller.cpp](../../engine/runtime/audio/editor/audio_player_controller.cpp)
+  [audio_player_controller.cpp](../../engine/module/audio/audio_player_controller.cpp)
   were inspected. The first reduces absolute peaks for display; the second
   performs a 256-point FFT, mixes channels to mono, and scales/clamps 48 bins
   for presentation. These are real existing algorithms, but neither is a

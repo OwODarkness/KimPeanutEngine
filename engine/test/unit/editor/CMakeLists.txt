@@ -44,6 +44,12 @@ target_include_directories(EditorIconsTest BEFORE PRIVATE ${CMAKE_CURRENT_SOURCE
 target_link_libraries(EditorIconsTest PRIVATE EditorIcons KP::GoogleTest)
 gtest_discover_tests(EditorIconsTest PROPERTIES LABELS "editor;ui")
 
+add_executable(AudioEditorWidgetsTest audio_editor_widgets_test.cpp)
+target_include_directories(AudioEditorWidgetsTest BEFORE PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ui_poison)
+target_link_libraries(AudioEditorWidgetsTest PRIVATE
+    AudioEditorWidgets UIPresentation UIRecordingBackend KP::GoogleTest)
+gtest_discover_tests(AudioEditorWidgetsTest PROPERTIES LABELS "editor;ui;audio")
+
 add_executable(SettingsPropertyFieldsTest
     settings_property_fields_test.cpp
 )

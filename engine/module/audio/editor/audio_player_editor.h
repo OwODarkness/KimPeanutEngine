@@ -1,15 +1,11 @@
-#ifndef KPENGINE_RUNTIME_AUDIO_EDITOR_AUDIO_PLAYER_EDITOR_H
-#define KPENGINE_RUNTIME_AUDIO_EDITOR_AUDIO_PLAYER_EDITOR_H
+#ifndef KPENGINE_MODULE_AUDIO_AUDIO_PLAYER_EDITOR_H
+#define KPENGINE_MODULE_AUDIO_AUDIO_PLAYER_EDITOR_H
 
-#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <vector>
 
-#include "editor/ui/component/editor_layout_model.h"
-#include "editor/ui/component/editor_splitter_handles.h"
-#include "editor/ui/component/editor_tool_row_model.h"
+#include "editor/ui/editor_icons.h"
 
 namespace kpengine::audio
 {
@@ -18,11 +14,12 @@ namespace kpengine::audio
 
 namespace kpengine::editor
 {
-    class EditorAudioComponent;
-    class EditorProfileBarComponent;
     class EditorUI;
-    class EditorToolRowComponent;
+    class EditorDockedWorkspace;
+    namespace ui { class UiContext; }
 }
+
+namespace kpengine { class LogSystem; }
 
 namespace kpengine::audio_player
 {
@@ -52,25 +49,29 @@ namespace kpengine::audio_player
         void Shutdown() noexcept;
 
     private:
-        void RenderDockedWorkspace();
-        void ApplyLayout();
+        void RenderWorkspace(editor::ui::UiContext &ui);
+        void RenderLibrary(editor::ui::UiContext &ui);
+        void RenderPlaylists(editor::ui::UiContext &ui);
+        void RenderNowPlaying(editor::ui::UiContext &ui);
+        void RenderQueue(editor::ui::UiContext &ui);
+        void RenderInfo(editor::ui::UiContext &ui);
+        void RenderSpectrum(editor::ui::UiContext &ui);
+        void RenderOutputLog(editor::ui::UiContext &ui);
+        void ReportImport(std::string path, std::string subtitle = {});
 
         std::unique_ptr<editor::EditorUI> ui_;
-        std::unique_ptr<editor::EditorAudioComponent> audio_panel_;
-        std::unique_ptr<editor::EditorProfileBarComponent> profile_bar_;
-        editor::EditorLayoutModel layout_;
-        editor::EditorToolRowModel dock_model_;
-        editor::EditorSplitterHandles splitter_handles_;
-        std::unique_ptr<editor::EditorToolRowComponent> dock_host_;
+        std::unique_ptr<editor::EditorDockedWorkspace> workspace_;
+        editor::EditorBuiltinIcons icons_;
         AudioPlayerController *controller_ = nullptr;
         audio::MiniAudioSystem *audio_system_ = nullptr;
-        char import_path_[1024]{};
-        char subtitle_path_[1024]{};
-        char search_[256]{};
-        char project_search_[256]{};
-        std::array<std::vector<std::uint8_t>, 8> playback_icon_alpha_{};
-        std::vector<std::uint8_t> music_icon_alpha_;
+        LogSystem *log_system_ = nullptr;
+        std::string import_path_;
+        std::string subtitle_path_;
+        std::string queue_search_;
+        std::string project_search_;
+        std::string output_search_;
         int library_filter_ = 0;
+        bool show_subtitle_import_ = true;
         bool show_diagnostics_ = false;
         std::string ui_status_;
         std::string ui_error_;

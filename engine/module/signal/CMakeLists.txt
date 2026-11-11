@@ -7,7 +7,7 @@ target_include_directories(SignalLabMode PUBLIC
     "${CMAKE_SOURCE_DIR}/engine")
 target_link_libraries(SignalLabMode
     PUBLIC Signal RuntimeLib
-    PRIVATE EditorUILib KP::ImGui)
+    PRIVATE EditorUILib UIWidgets KP::ImGui)
 
 add_library(SignalLabRegistration OBJECT
     signal_registration.cpp)

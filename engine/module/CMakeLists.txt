@@ -17,12 +17,7 @@ if(KPENGINE_ENABLE_SIGNAL)
     target_sources(Module INTERFACE $<TARGET_OBJECTS:SignalLabRegistration>)
 endif()
 
-add_library(AudioPlayerRegistration OBJECT
-    "${CMAKE_SOURCE_DIR}/engine/runtime/audio/editor/audio_player_registration.cpp")
-target_include_directories(AudioPlayerRegistration PRIVATE
-    "${CMAKE_SOURCE_DIR}/engine/runtime/audio/editor"
-    "${CMAKE_SOURCE_DIR}/engine")
-target_link_libraries(AudioPlayerRegistration PRIVATE AudioPlayerMode ModuleBootstrap)
+add_subdirectory(audio)
 target_link_libraries(Module INTERFACE AudioPlayerMode)
 target_sources(Module INTERFACE $<TARGET_OBJECTS:AudioPlayerRegistration>)
 

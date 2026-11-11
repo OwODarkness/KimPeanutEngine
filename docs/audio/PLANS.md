@@ -106,6 +106,22 @@ The provider interface must never expose GPT-SoVITS types to Audio or Live2D.
 
 ## Standalone audio player
 
+`engine/runtime/audio` owns only playback infrastructure. The standalone
+player controller, queue/import policy and host live in `engine/module/audio`;
+its panels, waveform/spectrum views and theme live in that module's `editor`
+directory. `AudioPlayerController` links Audio and Asset/AssetImport directly,
+without RuntimeLib. `AudioEditorWidgets` provides toolkit-neutral progress,
+volume and transport controls shared by Audio Player and TTS; it links only
+UIWidgets and EditorIcons. `AudioPlayerEditorUI` composes the player-specific
+views with the existing Editor presentation/workspace host. No audio-module
+view or public widget contract exposes ImGui.
+
+Editor owns built-in icon identity, JSON configuration and CPU loading. Audio
+widgets select standard Play/Pause/Stop/Repeat/Volume icons from that catalog;
+there is no audio-named icon loader in general UI or hardcoded PNG mapping.
+Paths live in `resouce/icon/setting.json`, relative to that file. Asset owns music import and
+publication, while the module controller schedules those operations.
+
 The player is a standalone ImGui mode in the Editor, using the
 [draft layout](../../save/audio_gui.png). [P1](.plan/P1.md) defines the track player, queue, waveform,
 transport, and reusable Audio-module playback component. Asset decodes local

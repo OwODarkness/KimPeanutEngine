@@ -1,0 +1,16 @@
+# Audio Player visual restoration — 2026-11-11
+
+- Operation and acceptance: restore the reference image's dock tabs, profiler strip, compact library and queue, centered playback scope/waveform/subtitles, transport, and spectrum. Verify an empty player and live playback in the visible Debug build.
+- Candidates inspected: `598f75e` and `HEAD` Audio Player source; `AudioPlayerEditor::RenderWorkspace`; `EditorToolRowComponent::RenderWithContext`, `EditorLayoutModel::ResetToThreeColumnTwoRowDefault`, and `EditorProfileBarComponent`; neutral controls and canvas in `UiContext` and its inline backend.
+- Placement: reuse the previous docking, resizing and profiler owners via the existing host seam. Keep Audio Player panels, style, signal geometry and action mapping in `engine/editor/audio`. Extend the neutral layout and presentation operations used by the panels in the existing UI API and adapter.
+- Boundary: preserve the controller, playback lifecycle and feature target dependencies. The shared shell is the existing compatibility host; panel code receives `UiContext` and no toolkit state. Placement check passed before editing.
+
+## Implementation and checks
+
+- Reused the existing layout model, dock/tab model, splitter handles and profiler through a toolkit-free `EditorDockedWorkspace` facade. Feature callbacks own their themes and drawing; the facade owns the compatibility hosts and their destruction. No new Runtime dependency or GPU lifetime was introduced.
+- Restored panel tables, source/format/output inspector, radial scope, 18-second waveform, subtitle canvas, progress/volume bars and transport icons. Signal plotting and playback action translation stay local to `audio/editor`.
+- Added neutral table/layout operations, control sizes/tints and borrowed CPU icon masks. `audio_transport_icons.h` no longer includes the legacy ImGui transport header; existing TTS transport retains its compatibility adapter.
+- `cmake --build build --config Debug --target KimPeanutEngine -- /m:1`: passed. Initial compile exposed an accidental legacy ImGui header dependency, corrected with the facade, and an iterator/pointer comparison, corrected locally. MSVC 14.34 C1001 inside table lambdas was avoided by constructing named descriptors outside function arguments.
+- `cmake --build build --config Debug --target UiRecordingContractTest EditorLayoutModelUnitTest EditorToolRowModelUnitTest AudioUnitTest -- /m:1`: passed. Targeted editor CTest selection passed 46/46; audio label passed 27/27.
+- Debug Vulkan window verified as visible `GLFW30`, desktop `Default`, foreground equality true. Empty capture saved as `save/screenshots/validation/audio-visual-restoration-vulkan-empty.png`. Command observations confirmed subtitle attachment, empty playback error and elapsed time advancing 35.742 → 36.297 seconds. User confirmed the restored interface.
+- Multi-file import exceeded the initial 35-second wait while the project catalog scanned; it later progressed. A subsequent capture command reported export success but the file was absent, so that playback capture is not accepted evidence. OpenGL, full-suite, keyboard coverage and final alignment changes' runtime check remain unverified. No performance acceptance is claimed.

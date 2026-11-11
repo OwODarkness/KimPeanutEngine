@@ -5,8 +5,8 @@
 #include <string>
 #include <utility>
 
-#include "audio_player_controller.h"
-#include "audio_player_editor.h"
+#include "module/audio/audio_player_controller.h"
+#include "module/audio/editor/audio_player_editor.h"
 #include "runtime/asset/asset_manager.h"
 #include "runtime/asset/level.h"
 #include "runtime/core/config/path.h"

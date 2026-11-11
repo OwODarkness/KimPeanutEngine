@@ -8,7 +8,7 @@ Parent: [TTS design map](../PLANS.md). Stages:
 ## Boundary and data flow
 
 The editor is a standalone `--mode tts` application host, following the
-existing [Audio Player host](../../../engine/runtime/audio/editor/audio_player_host.cpp)
+existing [Audio Player host](../../../engine/module/audio/audio_player_host.cpp)
 and registration pattern. Its source lives in `engine/module/tts/editor/` and
 builds as a separate Editor-facing target; the existing `TTS` target stays
 headless and has no ImGui dependency. `ApplicationMode`, parser/name/index,
@@ -97,7 +97,7 @@ This rate does not change synthesis speed or pitch. `TTSResult` returns the
 handle after synthesis finishes, so controls during progressive network
 delivery need a safe active-job snapshot/handle seam; TE1 may show generation
 state first and enable transport after handoff. Reuse
-`EditorUILib::DrawTransportStrip` for transport
+`AudioEditorWidgets::DrawTransportStrip` for transport
 semantics and action separation; only reuse Audio Player's preview/widget when
 its data contract fits, without making TTS depend on `AudioPlayerMode`.
 
