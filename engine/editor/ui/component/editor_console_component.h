@@ -24,14 +24,13 @@ namespace kpengine::editor
                                input::InputSystem *input_system, ImFont *code_font = nullptr);
         ~EditorConsoleComponent() override;
 
-        // Per-frame upkeep without drawing. The tool row calls this for a console
-        // whose tab is closed, so deferred results are still drained while hidden —
-        // which the old Render() did unconditionally at its top.
         void Pump();
 
         void RenderContent() override;
 
     private:
+        void UpdateContent(bool visible) override;
+
         struct ConsoleState;
 
         static int InputCallback(ImGuiInputTextCallbackData *data);

@@ -1,5 +1,6 @@
 add_library(UIWidgets STATIC
     ui_backend.cpp
+    ui_plot.cpp
     ui_control_validation.cpp
 )
 target_include_directories(UIWidgets PUBLIC

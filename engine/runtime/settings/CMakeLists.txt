@@ -1,6 +1,7 @@
 add_library(RuntimeSettings STATIC
     settings_registry.cpp
     settings_store.cpp
+    runtime_settings_editor_access.cpp
 )
 
 target_include_directories(RuntimeSettings PUBLIC

@@ -92,14 +92,17 @@ namespace kpengine::editor
         }
     }
 
+    void EditorDebugViewerComponent::UpdateContent(const bool visible)
+    {
+        UpdateDemand(visible);
+    }
+
     void EditorDebugViewerComponent::RenderContent()
     {
         if (!render_system_ || !imgui_renderer_)
         {
             return;
         }
-        UpdateDemand(true);
-
         ImGui::TextUnformatted("Diagnostic Preview");
         ImGui::Separator();
 

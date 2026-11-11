@@ -47,8 +47,10 @@ namespace kpengine::editor{
 
         void EditorMainMenuBarComponent::Render()
         {
-            ImGui::BeginMainMenuBar();
-            EditorMenuBarComponent::Render();
-            ImGui::EndMainMenuBar();
+            if (ImGui::BeginMainMenuBar())
+            {
+                EditorMenuBarComponent::Render();
+                ImGui::EndMainMenuBar();
+            }
         }
 }

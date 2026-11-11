@@ -1,4 +1,5 @@
 #include "editor/ui/component/editor_tool_row_component.h"
+#include "editor_ui/ui_backend.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,6 +7,16 @@
 
 namespace kpengine::editor
 {
+    namespace
+    {
+        ui::UiNodeId PanelUiId(const std::string_view key) noexcept
+        {
+            std::uint64_t value = 14695981039346656037ULL;
+            for (const char ch : key)
+                value = (value ^ static_cast<unsigned char>(ch)) * 1099511628211ULL;
+            return value == 0 ? 1 : value;
+        }
+    }
     namespace
     {
         // Drag threshold separating "click to switch" from "drag to move the panel". The
@@ -72,23 +83,18 @@ namespace kpengine::editor
         // Keep the parallel vectors index-aligned with the entry store. AddEntry only ever
         // appends, so insertion at the matching index preserves alignment.
         panels_.insert(panels_.begin() + static_cast<std::ptrdiff_t>(index), std::move(panel));
-        pumps_.insert(pumps_.begin() + static_cast<std::ptrdiff_t>(index), PanelPump{});
         return panels_[index].get();
     }
 
-    void EditorToolRowComponent::SetPanelPump(std::string_view id, PanelPump pump)
+    bool EditorToolRowComponent::RequestCloseById(const std::string_view id)
     {
         const std::optional<std::size_t> index = model_.IndexOf(id);
-        if (index.has_value() && *index < pumps_.size())
+        if (!index.has_value() || *index >= panels_.size() || panels_[*index] == nullptr)
         {
-            pumps_[*index] = std::move(pump);
+            return false;
         }
-    }
-
-    bool EditorToolRowComponent::IsPanelDrawn(std::string_view id) const noexcept
-    {
-        const std::optional<std::size_t> index = model_.IndexOf(id);
-        return index.has_value() && IsDrawnThisFrame(*index);
+        panels_[*index]->RequestClose();
+        return true;
     }
 
     bool EditorToolRowComponent::IsDrawnThisFrame(std::size_t index) const noexcept
@@ -108,13 +114,22 @@ namespace kpengine::editor
 
     void EditorToolRowComponent::Render()
     {
-        // A panel that is not drawn this frame still gets its upkeep, matching the
-        // behaviour it had when it ran it unconditionally at the top of Render().
-        for (std::size_t index = 0; index < pumps_.size(); ++index)
+        RenderImpl(nullptr);
+    }
+
+    void EditorToolRowComponent::RenderWithContext(ui::UiContext &context)
+    {
+        RenderImpl(&context);
+    }
+
+    void EditorToolRowComponent::RenderImpl(ui::UiContext *context)
+    {
+        // Update every content object, including hidden tabs, before drawing hosts.
+        for (std::size_t index = 0; index < panels_.size(); ++index)
         {
-            if (!IsDrawnThisFrame(index) && pumps_[index])
+            if (panels_[index] != nullptr)
             {
-                pumps_[index]();
+                panels_[index]->Update(IsDrawnThisFrame(index));
             }
         }
 
@@ -125,10 +140,10 @@ namespace kpengine::editor
             const auto dock = static_cast<EditorLayoutSlot>(slot);
             if (EditorLayoutModel::IsDock(dock))
             {
-                RenderDock(dock);
+                RenderDock(dock, context);
             }
         }
-        RenderFloatingPanels();
+        RenderFloatingPanels(context);
 
         // The bottom dock's destination is its REGION, not its window. The window is not
         // submitted once every panel has been dragged out of it, and the place to drop a
@@ -145,7 +160,7 @@ namespace kpengine::editor
         RenderDragPreview();
     }
 
-    void EditorToolRowComponent::RenderDock(EditorLayoutSlot dock)
+    void EditorToolRowComponent::RenderDock(EditorLayoutSlot dock, ui::UiContext *context)
     {
         if (layout_ == nullptr || !layout_->HasSlot(dock))
         {
@@ -179,28 +194,41 @@ namespace kpengine::editor
         // Named by the dock, not by its members: the window identity must survive a tab
         // being closed, or ImGui would discard its state every time the set changed.
         const char *const container = EditorLayoutModel::RegionKey(dock);
-        ImGui::Begin(container, nullptr, flags);
-
-        // The lock belongs to the row container, never to an individual tab. Locking it
-        // disables drag-out for every member while leaving tab selection and close intact.
-        if (RenderLockButton(model_.IsDockLocked(dock)))
+        const bool contents_visible = ImGui::Begin(container, nullptr, flags);
+        if (contents_visible)
         {
-            model_.ToggleDockLocked(dock);
-        }
-        RenderTabStrip(dock, members);
+            // The lock belongs to the row container, never to an individual tab.
+            if (RenderLockButton(model_.IsDockLocked(dock)))
+            {
+                model_.ToggleDockLocked(dock);
+            }
+            RenderTabStrip(dock, members);
 
-        const std::optional<std::size_t> active = model_.GetActiveInDock(dock);
-        if (active.has_value() && *active < panels_.size() && panels_[*active] != nullptr)
-        {
-            ImGui::BeginChild("##dock_body", ImVec2(0.0f, 0.0f), false);
-            panels_[*active]->RenderContent();
-            ImGui::EndChild();
+            const std::optional<std::size_t> active = model_.GetActiveInDock(dock);
+            if (active.has_value() && *active < panels_.size() && panels_[*active] != nullptr)
+            {
+                ImGui::BeginChild("##dock_body", ImVec2(0.0f, 0.0f), false);
+                if (context != nullptr)
+                {
+                    const EditorToolRowEntry *const entry = model_.GetEntry(*active);
+                    if (entry != nullptr)
+                    {
+                        context->SetHostContainer({.id = PanelUiId(entry->id),
+                                                   .role = ui::UiRole::Group,
+                                                   .label = entry->title});
+                    }
+                    panels_[*active]->DrawContent(*context);
+                }
+                else panels_[*active]->DrawContent();
+                ImGui::EndChild();
+            }
         }
         ImGui::End();
     }
 
     void EditorToolRowComponent::RenderPanelWindow(std::size_t index, const EditorRect &rect,
-                                                   bool pinned, int extra_flags)
+                                                   bool pinned, int extra_flags,
+                                                   ui::UiContext *context)
     {
         const EditorToolRowEntry *const entry = model_.GetEntry(index);
         if (entry == nullptr || index >= panels_.size() || panels_[index] == nullptr)
@@ -237,8 +265,8 @@ namespace kpengine::editor
         // teardown could lose. Unlike EditorWindowComponent's default, a hosted panel DOES
         // get a close button: the View menu lists every entry, so a closed one comes back.
         bool open = true;
-        ImGui::Begin(entry->title.c_str(), &open, flags);
-        if (model_.ConsumeFocusRequest(index))
+        const bool contents_visible = ImGui::Begin(entry->title.c_str(), &open, flags);
+        if (contents_visible && model_.ConsumeFocusRequest(index))
         {
             ImGui::SetWindowFocus();
         }
@@ -247,45 +275,55 @@ namespace kpengine::editor
         // gates starting a drag and nothing else, which is why it cannot disagree with the
         // layout. The close button's square is excluded, or reaching for the X would start
         // a drag instead.
-        const ImVec2 win_pos = ImGui::GetWindowPos();
-        const float title_h = ImGui::GetFrameHeight();
-        const ImVec2 title_min(win_pos.x, win_pos.y);
-        const ImVec2 title_max(win_pos.x + ImGui::GetWindowWidth() - title_h, win_pos.y + title_h);
-        if (!model_.IsLocked(index) && ImGui::IsWindowHovered() &&
-            ImGui::IsMouseHoveringRect(title_min, title_max) &&
-            ImGui::IsMouseDragging(ImGuiMouseButton_Left, kDragThreshold))
+        if (contents_visible)
         {
-            drag_index_ = static_cast<int>(index);
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-        }
-        if (model_.IsLocked(index) && ImGui::IsWindowHovered() &&
-            ImGui::IsMouseHoveringRect(title_min, title_max))
-        {
-            ImGui::SetTooltip("Locked: unlock to drag this panel to another dock");
-        }
+            const ImVec2 win_pos = ImGui::GetWindowPos();
+            const float title_h = ImGui::GetFrameHeight();
+            const ImVec2 title_min(win_pos.x, win_pos.y);
+            const ImVec2 title_max(win_pos.x + ImGui::GetWindowWidth() - title_h,
+                                   win_pos.y + title_h);
+            if (!model_.IsLocked(index) && ImGui::IsWindowHovered() &&
+                ImGui::IsMouseHoveringRect(title_min, title_max) &&
+                ImGui::IsMouseDragging(ImGuiMouseButton_Left, kDragThreshold))
+            {
+                drag_index_ = static_cast<int>(index);
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            }
+            if (model_.IsLocked(index) && ImGui::IsWindowHovered() &&
+                ImGui::IsMouseHoveringRect(title_min, title_max))
+            {
+                ImGui::SetTooltip("Locked: unlock to drag this panel to another dock");
+            }
 
-        // The padlock, drawn over this panel's own title bar while its state lives in the
-        // placement model rather than in this component.
-        if (RenderLockButton(model_.IsLocked(index)))
-        {
-            model_.ToggleLockedById(entry->id);
-        }
+            // The panel's lock belongs to the placement model, not the content.
+            if (RenderLockButton(model_.IsLocked(index)))
+            {
+                model_.ToggleLockedById(entry->id);
+            }
 
-        panels_[index]->RenderContent();
+            if (context != nullptr)
+            {
+                context->SetHostContainer({.id = PanelUiId(entry->id),
+                                           .role = ui::UiRole::Group,
+                                           .label = entry->title});
+                panels_[index]->DrawContent(*context);
+            }
+            else panels_[index]->DrawContent();
+        }
         ImGui::End();
 
         if (!open)
         {
-            model_.SetOpen(index, false);
+            panels_[index]->RequestClose();
         }
     }
 
-    void EditorToolRowComponent::RenderFloatingPanels()
+    void EditorToolRowComponent::RenderFloatingPanels(ui::UiContext *context)
     {
         const std::vector<std::size_t> floating = model_.GetFloatingIndices();
         for (const std::size_t index : floating)
         {
-            RenderPanelWindow(index, EditorRect{}, /*pinned=*/false, 0);
+            RenderPanelWindow(index, EditorRect{}, /*pinned=*/false, 0, context);
         }
     }
 
@@ -352,7 +390,7 @@ namespace kpengine::editor
             {
                 if (over_close)
                 {
-                    model_.SetOpen(index, false);
+                    panels_[index]->RequestClose();
                 }
                 else
                 {
@@ -378,7 +416,11 @@ namespace kpengine::editor
                 }
                 if (ImGui::MenuItem("Close tab") && context_index_ >= 0)
                 {
-                    model_.SetOpen(static_cast<std::size_t>(context_index_), false);
+                    const std::size_t close_index = static_cast<std::size_t>(context_index_);
+                    if (close_index < panels_.size() && panels_[close_index] != nullptr)
+                    {
+                        panels_[close_index]->RequestClose();
+                    }
                 }
                 ImGui::EndPopup();
             }

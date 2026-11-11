@@ -1,5 +1,25 @@
 # Editor architecture and design map
 
+The [Editor README](../../engine/editor/README.md) defines the responsibility
+contract: reusable GUI and workspace hosting, editor binding mechanisms,
+presentation lifecycle, and UI cost diagnostics. SceneEditor is one application
+composition; feature modules own their editor tools. Reusable UI can remain
+under `engine/editor/ui` with independent build targets.
+Feature and workspace views use its general UI API; ImGui calls/types remain
+inside the backend implementation. ED6 must establish this boundary while a
+second production GUI backend and structured agent UI remain follow-up work.
+
+`EditorIcons` owns stable `EditorIcon` names and ImageIO loading.
+`EditorIconCatalog` reads the `icons` object in `resouce/icon/setting.json`;
+resource paths resolve against that JSON's directory, and explicit configuration
+paths support alternate catalogs. PNG filenames are not duplicated in C++.
+Missing/malformed configuration and missing entries return diagnostics.
+`EditorBuiltinIcons` owns CPU masks; widgets borrow `UiIconMask`
+views during drawing, without creating GPU objects or exposing toolkit types.
+Asset Browser retains asset-type matching; its custom icon names use the same
+JSON catalog and loader. Audio-specific transport/progress/volume
+semantics belong to `module/audio/editor` and its `AudioEditorWidgets` target.
+
 The Editor hosts tools and owns UI presentation. Runtime owns simulation,
 Render owns scene policy and frame scheduling, and Graphics owns physical GPU
 objects and API execution. Components emit presentation data through
@@ -18,6 +38,23 @@ Existing behavior, build targets, threading, and known boundary debt are in
 | [ED3](.plan/ED3.md) | Magnetic panel placement |
 | [ED4](.plan/ED4.md) | Loading-safe CPU-projected wireframe decoration |
 | [ED5](.plan/ED5.md) | Selective UI bloom through editor-owned presentation and common RHI commands |
+| [ED6](.plan/ED6.md) | Toolkit-neutral Editor UI API/private ImGui backend, reusable presentation, explicit workspaces, feature-owned tools and removal of concrete Runtime-to-Editor dependency |
+| [ED6.2](.plan/ED6.2.md) | Detailed neutral API/backend/session design, bounded semantic observations for later AI work, real feature pilot and compile/runtime gates |
+
+## Reconstruction direction
+
+[ED6](.plan/ED6.md) is the accepted architecture for separating reusable UI
+components/presentation, workspace hosting, and SceneEditor composition.
+Feature editor targets live beside their domains (for example Log and Settings)
+while their runtime targets remain UI-free. The current EditorUILib and
+EditorUI still combine these layers; ED6.0/ED6.1 inventory and lifecycle work are
+accepted, but the toolkit boundary and target split are not implemented.
+Preserve the current WSI/Graphics bridge, headless layout models and snapshot/edit
+contracts. The [baseline review](.review/ED6.md) records concrete coupling and
+reuse problems; the [ED6.0 baseline](.review/ED6.0.md) freezes current target/
+toolkit dependencies and UI timing evidence. The
+[roadmap](TODO.md#ed6--reusable-ui-and-editor-reconstruction) owns stage
+acceptance. ED5 and Settings acceptance are independent.
 
 ## Settings window proposal
 

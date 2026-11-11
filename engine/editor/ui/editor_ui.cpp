@@ -1,4 +1,5 @@
 #include "editor/ui/editor_ui.h"
+#include "editor/ui/api/ui_imgui_inline_backend_internal.h"
 #include "editor/ui/editor_theme.h"
 
 #include <chrono>
@@ -11,6 +12,7 @@
 #include "editor/platform/editor_imgui_opengl_renderer.h"
 #include "editor/platform/editor_imgui_vulkan_renderer.h"
 #include "editor/ui/component/editor_window_component.h"
+#include "editor/ui/component/editor_layout_participant.h"
 #include "editor/ui/component/editor_camera_settings_component.h"
 #include "editor/ui/component/editor_loading_component.h"
 #include "editor/ui/component/editor_startup_profiler_component.h"
@@ -26,6 +28,8 @@
 #include "editor/log/editor_log_component.h"
 #include "editor/settings/editor_layout_settings.h"
 #include "editor/settings/editor_settings.h"
+#include "editor_settings_model.h"
+#include "editor/settings/editor_settings_window_component.h"
 #include "editor/profile/editor_builtin_metrics.h"
 #include "editor/profile/editor_profile_bar.h"
 #include "editor/profile/editor_profile_metrics.h"
@@ -146,6 +150,17 @@ namespace kpengine::editor
         loading_components_.clear();
     }
 
+    void EditorUI::InitializeUiViewer(
+        const EditorUIInitInfo &init_info,
+        std::function<void(ui::UiContext &)> viewer_content)
+    {
+        InitializePresentation(init_info);
+        ui_viewer_content_ = std::move(viewer_content);
+        viewer_mode_ = true;
+        workspace_promoted_ = true;
+        loading_components_.clear();
+    }
+
     void EditorUI::InitializePresentation(const EditorUIInitInfo &init_info)
     {
         if (imgui_context_created_ || renderer_ || wsi_ || !components_.empty())
@@ -161,6 +176,12 @@ namespace kpengine::editor
             code_font_ = ApplyCodexTheme();
 
             CreateImguiBackends(init_info);
+
+            ui_session_ = std::make_unique<ui::UiSession>(ui::CreateImGuiInlineBackend(code_font_));
+            if (!ui_session_->Initialize({}))
+            {
+                throw std::runtime_error("Editor UI widget backend could not attach to ImGui");
+            }
 
             EditorSettings settings{};
             settings.log_colors = DefaultLogColors();
@@ -265,6 +286,32 @@ namespace kpengine::editor
         menus.push_back(Menu{"File"});
         menus.push_back(Menu{"Edit"});
 
+        settings_model_ = std::make_unique<SettingsEditorModel>();
+        if (init_info_.settings_access != nullptr)
+        {
+            settings_model_->Refresh(*init_info_.settings_access);
+        }
+        settings_window_ = std::make_unique<SettingsEditorWindowComponent>(
+            *settings_model_, init_info_.settings_access);
+        Menu settings_menu{"Settings"};
+        settings_menu.items.push_back(MenuItem{
+            "Open Settings",
+            {},
+            true,
+            [this]
+            {
+                if (settings_window_ != nullptr)
+                {
+                    settings_window_->Open();
+                }
+            },
+            [this]
+            {
+                return settings_window_ != nullptr && settings_window_->IsVisible();
+            },
+        });
+        menus.push_back(std::move(settings_menu));
+
         // One item per registered tool-row panel, built from the row rather than written
         // out by hand. Hardcoding the two original ids is exactly how this menu drifted:
         // the Debug Viewer and Performance Profiler became tabs with no View entry, and a
@@ -295,7 +342,14 @@ namespace kpengine::editor
                 {
                     if (tool_row_model_.IsOpenById(id))
                     {
-                        tool_row_model_.SetOpenById(id, false);
+                        for (const auto &component : components_)
+                        {
+                            auto *const row = dynamic_cast<EditorToolRowComponent *>(component.get());
+                            if (row != nullptr && row->RequestCloseById(id))
+                            {
+                                break;
+                            }
+                        }
                     }
                     else
                     {
@@ -749,19 +803,8 @@ namespace kpengine::editor
         }
         row->AddPanel(kToolRowCameraSettingsId, "Camera Settings", BuildCameraSettingsPanel(),
                       /*open=*/true, EditorLayoutSlot::CameraSettings);
-        auto *const debug_viewer = static_cast<EditorDebugViewerComponent *>(row->AddPanel(
-            kToolRowDebugViewerId, "Debug Viewer", BuildDebugViewerPanel(),
-            /*open=*/true, EditorLayoutSlot::DebugViewer));
-        if (debug_viewer != nullptr)
-        {
-            debug_viewer->UpdateDemand(false);
-            row->SetPanelPump(kToolRowDebugViewerId,
-                              [row_ptr = row.get(), debug_viewer]
-                              {
-                                  debug_viewer->UpdateDemand(
-                                      row_ptr->IsPanelDrawn(kToolRowDebugViewerId));
-                              });
-        }
+        row->AddPanel(kToolRowDebugViewerId, "Debug Viewer", BuildDebugViewerPanel(),
+                      /*open=*/true, EditorLayoutSlot::DebugViewer);
         row->AddPanel(kToolRowGpuProfilerId, "Performance Profiler", BuildGpuProfilerPanel(),
                       /*open=*/true, EditorLayoutSlot::GpuProfiler);
 
@@ -775,20 +818,9 @@ namespace kpengine::editor
                       /*open=*/true);
 
         // The console keeps its historical "closed until asked for" state.
-        EditorWindowComponent *const console =
-            row->AddPanel(kToolRowConsoleId, "Console",
-                          BuildConsolePanel(command_registry, input_system, code_font),
-                          /*open=*/false);
-        if (console != nullptr)
-        {
-            // A closed panel is not rendered, so the host must still pump the console or
-            // deferred command results would be stranded until it reopens.
-            row->SetPanelPump(kToolRowConsoleId,
-                              [console]
-                              {
-                                  static_cast<EditorConsoleComponent *>(console)->Pump();
-                              });
-        }
+        row->AddPanel(kToolRowConsoleId, "Console",
+                      BuildConsolePanel(command_registry, input_system, code_font),
+                      /*open=*/false);
 
         // Last, because a placement names a panel id that has to be registered first.
         std::string placement_diagnostic;
@@ -856,6 +888,8 @@ namespace kpengine::editor
         catch (...)
         {
             asset_reference_panel_.reset();
+            settings_window_.reset();
+            settings_model_.reset();
             components_.clear();
             actor_model_.reset();
             screenshot_service_.reset();
@@ -879,9 +913,15 @@ namespace kpengine::editor
         // ImGui backend for the visible closing stages.
         components_.clear();
         asset_reference_panel_.reset();
+        settings_window_.reset();
+        settings_model_.reset();
         asset_reference_visibility_.SetOpen(false);
         actor_model_.reset();
         screenshot_service_.reset();
+        if (ui_session_)
+        {
+            ui_session_->BeginClosing();
+        }
         closing_ = true;
     }
 
@@ -934,11 +974,18 @@ namespace kpengine::editor
         panel_command_registrations_.clear();
         components_.clear();
         asset_reference_panel_.reset();
+        settings_window_.reset();
+        settings_model_.reset();
         asset_reference_visibility_.SetOpen(false);
         asset_reference_model_.Reset();
         active_level_asset_pack_.reset();
         loading_components_.clear();
         actor_model_.reset();
+        if (ui_session_)
+        {
+            ui_session_->Shutdown();
+            ui_session_.reset();
+        }
         // The panel rects described a tree that no longer exists.
         layout_.ResetToDefault();
         workspace_promoted_ = false;
@@ -949,8 +996,10 @@ namespace kpengine::editor
         last_render_time_ms_ = 0.0;
         last_imgui_build_time_ms_ = 0.0;
         last_imgui_submit_time_ms_ = 0.0;
+        last_ui_observation_.clear();
         viewer_mode_ = false;
         viewer_content_ = {};
+        ui_viewer_content_ = {};
         screenshot_service_.reset();
         if (wsi_ && wsi_init_attempted_)
         {
@@ -978,10 +1027,37 @@ namespace kpengine::editor
         renderer_->NewFrame();
         wsi_->NewFrame();
         ImGui::NewFrame();
+        if (ui_session_)
+        {
+            const ImGuiViewport *const viewport = ImGui::GetMainViewport();
+            const ImVec2 scale = ImGui::GetIO().DisplayFramebufferScale;
+            (void)ui_session_->BeginFrame({
+                .observe = ui_observation_enabled_,
+                .viewport = {{viewport->WorkSize.x, viewport->WorkSize.y},
+                             {scale.x, scale.y},
+                             {viewport->WorkPos.x, viewport->WorkPos.y}}});
+        }
     }
 
     void EditorUI::EndDraw()
     {
+        if (ui_session_ && ui_session_->State() == ui::UiSessionState::InFrame)
+        {
+            const ui::UiFrameResult frame = ui_session_->EndFrame();
+            if (frame.complete)
+            {
+                last_ui_observation_ = frame.observations;
+            }
+        }
+    }
+
+    void EditorUI::SetUiObservationEnabled(const bool enabled) noexcept
+    {
+        ui_observation_enabled_ = enabled;
+        if (!enabled)
+        {
+            last_ui_observation_.clear();
+        }
     }
 
     void EditorUI::DrawRenderTarget(const graphics::RenderTargetView &view,
@@ -1032,7 +1108,12 @@ namespace kpengine::editor
             {
                 continue;
             }
-            const std::optional<EditorLayoutSlot> slot = component->GetLayoutSlot();
+            auto *const participant = dynamic_cast<EditorLayoutParticipant *>(component.get());
+            if (participant == nullptr)
+            {
+                continue;
+            }
+            const std::optional<EditorLayoutSlot> slot = participant->GetLayoutSlot();
             if (!slot.has_value())
             {
                 continue;  // places itself: the menu bar, and anything not yet slotted
@@ -1042,11 +1123,11 @@ namespace kpengine::editor
             // geometry rather than vanishing.
             if (layout_.HasSlot(*slot))
             {
-                component->ApplyLayout(layout_.RectOf(*slot));
+                participant->ApplyLayout(layout_.RectOf(*slot));
             }
             else
             {
-                component->ApplyLayout(std::nullopt);
+                participant->ApplyLayout(std::nullopt);
             }
         }
     }
@@ -1118,7 +1199,11 @@ namespace kpengine::editor
                 }
             }
         }
-        if (viewer_mode_ && !closing_ && viewer_content_)
+        if (viewer_mode_ && !closing_ && ui_viewer_content_ && ui_session_)
+        {
+            ui_viewer_content_(ui_session_->Context());
+        }
+        else if (viewer_mode_ && !closing_ && viewer_content_)
         {
             viewer_content_();
         }
@@ -1130,18 +1215,37 @@ namespace kpengine::editor
             ApplyLayoutToTree();
             for (const auto &component : components_)
             {
-                component->Render();
+                if (auto *const content = dynamic_cast<EditorPanelContent *>(component.get()))
+                {
+                    auto *const window = dynamic_cast<EditorWindowComponent *>(component.get());
+                    content->Update(window == nullptr || window->IsVisible());
+                }
+                if (ui_session_) component->RenderWithContext(ui_session_->Context());
+                else component->Render();
             }
             // Render the floating viewer before the splitter pass so the splitter can
             // exclude its actual ImGui bounds from the foreground seam.
             if (asset_reference_panel_ != nullptr)
             {
-                asset_reference_panel_->Render();
+                asset_reference_panel_->Update(asset_reference_panel_->IsVisible());
+                if (ui_session_) asset_reference_panel_->RenderWithContext(ui_session_->Context());
+                else asset_reference_panel_->Render();
             }
-            const std::optional<EditorRect> reference_occlusion =
-                asset_reference_panel_ != nullptr && asset_reference_panel_->IsVisible()
-                    ? std::optional<EditorRect>{asset_reference_panel_->LastScreenRect()}
-                    : std::nullopt;
+            if (settings_window_ != nullptr)
+            {
+                settings_window_->Update(settings_window_->IsVisible());
+                if (ui_session_) settings_window_->RenderWithContext(ui_session_->Context());
+                else settings_window_->Render();
+            }
+            std::optional<EditorRect> reference_occlusion;
+            if (settings_window_ != nullptr && settings_window_->IsVisible())
+            {
+                reference_occlusion = settings_window_->LastScreenRect();
+            }
+            else if (asset_reference_panel_ != nullptr && asset_reference_panel_->IsVisible())
+            {
+                reference_occlusion = asset_reference_panel_->LastScreenRect();
+            }
             splitter_handles_.Render(layout_, reference_occlusion);
             // Persist on release, not per frame. The placement latch lives in the model,
             // which outlives the row, so nothing here holds a component pointer.
@@ -1155,7 +1259,8 @@ namespace kpengine::editor
         {
             for (const auto &component : loading_components_)
             {
-                component->Render();
+                if (ui_session_) component->RenderWithContext(ui_session_->Context());
+                else component->Render();
             }
         }
         ImGui::Render();

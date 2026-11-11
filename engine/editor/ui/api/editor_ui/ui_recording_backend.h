@@ -24,7 +24,19 @@ namespace kpengine::editor::ui
         UiValue value{false};
         UiActionKind action = UiActionKind::Edit;
     };
-    struct UiOperation { enum class Kind : std::uint8_t { BeginWindow, EndWindow, Control, Text }; Kind kind; UiControl control{}; std::string text; };
+    struct UiOperation
+    {
+        enum class Kind : std::uint8_t
+        { BeginWindow, EndWindow, BeginTabBar, EndTabBar, BeginTabItem, EndTabItem,
+          Control, Text, StyledText, SameLine, Canvas, PushTheme, PopTheme };
+        Kind kind;
+        UiControl control{};
+        std::string text;
+        UiVec2 canvas_size{};
+        std::vector<UiCanvasPrimitive> canvas_primitives;
+        UiTextRole text_role = UiTextRole::Primary;
+        UiTheme theme{};
+    };
 
     class UiRecordingBackend final : public IUiBackend
     {
@@ -33,10 +45,20 @@ namespace kpengine::editor::ui
         bool Initialize(const UiViewportInfo &viewport) override;
         void BeginFrame(const UiFrameInfo &frame) override;
         bool BeginWindow(const UiControl &window) override;
+        bool BeginTabBar(const UiControl &control) override;
+        void EndTabBar() override;
+        bool BeginTabItem(const UiControl &control) override;
+        void EndTabItem() override;
+        void PushTheme(const UiTheme &theme) override;
+        void PopTheme() override;
         void EndWindow() override;
         void SetHostContainer(const UiControl &container) override;
         UiEditResult Control(const UiControl &control) override;
+        UiCanvasResult Canvas(const UiControl &control, UiVec2 size,
+                              std::span<const UiCanvasPrimitive> primitives) override;
         void Text(std::string_view text) override;
+        void StyledText(std::string_view text, UiTextRole role) override;
+        void SameLine() override;
         UiFrameResult EndFrame(std::uint64_t frame) override;
         void AbortFrame() noexcept override;
         void Shutdown() noexcept override;

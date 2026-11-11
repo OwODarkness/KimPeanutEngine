@@ -1,4 +1,6 @@
 #include "editor/ui/component/editor_window_component.h"
+#include "editor_ui/ui_backend.h"
+
 namespace kpengine::editor
 {
     namespace
@@ -10,6 +12,16 @@ namespace kpengine::editor
         : title_(title), config_(config), locked_(config.locked) {}
 
     void EditorWindowComponent::Render()
+    {
+        RenderWithContextImpl(nullptr);
+    }
+
+    void EditorWindowComponent::RenderWithContext(ui::UiContext &context)
+    {
+        RenderWithContextImpl(&context);
+    }
+
+    void EditorWindowComponent::RenderWithContextImpl(ui::UiContext *context)
     {
         if (!IsVisible())
         {
@@ -46,7 +58,8 @@ namespace kpengine::editor
         // would make closing terminal, because the window would stop being
         // submitted and nothing could reopen it.
         bool open = true;
-        ImGui::Begin(title_.c_str(), HasCloseButton() ? &open : nullptr, flags);
+        const bool contents_visible =
+            ImGui::Begin(title_.c_str(), HasCloseButton() ? &open : nullptr, flags);
         const ImVec2 actual_pos = ImGui::GetWindowPos();
         last_screen_rect_ = EditorRect{actual_pos.x, actual_pos.y, ImGui::GetWindowWidth(),
                                        ImGui::GetWindowHeight()};
@@ -54,28 +67,31 @@ namespace kpengine::editor
         {
             ImGui::PopStyleColor();
         }
-        RenderFocusAccent();
-        // Here the padlock still means "pin to my own geometry": this window places
-        // itself, so unlocking it is what lets the user move it. A hosted panel's padlock
-        // means something else — see the placement model's `locked`.
-        if (RenderLockButton(locked_))
+        if (contents_visible)
         {
-            locked_ = !locked_;
+            RenderFocusAccent();
+            // Here the padlock still means "pin to my own geometry": this window places
+            // itself, so unlocking it is what lets the user move it. A hosted panel's padlock
+            // means something else — see the placement model's `locked`.
+            if (RenderLockButton(locked_))
+            {
+                locked_ = !locked_;
+            }
+            if (context != nullptr)
+                DrawContent(*context);
+            else
+                RenderContent();
+            focused_last_frame_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
         }
-        RenderContent();
-        focused_last_frame_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        else
+        {
+            focused_last_frame_ = false;
+        }
         ImGui::End();
 
         if (!open)
         {
-            if (visibility_ != nullptr)
-            {
-                visibility_->SetOpen(false);
-            }
-            else
-            {
-                is_open_ = false;
-            }
+            RequestClose();
         }
     }
 
@@ -86,7 +102,32 @@ namespace kpengine::editor
 
     bool EditorWindowComponent::IsVisible() const noexcept
     {
-        return visibility_ != nullptr ? visibility_->IsOpen() : is_open_;
+        return (visibility_ != nullptr ? visibility_ : &local_visibility_)->IsOpen();
+    }
+
+    void EditorWindowComponent::RequestClose()
+    {
+        (visibility_ != nullptr ? visibility_ : &local_visibility_)
+            ->RequestClose(OnCloseRequested());
+    }
+
+    void EditorWindowComponent::Update(const bool visible)
+    {
+        UpdateContent(visible);
+        EditorWindowVisibility *const state =
+            visibility_ != nullptr ? visibility_ : &local_visibility_;
+        if (state->IsCloseDeferred())
+        {
+            const EditorPanelCloseDecision decision = PollCloseRequest();
+            if (decision == EditorPanelCloseDecision::Accept)
+            {
+                state->ResolveDeferredClose(true);
+            }
+            else if (decision == EditorPanelCloseDecision::Cancel)
+            {
+                state->ResolveDeferredClose(false);
+            }
+        }
     }
 
     void EditorWindowComponent::RenderFocusAccent()

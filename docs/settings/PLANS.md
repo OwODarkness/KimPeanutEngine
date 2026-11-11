@@ -1,6 +1,6 @@
 # Settings architecture
 
-**Status: SET1/SET2 implementation in progress; SET3 design captured.**
+**Status: SET2 integrated; SET1 failure-injection and SET3 acceptance follow-up remain open.**
 
 This module provides centrally discoverable settings with domain-owned behavior
 and a shared Editor settings window. [TODO.md](TODO.md) owns stage acceptance;
@@ -38,16 +38,18 @@ Names below are planned files/targets, not existing APIs.
 | Existing `RenderSystem` | Active typed values, pending domain requests, safe-boundary application and acknowledgement, renderer/history side effects | File persistence and settings-page layout |
 | `engine/runtime/runtime_global_context.*` | Own one SettingsRegistry/service and bind shared live systems during composition | A member for each preference |
 | Existing `engine/module/module_bootstrap.*` and module-owned contributors | Explicitly collect linked module schemas for the selected application | Static SettingsRegistry singleton or Runtime includes of optional modules |
-| `engine/editor/settings/settings_editor_model.*` | Draft values, filtering, selection, request feedback and unsaved state | Live domain pointers or domain setters |
-| `engine/editor/ui/component/editor_settings_component.*` | Settings window, category navigation and metadata-driven controls | Persistence policy and subsystem mutation |
+| `engine/runtime/settings/editor/` (compiled only into `EditorUILib`) | Draft values, filtering, selection, request feedback, window and metadata-driven controls | RuntimeSettings linkage, live domain pointers or domain setters |
 | Each optional module's own settings adapter | That module's schema, validation and live application | Extra fields or mode-name checks in Engine |
 
 RuntimeSettings is a small independent target under `runtime/settings`, using
 Reflection's neutral vocabulary and JSON privately. A RenderSettings adapter
 target links RuntimeSettings and Render. Render's core stays independent of
 RuntimeLib/Editor; the adapter introduces the settings dependency, not Render's
-frame algorithms. RuntimeLib composes both. EditorUILib consumes settings
-snapshots and submits requests. Do not expand the existing Runtime/Editor cycle.
+frame algorithms. RuntimeLib composes both. The optional Settings editor
+sources are grouped at `runtime/settings/editor` but are added only to
+`EditorUILib`; they never enter the `RuntimeSettings` target or add an ImGui
+dependency to Runtime. EditorUILib consumes copied snapshots and submits
+requests. Do not expand the existing Runtime/Editor cycle.
 
 Engine remains a lifecycle coordinator. Composition initializes the settings
 service and passes typed initialization values to owners. No `Engine::Get<T>()`

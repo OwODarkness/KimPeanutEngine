@@ -16,6 +16,7 @@
 #include "render/settings/render_settings.h"
 #include "render_asset_preparer.h"
 #include "settings/settings_store.h"
+#include "settings/runtime_settings_editor_access.h"
 #include "render_settings_command_provider.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
 #include "gameplay/factory/point_light_actor_factory.h"
@@ -51,6 +52,11 @@ namespace kpengine
         RuntimeContext::RuntimeContext() :
         graphics_api_type_(GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
+        }
+
+        settings::ISettingsEditorAccess *RuntimeContext::GetSettingsEditorAccess() noexcept
+        {
+            return settings_editor_access_.get();
         }
 
         void RuntimeContext::InitializeSettings()
@@ -125,6 +131,8 @@ namespace kpengine
             settings_registry_ = std::move(registry);
             project_settings_store_ = std::move(project_store);
             user_settings_store_ = std::move(user_store);
+            settings_editor_access_ = std::make_unique<settings::RuntimeSettingsEditorAccess>(
+                *settings_registry_, *project_settings_store_, *user_settings_store_);
             pending_session_settings_overrides_.clear();
         }
 
@@ -234,6 +242,10 @@ namespace kpengine
                 return;
             }
             settings_registry_->PumpProviders();
+            if (settings_editor_access_)
+            {
+                settings_editor_access_->PumpGameLane();
+            }
             for (auto pending = pending_settings_commands_.begin();
                  pending != pending_settings_commands_.end();)
             {
@@ -1511,6 +1523,7 @@ namespace kpengine
             render_settings_registrations_.clear();
             render_settings_provider_.reset();
             screenshot_service_.reset();
+            settings_editor_access_.reset();
             report_progress(3, "Releasing renderer");
             if (render_system_)
             {

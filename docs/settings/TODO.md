@@ -1,7 +1,8 @@
 # Settings roadmap
 
-**Status: SET2 Runtime/Render integration complete; SET1 failure-injection
-acceptance remains open; SET3 is ready for implementation.**
+**Status: SET2 Runtime/Render integration complete; SET3 implementation is in
+place with acceptance follow-up open; SET1 failure-injection acceptance remains
+open.**
 Architecture: [PLANS.md](PLANS.md). Delivery contract:
 [spec](../../.spec/specs/runtime-settings.md). Current evidence:
 [planning journal](../../.spec/journal/2026-11-10-runtime-settings.md).
@@ -20,14 +21,19 @@ Architecture: [PLANS.md](PLANS.md). Delivery contract:
   Verified with headless contracts, visible Debug Vulkan/OpenGL startup and
   captures, safe-frame command edits and clean shutdown. [Design](.plan/SET2.md);
   [evidence](../../.spec/journal/2026-11-10-runtime-settings.md).
-- [ ] **SET3 — Settings window.** Design captured; implementation next. Add a
-  Settings entry to the main Editor header that opens a searchable window with
+- [ ] **SET3 — Settings window.** Implemented; acceptance follow-up remains.
+  The Settings entry in the main Editor header opens a searchable window with
   category/section navigation and a Render page. Implement an Editor model and
   metadata-driven pages with search, scope/source,
   Apply/Revert/Save, conflicts, defaults, unsupported and restart feedback.
-  Accept keyboard-only editing, narrow/wide layouts, no-results/unavailable
-  states, failed apply/save, reopening/restart and visible Vulkan/OpenGL captures.
-  All UI writes use the same validated path as commands. [Design](.plan/SET3.md).
+  Verified wide layout, search/no-results, Rendering section navigation, and
+  restart feedback in visible Debug Vulkan/OpenGL runs; model/provider/store
+  contracts pass focused tests. Still verify keyboard-only editing, compact
+  layout, live Apply, save/reopen, failure presentation, and requested-versus-
+  active reporting when those values differ.
+  All UI writes use the same validated path as commands. [Design](.plan/SET3.md);
+  [spec](../../.spec/specs/editor-settings-window.md);
+  [journal](../../.spec/journal/2026-11-10-editor-settings-window.md).
 - [ ] **SET4 — second domain and existing preferences.** Prove extension with
   one Audio section and one Editor preference; define explicit migrations for
   existing files before switching writers. Accept an extension without adding

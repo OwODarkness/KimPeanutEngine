@@ -470,6 +470,20 @@ namespace kpengine::settings
         return sealed_;
     }
 
+    bool SettingsRegistry::HasProvider(std::string_view section_key) const
+    {
+        std::lock_guard lock(mutex_);
+        const auto provider = providers_.find(section_key);
+        return provider != providers_.end() &&
+               provider->second.registration->active.load(std::memory_order_acquire);
+    }
+
+    uint64_t SettingsRegistry::GetValuesRevision() const
+    {
+        std::lock_guard lock(mutex_);
+        return values_revision_;
+    }
+
     std::optional<SettingSectionDefinition> SettingsRegistry::FindSection(
         std::string_view key) const
     {

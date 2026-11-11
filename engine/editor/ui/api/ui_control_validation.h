@@ -7,6 +7,8 @@ namespace kpengine::editor::ui::detail
 {
     void ValidateControlInput(const UiControl &control);
     void ValidateControlResult(const UiControl &control, const UiEditResult &result);
+    void ValidateCanvas(const UiVec2 size,
+                        const std::vector<UiCanvasPrimitive> &primitives);
 }
 
 #endif

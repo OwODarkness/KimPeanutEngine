@@ -25,6 +25,9 @@ namespace kpengine::editor
         void RenderContent() override;
         void UpdateDemand(bool active);
 
+    protected:
+        void UpdateContent(bool visible) override;
+
     private:
         render::RenderSystem *render_system_ = nullptr;
         IEditorImguiRenderer *imgui_renderer_ = nullptr;

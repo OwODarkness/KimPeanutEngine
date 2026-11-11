@@ -66,6 +66,7 @@ namespace kpengine::editor
         init_info.actor_snapshot_source =
             runtime::global_runtime_context.GetGameplayEditorSnapshotSource();
         init_info.actor_edit_sink = runtime::global_runtime_context.GetGameplayEditorEditSink();
+        init_info.settings_access = runtime::global_runtime_context.GetSettingsEditorAccess();
         init_info.startup_snapshot_source = [engine = engine_]
         {
             return engine != nullptr ? engine->GetStartupSnapshot()

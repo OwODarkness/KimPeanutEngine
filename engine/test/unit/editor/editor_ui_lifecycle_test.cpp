@@ -5,12 +5,52 @@
 
 #include "editor/platform/editor_imgui_renderer.h"
 #include "editor/platform/editor_imgui_wsi.h"
+#include "editor/ui/component/editor_tool_row_component.h"
 #include "editor/ui/component/editor_loading_view_model.h"
 #include "editor/ui/editor_theme.h"
 #include "editor/ui/editor_ui.h"
 
 namespace
 {
+    class PanelHostProbe final : public kpengine::editor::EditorWindowComponent
+    {
+    public:
+        PanelHostProbe() : EditorWindowComponent("Panel host probe") {}
+
+        void RenderContent() override { ++draw_count; }
+        kpengine::editor::EditorPanelCloseDecision OnCloseRequested() override
+        {
+            return close_request;
+        }
+        kpengine::editor::EditorPanelCloseDecision PollCloseRequest() override
+        {
+            return close_poll;
+        }
+
+        int draw_count = 0;
+        int update_count = 0;
+        bool last_visible = false;
+        kpengine::editor::EditorPanelCloseDecision close_request =
+            kpengine::editor::EditorPanelCloseDecision::Accept;
+        kpengine::editor::EditorPanelCloseDecision close_poll =
+            kpengine::editor::EditorPanelCloseDecision::NoDecision;
+
+    protected:
+        void UpdateContent(const bool visible) override
+        {
+            ++update_count;
+            last_visible = visible;
+        }
+    };
+
+    void BeginHeadlessFrame()
+    {
+        ImGuiIO &io = ImGui::GetIO();
+        io.DisplaySize = ImVec2(1280.0f, 720.0f);
+        io.DeltaTime = 1.0f / 60.0f;
+        ImGui::NewFrame();
+    }
+
     class WrongVulkanBridge final : public kpengine::graphics::IEditorPresentationBridge
     {
     public:
@@ -182,6 +222,100 @@ TEST(EditorImguiHarnessProbe, AComponentFrameRunsHeadlesslyWithoutABackend)
     EXPECT_FLOAT_EQ(button_size.x, 100.0f) << "layout produced the requested item size";
     EXPECT_FLOAT_EQ(button_size.y, 24.0f);
     EXPECT_FLOAT_EQ(io.DisplaySize.x, 1280.0f) << "the frame consumed the injected display";
+
+    ImGui::DestroyContext();
+}
+
+TEST(EditorPanelHostLifecycle, ReusesContentAcrossDockAndFloatingHosts)
+{
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    io.ConfigInputTrickleEventQueue = false;
+    io.Fonts->AddFontDefault();
+    ASSERT_TRUE(io.Fonts->Build());
+
+    kpengine::editor::EditorLayoutModel layout;
+    layout.Resolve({0.0f, 0.0f, 1280.0f, 720.0f});
+    kpengine::editor::EditorToolRowModel model;
+    kpengine::editor::EditorToolRowComponent host(model, {});
+    host.SetLayoutModel(&layout);
+    auto content = std::make_unique<PanelHostProbe>();
+    PanelHostProbe *const probe = content.get();
+    host.AddPanel("probe", "Probe", std::move(content), true,
+                  kpengine::editor::EditorLayoutSlot::ToolRow);
+
+    BeginHeadlessFrame();
+    host.Render();
+    ImGui::Render();
+    EXPECT_EQ(probe->draw_count, 1);
+    EXPECT_EQ(probe->update_count, 1);
+    EXPECT_TRUE(probe->last_visible);
+
+    EXPECT_TRUE(model.FloatPanel(0));
+    BeginHeadlessFrame();
+    host.Render();
+    ImGui::Render();
+    EXPECT_EQ(probe->draw_count, 2);
+    EXPECT_EQ(probe->update_count, 2);
+    EXPECT_TRUE(probe->last_visible);
+
+    model.SetOpen(0, false);
+    BeginHeadlessFrame();
+    host.Render();
+    ImGui::Render();
+    EXPECT_EQ(probe->draw_count, 2);
+    EXPECT_EQ(probe->update_count, 3);
+    EXPECT_FALSE(probe->last_visible);
+
+    ImGui::DestroyContext();
+}
+
+TEST(EditorPanelHostLifecycle, DeferredCloseCanCancelOrCompleteThroughHost)
+{
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    io.ConfigInputTrickleEventQueue = false;
+    io.Fonts->AddFontDefault();
+    ASSERT_TRUE(io.Fonts->Build());
+
+    kpengine::editor::EditorLayoutModel layout;
+    layout.Resolve({0.0f, 0.0f, 1280.0f, 720.0f});
+    kpengine::editor::EditorToolRowModel model;
+    kpengine::editor::EditorToolRowComponent host(model, {});
+    host.SetLayoutModel(&layout);
+    auto content = std::make_unique<PanelHostProbe>();
+    PanelHostProbe *const probe = content.get();
+    host.AddPanel("probe", "Probe", std::move(content), true,
+                  kpengine::editor::EditorLayoutSlot::ToolRow);
+
+    probe->close_request = kpengine::editor::EditorPanelCloseDecision::Defer;
+    EXPECT_TRUE(host.RequestCloseById("probe"));
+    EXPECT_TRUE(model.GetEntry(0)->visibility.IsOpen());
+    EXPECT_TRUE(model.GetEntry(0)->visibility.IsCloseDeferred());
+    probe->close_poll = kpengine::editor::EditorPanelCloseDecision::Cancel;
+    BeginHeadlessFrame();
+    host.Render();
+    ImGui::Render();
+    EXPECT_TRUE(model.GetEntry(0)->visibility.IsOpen());
+    EXPECT_FALSE(model.GetEntry(0)->visibility.IsCloseDeferred());
+
+    EXPECT_TRUE(model.FloatPanel(0));
+    EXPECT_TRUE(host.RequestCloseById("probe"));
+    EXPECT_TRUE(model.GetEntry(0)->visibility.IsCloseDeferred());
+    probe->close_poll = kpengine::editor::EditorPanelCloseDecision::Cancel;
+    BeginHeadlessFrame();
+    host.Render();
+    ImGui::Render();
+    EXPECT_TRUE(model.GetEntry(0)->visibility.IsOpen());
+    EXPECT_FALSE(model.GetEntry(0)->visibility.IsCloseDeferred());
+
+    EXPECT_TRUE(host.RequestCloseById("probe"));
+    probe->close_poll = kpengine::editor::EditorPanelCloseDecision::Accept;
+    BeginHeadlessFrame();
+    host.Render();
+    ImGui::Render();
+    EXPECT_FALSE(model.GetEntry(0)->visibility.IsOpen());
+    EXPECT_FALSE(model.GetEntry(0)->visibility.IsCloseDeferred());
 
     ImGui::DestroyContext();
 }

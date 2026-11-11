@@ -2,7 +2,6 @@
 #define KPENGINE_EDITOR_TOOL_ROW_COMPONENT_H
 
 #include <cstddef>
-#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -23,11 +22,6 @@ namespace kpengine::editor
     class EditorToolRowComponent final : public EditorWindowComponent
     {
     public:
-        // Per-frame upkeep for a panel that is NOT drawn this frame. The console
-        // needs this: it drains deferred command results every frame, and a closed
-        // tab is not rendered at all.
-        using PanelPump = std::function<void()>;
-
         // The model is borrowed and must outlive this component.
         EditorToolRowComponent(EditorToolRowModel &model, EditorWindowConfig config);
 
@@ -38,26 +32,26 @@ namespace kpengine::editor
                                         std::unique_ptr<EditorWindowComponent> panel,
                                         bool open = true,
                                         EditorLayoutSlot dock = EditorLayoutSlot::ToolRow);
-        void SetPanelPump(std::string_view id, PanelPump pump);
-        bool IsPanelDrawn(std::string_view id) const noexcept;
-
+        bool RequestCloseById(std::string_view id);
         // Borrowed, and must outlive this component: EditorUI declares its layout model
         // before the component vector, so the components are destroyed first. Every dock
         // window's rectangle comes from it. Null is supported and draws nothing.
         void SetLayoutModel(const EditorLayoutModel *layout) noexcept { layout_ = layout; }
 
         void Render() override;
+        void RenderWithContext(ui::UiContext &context) override;
 
     private:
         bool IsDrawnThisFrame(std::size_t index) const noexcept;
 
         // One row container per occupied dock. A container with one panel still uses the same
         // chrome as a multi-panel dock; adding another panel therefore becomes a tab.
-        void RenderDock(EditorLayoutSlot dock);
+        void RenderImpl(ui::UiContext *context);
+        void RenderDock(EditorLayoutSlot dock, ui::UiContext *context);
         // A panel standing alone as a floating window.
         void RenderPanelWindow(std::size_t index, const EditorRect &rect, bool pinned,
-                               int extra_flags);
-        void RenderFloatingPanels();
+                               int extra_flags, ui::UiContext *context);
+        void RenderFloatingPanels(ui::UiContext *context);
         void RenderTabStrip(EditorLayoutSlot dock, const std::vector<std::size_t> &members);
         // Marks dock destinations during a drag (and empty docks while idle). Drawn before the drag preview
         // so the ghost lands on top of the targets rather than under them.
@@ -67,7 +61,6 @@ namespace kpengine::editor
         EditorToolRowModel &model_;
         const EditorLayoutModel *layout_ = nullptr;  // borrowed
         std::vector<std::unique_ptr<EditorWindowComponent>> panels_;  // parallel to entries
-        std::vector<PanelPump> pumps_;                                // parallel to entries
         EditorRect row_rect_{};
         int drag_index_ = -1;     // panel being dragged, -1 when idle
         int context_index_ = -1;  // tab whose context menu is open

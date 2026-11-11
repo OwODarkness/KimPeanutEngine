@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include "editor/ui/component/editor_ui_component.h"
+#include "editor/ui/component/editor_layout_participant.h"
 
 namespace kpengine::editor
 {
@@ -11,7 +12,7 @@ namespace kpengine::editor
 
     // Bottom status bar: samples a list of injected metrics and draws them in one row.
     // Decoupled from the engine/OS — it only ever talks to EditorMetric.
-    class EditorProfileBarComponent : public EditorUIComponent
+    class EditorProfileBarComponent : public EditorUIComponent, public EditorLayoutParticipant
     {
     public:
         explicit EditorProfileBarComponent(std::vector<std::unique_ptr<EditorMetric>> metrics);

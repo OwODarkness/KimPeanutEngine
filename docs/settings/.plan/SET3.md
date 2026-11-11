@@ -1,6 +1,6 @@
 # SET3 — Editor settings window
 
-**Status: design captured; implementation not started.** Parent: [roadmap](../TODO.md).
+**Status: implementation present; acceptance follow-up open.** Parent: [roadmap](../TODO.md).
 
 ## User flow
 
@@ -33,8 +33,10 @@
 - Do not give Editor `RuntimeContext`, `SettingsStore`, `RenderSystem`, or a
   mutable registry pointer. Do not add preference-specific fields to Engine.
 - The model stays ImGui-free and testable. A window component translates
-  metadata and copied model state into widgets and user intents. Keep the widget
-  renderer in Editor; RuntimeSettings and Render must not link ImGui.
+  metadata and copied model state into widgets and user intents. Group these
+  Settings-specific Editor sources under `engine/runtime/settings/editor`,
+  compiled only into `EditorUILib`; the `RuntimeSettings` target remains
+  ImGui-free and Render must not link ImGui.
 - Reuse the current SettingsRegistry edit/provider path. Do not create an Editor
   path that directly calls Render settings APIs.
 

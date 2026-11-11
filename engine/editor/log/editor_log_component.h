@@ -1,11 +1,9 @@
 #ifndef KPENGINE_EDITOR_LOG_COMPONENT_H
 #define KPENGINE_EDITOR_LOG_COMPONENT_H
 
-#include <array>
-#include <cstddef>
-
 #include "editor/ui/component/editor_window_component.h"
 #include "editor/settings/editor_settings.h"
+#include "runtime/core/log/editor/log_editor_view.h"
 
 namespace kpengine{
     class LogSystem;
@@ -17,14 +15,7 @@ namespace kpengine{
             void RenderContent() override;
         private:
             LogSystem* log_system_;
-            LogLevelColorTable colors_;
-            std::array<char, 256> search_buffer_{};
-            std::size_t level_filter_index_ = 0;
-            bool follow_latest_ = true;
-            bool jump_to_latest_ = false;
-            std::size_t last_log_count_ = 0;
-            int selection_anchor_index_ = -1;
-            int selection_caret_index_ = -1;
+            LogEditorView view_;
         };
     }
 }

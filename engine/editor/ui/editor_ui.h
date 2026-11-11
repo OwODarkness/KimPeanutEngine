@@ -20,6 +20,7 @@
 #include "editor/ui/editor_panel_command_provider.h"
 #include "graphics/backend/common/editor_presentation_bridge.h"
 #include "graphics/backend/common/render_target.h"
+#include "editor/ui/api/editor_ui/ui_session.h"
 #include "runtime/runtime_startup.h"
 
 namespace kpengine
@@ -58,6 +59,10 @@ namespace kpengine
         class IGameplayEditorSnapshotSource;
         class IGameplayEditorEditSink;
     }
+    namespace settings
+    {
+        class ISettingsEditorAccess;
+    }
     namespace asset
     {
         // The Asset-owned catalog boundary. Only this interface crosses into the Editor;
@@ -80,6 +85,8 @@ namespace kpengine::editor
     class EditorUIComponent;
     class EditorWindowComponent;  // factory return type only; keeps imgui.h out of here
     class ActorEditorModel;
+    class SettingsEditorModel;
+    class SettingsEditorWindowComponent;
 
     // Parameter bundle for EditorUI::Initialize, so the signature doesn't grow with each
     // injected dependency (mirrors EditorContextInitInfo / WindowCreateInfo). Members are
@@ -103,6 +110,7 @@ namespace kpengine::editor
         // Null is supported and expected in lifecycle tests: the browser it feeds is then
         // disabled rather than absent, so nothing has to null-check a panel.
         asset::IAssetCatalogSnapshotSource *asset_catalog_source = nullptr;
+        settings::ISettingsEditorAccess *settings_access = nullptr;
         std::function<runtime::StartupSnapshot()> startup_snapshot_source;
         std::function<std::unique_ptr<IEditorImguiRenderer>(GraphicsAPIType)>
             renderer_factory;
@@ -121,6 +129,8 @@ namespace kpengine::editor
         void Initialize(const EditorUIInitInfo &init_info);
         void InitializeViewer(const EditorUIInitInfo &init_info,
                               std::function<void()> viewer_content);
+        void InitializeUiViewer(const EditorUIInitInfo &init_info,
+                                std::function<void(ui::UiContext &)> viewer_content);
         void InitializePresentation(const EditorUIInitInfo &init_info);
         void SetActorInspectionServices(
             const reflection::IReflectionCatalog *reflection_catalog,
@@ -140,6 +150,11 @@ namespace kpengine::editor
         void Close();
         void BeginDraw();
         void EndDraw();
+        void SetUiObservationEnabled(bool enabled) noexcept;
+        const std::vector<ui::UiNodeObservation> &GetLastUiObservation() const noexcept
+        {
+            return last_ui_observation_;
+        }
         void DrawRenderTarget(const graphics::RenderTargetView &view, const ImVec2 &size);
 
         double GetLastRenderTimeMs() const noexcept { return last_render_time_ms_; }
@@ -211,6 +226,9 @@ namespace kpengine::editor
         // events, the renderer draws ImGui with the active backend (GL/Vulkan).
         std::unique_ptr<IEditorImguiRenderer> renderer_;
         std::unique_ptr<IEditorImguiWSI> wsi_;
+        std::unique_ptr<ui::UiSession> ui_session_;
+        std::vector<ui::UiNodeObservation> last_ui_observation_;
+        bool ui_observation_enabled_ = false;
         bool imgui_context_created_ = false;
         bool renderer_init_attempted_ = false;
         bool renderer_initialized_ = false;
@@ -222,6 +240,7 @@ namespace kpengine::editor
         bool glow_enabled_ = true;
         EditorUIInitInfo init_info_{};
         std::function<void()> viewer_content_;
+        std::function<void(ui::UiContext &)> ui_viewer_content_;
         LogLevelColorTable log_colors_;
         ImFont *code_font_ = nullptr;
         double last_render_time_ms_ = 0.0;
@@ -273,6 +292,10 @@ namespace kpengine::editor
         // This is a true floating window, not a dock member. It renders after the
         // splitter foreground pass so dock seams cannot cover its content or border.
         std::unique_ptr<EditorWindowComponent> asset_reference_panel_;
+        // The settings window borrows this model and Runtime access interface. It is
+        // destroyed first, before either the model or Runtime-owned access can expire.
+        std::unique_ptr<SettingsEditorModel> settings_model_;
+        std::unique_ptr<SettingsEditorWindowComponent> settings_window_;
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
         std::vector<std::unique_ptr<EditorUIComponent>> loading_components_;
     };

@@ -2,7 +2,9 @@
 #define KPENGINE_EDITOR_UI_API_UI_BACKEND_H
 
 #include "ui_types.h"
+#include "ui_theme.h"
 
+#include <functional>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -38,10 +40,55 @@ namespace kpengine::editor::ui
         virtual bool Initialize(const UiViewportInfo &viewport) = 0;
         virtual void BeginFrame(const UiFrameInfo &frame) = 0;
         virtual bool BeginWindow(const UiControl &window) = 0;
+        virtual bool BeginWindow(const UiControl &window, bool &open,
+                                 UiVec2 first_use_position, UiVec2 first_use_size)
+        {
+            (void)open;
+            (void)first_use_position;
+            (void)first_use_size;
+            return BeginWindow(window);
+        }
+        virtual bool BeginWindow(const UiControl &window, UiVec2 first_use_position,
+                                 UiVec2 first_use_size)
+        {
+            (void)first_use_position;
+            (void)first_use_size;
+            return BeginWindow(window);
+        }
         virtual void EndWindow() = 0;
+        virtual bool BeginTabBar(const UiControl &) { return true; }
+        virtual void EndTabBar() {}
+        virtual bool BeginTabItem(const UiControl &) { return true; }
+        virtual void EndTabItem() {}
+        virtual void PushTheme(const UiTheme &) {}
+        virtual void PopTheme() {}
         virtual void SetHostContainer(const UiControl &container) = 0;
         virtual UiEditResult Control(const UiControl &control) = 0;
+        virtual UiCanvasResult Canvas(const UiControl &control, UiVec2 size,
+                                      std::span<const UiCanvasPrimitive> primitives)
+        {
+            (void)control;
+            (void)size;
+            (void)primitives;
+            return {};
+        }
         virtual void Text(std::string_view text) = 0;
+        virtual void StyledText(std::string_view text, UiTextRole) { Text(text); }
+        virtual void SameLine() {}
+        virtual UiEditResult IconControl(const UiControl &control, UiIconMask)
+        {
+            return Control(control);
+        }
+        virtual UiVec2 AvailableContent() const noexcept { return {}; }
+        virtual void Section(std::string_view text) { StyledText(text, UiTextRole::Accent); }
+        virtual void WrappedText(std::string_view text) { Text(text); }
+        virtual bool BeginTable(UiNodeId, std::span<const UiTableColumn>, float, bool)
+        {
+            return true;
+        }
+        virtual void EndTable() {}
+        virtual void TableRow(bool) {}
+        virtual void TableColumn() {}
         virtual UiFrameResult EndFrame(std::uint64_t frame) = 0;
         virtual void AbortFrame() noexcept = 0;
         virtual void Shutdown() noexcept = 0;
@@ -51,13 +98,35 @@ namespace kpengine::editor::ui
     {
     public:
         class WindowScope;
+        class ThemeScope;
+        class TabBarScope;
+        class TabItemScope;
         UiContext(UiSessionId session, IUiBackend &backend) noexcept;
         void BeginFrame(std::uint64_t frame, const UiFrameInfo &info);
         bool BeginWindow(const UiControl &window);
+        bool BeginWindow(const UiControl &window, bool &open,
+                         UiVec2 first_use_position = {}, UiVec2 first_use_size = {});
+        bool BeginWindow(const UiControl &window, UiVec2 first_use_position,
+                         UiVec2 first_use_size);
         WindowScope Window(const UiControl &window);
+        WindowScope Window(const UiControlDescriptor &descriptor,
+                           UiVec2 first_use_position, UiVec2 first_use_size);
+        WindowScope Window(const UiControlDescriptor &descriptor, bool &open,
+                           UiVec2 first_use_position = {}, UiVec2 first_use_size = {});
+        TabBarScope TabBar(const UiControlDescriptor &descriptor);
+        TabItemScope TabItem(const UiControlDescriptor &descriptor);
+        ThemeScope Theme(const UiTheme &theme);
+        void PushTheme(const UiTheme &theme);
+        void PopTheme() noexcept;
         void EndWindow();
+        bool BeginTabBar(const UiControl &tab_bar);
+        void EndTabBar();
+        bool BeginTabItem(const UiControl &tab_item);
+        void EndTabItem();
         void SetHostContainer(const UiControl &container);
         UiEditResult Control(const UiControl &control);
+        UiCanvasResult Canvas(const UiControlDescriptor &descriptor, UiVec2 size,
+                              std::vector<UiCanvasPrimitive> primitives);
         UiEditResult Button(const UiControlDescriptor &descriptor);
         UiTypedEditResult<bool> Checkbox(const UiControlDescriptor &descriptor, bool checked);
         UiTypedEditResult<bool> Selectable(const UiControlDescriptor &descriptor, bool selected);
@@ -86,39 +155,117 @@ namespace kpengine::editor::ui
                 step ? std::optional<UiValue>{UiValue{*step}} : std::nullopt));
         }
 
+        template <typename T>
+        UiTypedEditResult<T> Slider(const UiControlDescriptor &descriptor, T value,
+                                    std::type_identity_t<T> minimum,
+                                    std::type_identity_t<T> maximum)
+        {
+            static_assert(std::is_same_v<T, std::int64_t> ||
+                          std::is_same_v<T, std::uint64_t> ||
+                          std::is_same_v<T, double>,
+                          "sliders preserve i64, u64 or double values");
+            return MakeTypedEditResult<T>(SliderValue(
+                descriptor, UiValue{value}, UiValue{minimum}, UiValue{maximum}));
+        }
+
         UiEditResult ComboValue(const UiControlDescriptor &descriptor, UiValue selected,
                                 std::vector<UiChoice> choices);
         UiEditResult NumericInputValue(const UiControlDescriptor &descriptor, UiValue value,
                                        std::optional<UiValue> minimum = {},
                                        std::optional<UiValue> maximum = {},
                                        std::optional<UiValue> step = {});
+        UiEditResult SliderValue(const UiControlDescriptor &descriptor, UiValue value,
+                                 UiValue minimum, UiValue maximum);
         UiTypedEditResult<std::string> TextInput(const UiControlDescriptor &descriptor,
                                                  std::string_view value);
         void Text(std::string_view text);
+        void Text(std::string_view text, UiTextRole role);
+        void SameLine();
+        UiVec2 AvailableContent() const;
+        void Section(std::string_view text);
+        void WrappedText(std::string_view text);
+        // A positive height scrolls the table within the current panel.
+        void Table(std::string_view id, std::span<const UiTableColumn> columns,
+                   float height, bool headers, const std::function<void()> &draw);
+        void TableRow(bool highlighted = false);
+        void TableColumn();
         UiFrameResult EndFrame();
         void AbortFrame() noexcept;
         UiSessionId SessionId() const noexcept { return session_; }
         std::uint64_t FrameId() const noexcept { return frame_; }
+        const UiViewportInfo &Viewport() const noexcept { return frame_info_.viewport; }
 
     private:
         UiSessionId session_;
         IUiBackend &backend_;
         std::uint64_t frame_ = 0;
+        UiFrameInfo frame_info_{};
         unsigned int window_depth_ = 0;
+        unsigned int theme_depth_ = 0;
+        unsigned int tab_bar_depth_ = 0;
+        unsigned int tab_item_depth_ = 0;
         bool in_frame_ = false;
+        bool in_table_ = false;
         std::unordered_set<UiNodeId> frame_ids_;
         std::unordered_map<UiNodeId, std::string> named_ids_;
         std::thread::id owner_thread_ = std::this_thread::get_id();
         void VerifyThread() const;
         UiNodeId HashNamedId(std::string_view name);
         UiEditResult DispatchControl(const UiControl &control,
-                                     std::optional<std::string_view> named_id);
+                                     std::optional<std::string_view> named_id, UiIconMask icon = {});
+    };
+
+    class UiContext::TabBarScope final
+    {
+    public:
+        TabBarScope(UiContext &context, const UiControl &control);
+        ~TabBarScope() noexcept;
+        TabBarScope(const TabBarScope &) = delete;
+        TabBarScope &operator=(const TabBarScope &) = delete;
+        TabBarScope(TabBarScope &&other) noexcept;
+        TabBarScope &operator=(TabBarScope &&) = delete;
+        bool Visible() const noexcept { return visible_; }
+    private:
+        UiContext *context_ = nullptr;
+        bool visible_ = false;
+    };
+
+    class UiContext::TabItemScope final
+    {
+    public:
+        TabItemScope(UiContext &context, const UiControl &control);
+        ~TabItemScope() noexcept;
+        TabItemScope(const TabItemScope &) = delete;
+        TabItemScope &operator=(const TabItemScope &) = delete;
+        TabItemScope(TabItemScope &&other) noexcept;
+        TabItemScope &operator=(TabItemScope &&) = delete;
+        bool ContentVisible() const noexcept { return visible_; }
+    private:
+        UiContext *context_ = nullptr;
+        bool visible_ = false;
+    };
+
+    class UiContext::ThemeScope final
+    {
+    public:
+        ThemeScope(UiContext &context, const UiTheme &theme);
+        ~ThemeScope() noexcept;
+        ThemeScope(const ThemeScope &) = delete;
+        ThemeScope &operator=(const ThemeScope &) = delete;
+        ThemeScope(ThemeScope &&other) noexcept;
+        ThemeScope &operator=(ThemeScope &&) = delete;
+    private:
+        UiContext *context_ = nullptr;
     };
 
     class UiContext::WindowScope final
     {
     public:
         WindowScope(UiContext &context, const UiControl &window);
+        WindowScope(UiContext &context, const UiControl &window, bool &open,
+                    UiVec2 first_use_position, UiVec2 first_use_size);
+        WindowScope(UiContext &context, const UiControl &window,
+                    UiVec2 first_use_position, UiVec2 first_use_size);
         ~WindowScope() noexcept;
         WindowScope(const WindowScope &) = delete;
         WindowScope &operator=(const WindowScope &) = delete;

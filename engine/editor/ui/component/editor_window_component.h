@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include "editor/ui/component/editor_ui_component.h"
+#include "editor/ui/component/editor_panel_content.h"
 #include "editor/ui/component/editor_layout_rect.h"
 #include "editor/ui/component/editor_window_visibility.h"
 
@@ -35,13 +36,23 @@ namespace kpengine{
             int reserved = 0;
         };
 
-        class EditorWindowComponent : public EditorUIComponent{
+        class EditorWindowComponent : public EditorUIComponent, public EditorPanelContent{
 
         public:
             EditorWindowComponent(const std::string& title, EditorWindowConfig config = {});
             virtual ~EditorWindowComponent();
             virtual void Render() override;
+            void RenderWithContext(ui::UiContext &context) override;
             virtual void RenderContent();
+            virtual void RenderContent(ui::UiContext &context)
+            {
+                (void)context;
+                RenderContent();
+            }
+        void DrawContent() final override { RenderContent(); }
+            void DrawContent(ui::UiContext &context) final override { RenderContent(context); }
+            void Update(bool visible) override;
+            void RequestClose();
             void AddComponent(std::shared_ptr<EditorUIComponent> component);
 
             // Optional borrowed open/closed state. When bound, a host (the dock host)
@@ -60,12 +71,19 @@ namespace kpengine{
             // viewer's log panel have no owner that could reopen them, and every workspace
             // panel is closed and reopened from its tab or the View menu.
             virtual bool HasCloseButton() const { return false; }
+            EditorPanelCloseDecision OnCloseRequested() override
+            {
+                return EditorPanelCloseDecision::Accept;
+            }
 
             // Screen-space bounds from the most recent Render call. This is an
             // observation for overlay arbitration, not window ownership or layout state.
             const EditorRect &LastScreenRect() const noexcept { return last_screen_rect_; }
 
         protected:
+            void RenderWithContextImpl(ui::UiContext *context);
+            virtual void UpdateContent(bool visible) { (void)visible; }
+
             // The title-bar focus accent: a 2 px strip, NavHighlight when focused.
             void RenderFocusAccent();
 
@@ -78,7 +96,7 @@ namespace kpengine{
             std::string title_;
             EditorWindowConfig config_;
             std::vector<std::shared_ptr<EditorUIComponent>> components_;
-            bool is_open_ = true;
+            EditorWindowVisibility local_visibility_{true};
             bool locked_;
             bool focused_last_frame_ = false;
             EditorWindowVisibility *visibility_ = nullptr;  // borrowed, not owned

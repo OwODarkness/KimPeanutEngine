@@ -1,5 +1,10 @@
 # Editor Module
 
+The [Editor README](../../engine/editor/README.md) defines the current agreed
+responsibility contract. The dated implementation snapshot below describes
+existing structure and historical assumptions; use the README and
+[ED6](.plan/ED6.md) for reconstruction boundaries.
+
 The architecture/design map is [PLANS.md](PLANS.md). ED5's copied ImGui markers,
 common frame-scoped RHI adapter, bounded filter passes, and loading/selection
 accent integration are implemented in the working tree. Cross-backend color,

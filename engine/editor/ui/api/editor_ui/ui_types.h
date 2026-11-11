@@ -2,6 +2,7 @@
 #define KPENGINE_EDITOR_UI_API_UI_TYPES_H
 
 #include <cstdint>
+#include <span>
 #include <optional>
 #include <vector>
 #include <string>
@@ -39,12 +40,33 @@ namespace kpengine::editor::ui
 
     enum class UiRole : std::uint8_t
     {
-        Generic, Button, CheckBox, Selectable, TextInput, NumericInput, Combo, Group, Image, Canvas
+        Generic, Button, CheckBox, Selectable, TextInput, NumericInput, Slider, Combo,
+        Window, Group, Image, Canvas
     };
     enum class UiGeometryProvenance : std::uint8_t { Unavailable, TestFixture, ActualBackend };
     enum class UiActionKind : std::uint8_t { Activate, Toggle, Select, Edit, Commit, Cancel, Close };
     using UiValue = std::variant<bool, std::int64_t, std::uint64_t, double, std::string>;
     struct UiChoice { std::string key; std::string label; UiValue value{false}; };
+
+    enum class UiTextRole : std::uint8_t { Primary, Muted, Accent, Warning, Error, Success };
+
+    struct UiIconMask
+    {
+        std::span<const std::uint8_t> alpha;
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+
+        bool IsValid() const noexcept
+        {
+            return width > 0 && height > 0 && alpha.size() / width >= height;
+        }
+    };
+
+    struct UiTableColumn
+    {
+        std::string_view label;
+        float width = 0.0F;
+    };
 
     struct UiControlDescriptor
     {
@@ -53,6 +75,46 @@ namespace kpengine::editor::ui
         std::string_view description;
         bool enabled = true;
         std::string_view disabled_reason;
+        std::string_view hint;
+        float width = 0.0F;
+        float height = 0.0F;
+        UiTextRole text_role = UiTextRole::Primary;
+        bool emphasized = false;
+        bool span_row = false;
+        UiIconMask icon{};
+    };
+
+    enum class UiCanvasPrimitiveKind : std::uint8_t
+    {
+        Line, FilledRect, Rect, Circle, Text
+    };
+
+    struct UiCanvasPrimitive
+    {
+        UiCanvasPrimitiveKind kind = UiCanvasPrimitiveKind::Line;
+        UiVec2 first{};
+        UiVec2 second{};
+        UiColor color{};
+        float thickness = 1.0F;
+        float radius = 0.0F;
+        std::string text;
+        UiVec2 text_anchor{};
+        float text_scale = 1.0F;
+    };
+
+    struct UiCanvas
+    {
+        UiControlDescriptor control{};
+        UiVec2 size{};
+        std::vector<UiCanvasPrimitive> primitives;
+    };
+
+    struct UiCanvasResult
+    {
+        bool hovered = false;
+        bool pressed = false;
+        bool dragging = false;
+        UiVec2 normalized_pointer{};
     };
 
     struct UiEditResult
@@ -91,12 +153,18 @@ namespace kpengine::editor::ui
         std::string description;
         bool enabled = true;
         std::string disabled_reason;
+        std::string hint;
+        float width = 0.0F;
         UiValue value{false};
         std::optional<UiValue> minimum;
         std::optional<UiValue> maximum;
         std::optional<UiValue> step;
         std::vector<UiChoice> choices;
         std::vector<UiActionKind> actions;
+        float height = 0.0F;
+        UiTextRole text_role = UiTextRole::Primary;
+        bool emphasized = false;
+        bool span_row = false;
     };
 
     struct UiNodeObservation

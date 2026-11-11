@@ -6,13 +6,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <utility>
 
-#include <nlohmann/json.hpp>
 
 #include "config/path.h"
-#include "image_io/image_io.h"
+#include "editor/ui/editor_icons.h"
 
 namespace kpengine::editor
 {
@@ -139,25 +137,6 @@ namespace kpengine::editor
 
         constexpr std::size_t kIconRasterSize = 32;
 
-        const char *IconFileName(AssetIconKind kind)
-        {
-            switch (kind)
-            {
-            case AssetIconKind::Model:
-                return "icon-model.png";
-            case AssetIconKind::Material:
-                return "icon-material.png";
-            case AssetIconKind::Texture:
-                return "icon-texture.png";
-            case AssetIconKind::Level:
-            case AssetIconKind::Document:
-                return "icon-file.png";
-            }
-            return "icon-file.png";
-        }
-
-        using IconFileNameMap = std::unordered_map<std::string, std::string>;
-
         std::string FoldIconType(std::string_view type_name)
         {
             std::string folded;
@@ -186,92 +165,10 @@ namespace kpengine::editor
             }
             return {};
         }
-        IconFileNameMap DefaultIconFileNames()
-        {
-            return {{"document", IconFileName(AssetIconKind::Document)},
-                    {"model", IconFileName(AssetIconKind::Model)},
-                    {"material", IconFileName(AssetIconKind::Material)},
-                    {"texture", IconFileName(AssetIconKind::Texture)},
-                    {"level", IconFileName(AssetIconKind::Level)}};
-        }
-        bool IsSafeIconFileName(std::string_view file_name)
-        {
-            const std::filesystem::path path{std::string{file_name}};
-            return !file_name.empty() && !path.is_absolute() && path.parent_path().empty();
-        }
-        std::filesystem::path FindIconPath(const char *file_name)
-        {
-            for (const std::string_view directory : {std::string_view{"resource/icon"},
-                                                       std::string_view{"resouce/icon"}})
-            {
-                const std::filesystem::path candidate = project_root / directory / file_name;
-                std::error_code error;
-                if (std::filesystem::is_regular_file(candidate, error) && !error)
-                {
-                    return candidate;
-                }
-            }
-            return {};
-        }
-
-        void LoadIconSettings(IconFileNameMap &file_names)
-        {
-            std::filesystem::path settings_path = FindIconPath("setting.json");
-            if (settings_path.empty())
-            {
-                settings_path = FindIconPath("settings.json");
-            }
-            if (settings_path.empty())
-            {
-                return;
-            }
-
-            std::ifstream file(settings_path, std::ios::binary);
-            if (!file.is_open())
-            {
-                return;
-            }
-
-            try
-            {
-                const nlohmann::json root = nlohmann::json::parse(file);
-                const nlohmann::json *icons = &root;
-                const auto nested_icons = root.find("icons");
-                if (nested_icons != root.end())
-                {
-                    if (!nested_icons->is_object())
-                    {
-                        return;
-                    }
-                    icons = &*nested_icons;
-                }
-                if (!icons->is_object())
-                {
-                    return;
-                }
-                for (const auto &[type_name, icon_node] : icons->items())
-                {
-                    const std::string folded_type = FoldIconType(type_name);
-                    if (folded_type.empty() || !icon_node.is_string())
-                    {
-                        continue;
-                    }
-                    const std::string file_name = icon_node.get<std::string>();
-                    if (IsSafeIconFileName(file_name))
-                    {
-                        file_names[folded_type] = file_name;
-                    }
-                }
-            }
-            catch (const std::exception &)
-            {
-                // Optional presentation settings fall back to the built-in icon names.
-            }
-        }
-        std::vector<std::uint32_t> DecodeIcon(const std::filesystem::path &path)
+        std::vector<std::uint32_t> DecodeIcon(const EditorIconCatalog &catalog, const std::string_view name)
         {
             const image_io::ImageDecodeResult decoded =
-                image_io::DecodeImageFile(path.generic_string());
+                catalog.LoadImage(name);
             if (!decoded.result.success ||
                 decoded.image.format != image_io::ImagePixelFormat::Rgba8 ||
                 !decoded.image.IsValid())
@@ -519,16 +416,11 @@ namespace kpengine::editor
     void EditorAssetBrowserComponent::LoadIconImages()
     {
         icon_pixels_.clear();
-        IconFileNameMap file_names = DefaultIconFileNames();
-        LoadIconSettings(file_names);
-        for (const auto &[type_name, file_name] : file_names)
+        EditorIconCatalog catalog;
+        if (!catalog.Load()) return;
+        for (const auto &[type_name, file_name] : catalog.Entries())
         {
-            const std::filesystem::path path = FindIconPath(file_name.c_str());
-            if (path.empty())
-            {
-                continue;
-            }
-            std::vector<std::uint32_t> pixels = DecodeIcon(path);
+            std::vector<std::uint32_t> pixels = DecodeIcon(catalog, type_name);
             if (!pixels.empty())
             {
                 icon_pixels_[type_name] = std::move(pixels);

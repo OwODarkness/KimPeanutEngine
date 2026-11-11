@@ -54,6 +54,22 @@ namespace kpengine::editor::ui
         return true;
     }
 
+    void UiRecordingBackend::PushTheme(const UiTheme &theme)
+    {
+        if (!in_frame_)
+            throw std::logic_error("recorded theme requires an active frame");
+        UiOperation operation{UiOperation::Kind::PushTheme};
+        operation.theme = theme;
+        operations_.push_back(std::move(operation));
+    }
+
+    void UiRecordingBackend::PopTheme()
+    {
+        if (!in_frame_)
+            throw std::logic_error("recorded theme pop requires an active frame");
+        operations_.push_back({UiOperation::Kind::PopTheme});
+    }
+
     void UiRecordingBackend::EndWindow()
     {
         if (!window_open_)
@@ -61,6 +77,28 @@ namespace kpengine::editor::ui
         operations_.push_back({UiOperation::Kind::EndWindow, {}, {}});
         parent_ = 0;
         window_open_ = false;
+    }
+
+    bool UiRecordingBackend::BeginTabBar(const UiControl &control)
+    {
+        operations_.push_back({UiOperation::Kind::BeginTabBar, control});
+        return true;
+    }
+
+    void UiRecordingBackend::EndTabBar()
+    {
+        operations_.push_back({UiOperation::Kind::EndTabBar});
+    }
+
+    bool UiRecordingBackend::BeginTabItem(const UiControl &control)
+    {
+        operations_.push_back({UiOperation::Kind::BeginTabItem, control});
+        return true;
+    }
+
+    void UiRecordingBackend::EndTabItem()
+    {
+        operations_.push_back({UiOperation::Kind::EndTabItem});
     }
 
     void UiRecordingBackend::SetHostContainer(const UiControl &container)
@@ -155,11 +193,50 @@ namespace kpengine::editor::ui
         return result;
     }
 
+    UiCanvasResult UiRecordingBackend::Canvas(
+        const UiControl &control, const UiVec2 size,
+        const std::span<const UiCanvasPrimitive> primitives)
+    {
+        if (!in_frame_ || parent_ == 0)
+            throw std::logic_error("recorded canvases must be inside a host container");
+        UiOperation operation{UiOperation::Kind::Canvas, control};
+        operation.canvas_size = size;
+        operation.canvas_primitives.assign(primitives.begin(), primitives.end());
+        operations_.push_back(std::move(operation));
+        UiNodeObservation observation{session_, frame_, control.id, parent_, control.role,
+                                      control.label, control.description, control.value,
+                                      control.enabled, control.disabled_reason};
+        if (const auto bounds = fixture_bounds_.find(control.id); bounds != fixture_bounds_.end())
+        {
+            observation.bounds = bounds->second;
+            observation.geometry = UiGeometryProvenance::TestFixture;
+        }
+        pending_observations_.push_back(std::move(observation));
+        return {};
+    }
+
     void UiRecordingBackend::Text(const std::string_view text)
     {
         if (!in_frame_)
             throw std::logic_error("recorded text requires active frame");
         operations_.push_back({UiOperation::Kind::Text, {}, std::string{text}});
+    }
+
+    void UiRecordingBackend::StyledText(const std::string_view text, const UiTextRole role)
+    {
+        if (!in_frame_)
+            throw std::logic_error("recorded text requires active frame");
+        UiOperation operation{UiOperation::Kind::StyledText};
+        operation.text = std::string{text};
+        operation.text_role = role;
+        operations_.push_back(std::move(operation));
+    }
+
+    void UiRecordingBackend::SameLine()
+    {
+        if (!in_frame_ || parent_ == 0)
+            throw std::logic_error("recorded SameLine requires a host container");
+        operations_.push_back({UiOperation::Kind::SameLine});
     }
 
     UiFrameResult UiRecordingBackend::EndFrame(const std::uint64_t frame)

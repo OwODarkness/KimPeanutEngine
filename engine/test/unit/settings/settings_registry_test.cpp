@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include "settings/settings_registry.h"
+#include "settings/runtime_settings_editor_access.h"
 #include "settings/settings_store.h"
 
 namespace
@@ -857,5 +858,56 @@ namespace
                       .status,
                   SettingsStoreStatus::InvalidValues);
         EXPECT_FALSE(std::filesystem::exists(directory.Path() / "settings.json"));
+    }
+
+    TEST(SettingsEditorAccessTest, SaveRunsOnlyAfterRuntimePumpAndUpdatesRegistryAfterSuccess)
+    {
+        TemporaryDirectory directory;
+        SettingsRegistry registry;
+        ASSERT_TRUE(registry.RegisterSection(MakeSection()));
+        ASSERT_TRUE(registry.Seal());
+        SettingsStore project_store(directory.Path() / "project.json",
+                                    SettingSaveScope::Project);
+        SettingsStore user_store(directory.Path() / "user.json", SettingSaveScope::User);
+        ASSERT_TRUE(project_store.Load(registry));
+        ASSERT_TRUE(user_store.Load(registry));
+        RuntimeSettingsEditorAccess access(registry, project_store, user_store);
+
+        const auto save = access.SubmitSave(SettingSaveScope::Project, "test.rendering");
+        ASSERT_EQ(save.status, SettingsSaveRequestStatus::Pending);
+        EXPECT_FALSE(std::filesystem::exists(directory.Path() / "project.json"));
+        EXPECT_EQ(access.GetSaveResult(save.request_id)->status,
+                  SettingsSaveRequestStatus::Pending);
+
+        EXPECT_EQ(access.PumpGameLane(), 1u);
+        const auto completed = access.GetSaveResult(save.request_id);
+        ASSERT_TRUE(completed.has_value());
+        EXPECT_EQ(completed->status, SettingsSaveRequestStatus::Succeeded);
+        EXPECT_TRUE(std::filesystem::exists(directory.Path() / "project.json"));
+        EXPECT_TRUE(registry.GetPersistentOverrides(SettingSaveScope::Project)
+                        .contains("test.rendering"));
+    }
+
+    TEST(SettingsEditorAccessTest, DiskConflictDoesNotUpdateRegistryOverrides)
+    {
+        TemporaryDirectory directory;
+        SettingsRegistry registry;
+        ASSERT_TRUE(registry.RegisterSection(MakeSection()));
+        ASSERT_TRUE(registry.Seal());
+        const auto project_path = directory.Path() / "project.json";
+        SettingsStore project_store(project_path, SettingSaveScope::Project);
+        SettingsStore user_store(directory.Path() / "user.json", SettingSaveScope::User);
+        ASSERT_TRUE(project_store.Load(registry));
+        ASSERT_TRUE(user_store.Load(registry));
+        RuntimeSettingsEditorAccess access(registry, project_store, user_store);
+        WriteText(project_path, "external writer");
+
+        const auto save = access.SubmitSave(SettingSaveScope::Project, "test.rendering");
+        ASSERT_EQ(save.status, SettingsSaveRequestStatus::Pending);
+        EXPECT_EQ(access.PumpGameLane(), 1u);
+        const auto completed = access.GetSaveResult(save.request_id);
+        ASSERT_TRUE(completed.has_value());
+        EXPECT_EQ(completed->status, SettingsSaveRequestStatus::Failed);
+        EXPECT_TRUE(registry.GetPersistentOverrides(SettingSaveScope::Project).empty());
     }
 }

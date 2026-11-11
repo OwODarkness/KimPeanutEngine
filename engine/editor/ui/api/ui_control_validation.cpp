@@ -102,6 +102,13 @@ namespace kpengine::editor::ui::detail
                     "numeric controls must declare edit and commit actions");
         }
 
+        void ValidateSliderInput(const UiControl &control)
+        {
+            Require(control.minimum.has_value() && control.maximum.has_value(),
+                    "slider controls require inclusive minimum and maximum values");
+            ValidateNumericInput(control);
+        }
+
         void ValidateTextInput(const UiControl &control)
         {
             Require(std::holds_alternative<std::string>(control.value),
@@ -134,8 +141,10 @@ namespace kpengine::editor::ui::detail
             case UiRole::CheckBox: ValidateCheckboxInput(control); break;
             case UiRole::Selectable: ValidateSelectableInput(control); break;
             case UiRole::NumericInput: ValidateNumericInput(control); break;
+            case UiRole::Slider: ValidateSliderInput(control); break;
             case UiRole::TextInput: ValidateTextInput(control); break;
             case UiRole::Combo: ValidateComboInput(control); break;
+            case UiRole::Window:
             case UiRole::Generic:
             case UiRole::Group:
             case UiRole::Image:
@@ -273,8 +282,10 @@ namespace kpengine::editor::ui::detail
             case UiRole::CheckBox: ValidateCheckboxResult(control, result); break;
             case UiRole::Selectable: ValidateSelectableResult(control, result); break;
             case UiRole::NumericInput: ValidateNumericResult(control, result); break;
+            case UiRole::Slider: ValidateNumericResult(control, result); break;
             case UiRole::TextInput: ValidateTextResult(control, result); break;
             case UiRole::Combo: ValidateComboResult(control, result); break;
+            case UiRole::Window:
             case UiRole::Generic:
             case UiRole::Group:
             case UiRole::Image:
@@ -289,11 +300,50 @@ namespace kpengine::editor::ui::detail
 
     void ValidateControlInput(const UiControl &control)
     {
+        if (!std::isfinite(control.width) || control.width < 0.0F ||
+            !std::isfinite(control.height) || control.height < 0.0F)
+            throw std::invalid_argument("UI control size must be finite and non-negative");
         ValidateInputForRole(control);
     }
 
     void ValidateControlResult(const UiControl &control, const UiEditResult &result)
     {
         ValidateResultForRole(control, result);
+    }
+
+    void ValidateCanvas(const UiVec2 size,
+                        const std::vector<UiCanvasPrimitive> &primitives)
+    {
+        Require(std::isfinite(size.x) && std::isfinite(size.y) &&
+                    size.x >= 0.0F && size.y >= 0.0F,
+                "canvas extent must be finite and non-negative");
+        for (const UiCanvasPrimitive &primitive : primitives)
+        {
+            const auto finite_point = [](const UiVec2 point)
+            {
+                return std::isfinite(point.x) && std::isfinite(point.y);
+            };
+            Require(finite_point(primitive.first) && finite_point(primitive.second),
+                    "canvas primitive coordinates must be finite");
+            Require(std::isfinite(primitive.color.r) && std::isfinite(primitive.color.g) &&
+                        std::isfinite(primitive.color.b) && std::isfinite(primitive.color.a) &&
+                        primitive.color.r >= 0.0F && primitive.color.r <= 1.0F &&
+                        primitive.color.g >= 0.0F && primitive.color.g <= 1.0F &&
+                        primitive.color.b >= 0.0F && primitive.color.b <= 1.0F &&
+                        primitive.color.a >= 0.0F && primitive.color.a <= 1.0F,
+                    "canvas colors must be finite normalized RGBA values");
+            Require(std::isfinite(primitive.thickness) && primitive.thickness > 0.0F &&
+                        std::isfinite(primitive.radius) && primitive.radius >= 0.0F,
+                    "canvas stroke width and radius must be finite and non-negative");
+            if (primitive.kind == UiCanvasPrimitiveKind::Rect ||
+                primitive.kind == UiCanvasPrimitiveKind::FilledRect)
+                Require(primitive.second.x >= primitive.first.x &&
+                            primitive.second.y >= primitive.first.y,
+                        "canvas rectangle corners must be ordered");
+            if (primitive.kind == UiCanvasPrimitiveKind::Text)
+                Require(primitive.text.size() <= 8192 && finite_point(primitive.text_anchor) &&
+                            std::isfinite(primitive.text_scale) && primitive.text_scale > 0.0F,
+                        "canvas text exceeds its bounded length");
+        }
     }
 }

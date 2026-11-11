@@ -217,10 +217,14 @@ namespace kpengine::editor
         DrainCompletions();
     }
 
+    void EditorConsoleComponent::UpdateContent(bool visible)
+    {
+        (void)visible;
+        Pump();
+    }
+
     void EditorConsoleComponent::RenderContent()
     {
-        DrainCompletions();
-
         if (code_font_)
         {
             ImGui::PushFont(code_font_);

@@ -62,6 +62,8 @@ namespace kpengine::runtime::script
 namespace kpengine::settings
 {
     class SettingsStore;
+    class ISettingsEditorAccess;
+    class RuntimeSettingsEditorAccess;
 }
 
 namespace kpengine::render
@@ -106,10 +108,7 @@ namespace kpengine
             settings::SettingsResult SetSessionSettingsOverrides(
                 settings::SettingsLayerOverrides overrides);
             settings::SettingsLayerOverrides GetSessionSettingsOverrides() const;
-            settings::SettingsRegistry *GetSettingsRegistry() noexcept
-            {
-                return settings_registry_.get();
-            }
+            settings::ISettingsEditorAccess *GetSettingsEditorAccess() noexcept;
             void PumpSettingsProviders();
             // Creates the traditional scene services. Standalone application
             // hosts deliberately leave this uncalled so they do not construct
@@ -277,6 +276,7 @@ namespace kpengine
             std::unique_ptr<settings::SettingsRegistry> settings_registry_;
             std::unique_ptr<settings::SettingsStore> project_settings_store_;
             std::unique_ptr<settings::SettingsStore> user_settings_store_;
+            std::unique_ptr<settings::RuntimeSettingsEditorAccess> settings_editor_access_;
             std::unique_ptr<render::RenderSettingsProvider> render_settings_provider_;
             std::vector<settings::SettingsProviderRegistration>
                 render_settings_registrations_;

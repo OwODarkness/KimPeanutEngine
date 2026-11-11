@@ -34,6 +34,8 @@ namespace kpengine::settings
         SettingsResult Seal();
 
         bool IsSealed() const;
+        bool HasProvider(std::string_view section_key) const;
+        uint64_t GetValuesRevision() const;
         std::optional<SettingSectionDefinition> FindSection(std::string_view key) const;
         std::vector<SettingSectionDefinition> GetSections() const;
         SettingsResult ValidateValues(std::string_view section_key,

@@ -74,8 +74,77 @@ Acceptance requires readable base UI, explicit emission only, clipped sources,
 later-window occlusion, no accidental scene-image bloom, and loading presentation
 independent of scene readiness. No implementation/runtime result is claimed.
 
+## ED6 — Reusable UI and Editor reconstruction
+
+**ED6.0 baseline frozen; ED6.1 accepted.** Canonical
+[design](.plan/ED6.md),
+[baseline review](.review/ED6.md),
+[scope](../../.spec/specs/editor-ui-reconstruction.md), and
+[planning evidence](../../.spec/journal/2026-11-10-editor-ui-reconstruction.md).
+The intended boundary is stricter than the current implementation: all feature
+and workspace views use Editor's general toolkit-neutral UI API; only the Editor
+ImGui backend may include/call ImGui. ED6 separates that API/backend,
+workspace hosting and SceneEditor composition. Preserve existing Settings work
+and independent ED5/SET3 acceptance.
+
+- [x] **ED6.0 — Baseline and ownership.** Froze the target/include and direct
+  toolkit dependency graph, live component owners/lifetimes, extension callers,
+  scene/standalone layout references, panel commands and saved formats, Debug
+  correctness tests, and a RelWithDebInfo UI build/submit sample. →
+  [ED6.0 baseline review](.review/ED6.0.md)
+- [x] **ED6.1 — Content and hosting.** Shared content update/draw/close lifecycle,
+  optional layout participation, and tab/floating host coverage are implemented.
+  Hidden upkeep and deferred, cancelled, and accepted close paths are covered. →
+  [implementation journal](../../.spec/journal/2026-11-10-editor-ui-reconstruction.md)
+- [ ] **ED6.2 — UI targets.** Extract UIWidgets/UIPresentation; a minimal UI
+  consumer links without RuntimeLib, EditorLib or concrete feature tools. Migrate
+  existing standalone presentation callers without requiring scene services.
+  Provide Editor's general typed UI API (Button, Checkbox, Selectable, Combo,
+  numeric/text inputs), keep ImGui private to its backend, and prove feature
+  views compile without ImGui headers/types; exercise a recording backend.
+  [Detailed plan](.plan/ED6.2.md),
+  [scope](../../.spec/specs/editor-ui-ed6-2.md),
+  [design-risk review](.review/ED6.2.md). Ordered gates: contract freeze;
+  neutral core/recording; private adapter; session lifecycle; production Settings
+  fields pilot; five host delegation paths; final isolation/runtime/performance
+  acceptance. Stable identity/semantic descriptors and optional bounded internal
+  layout observations are required preparation; agent endpoints/JSON schema and
+  another production GUI backend remain follow-up work. Current implementation
+  has neutral core/recording targets, a private inline ImGui adapter, Settings
+  fields pilot, and shared session/frame plumbing. Independent smoke, full v1
+  capability/lifecycle coverage, five-host/backend matrix, and matched performance
+  evidence remain open; this stage is not accepted.
+- [ ] **ED6.3 — Workspace composition.** Reuse parameterized headless layout and
+  panel hosting with per-instance contributions, stable identity, correct callback
+  teardown, all-floating-window overlay arbitration and workspace-scoped layouts.
+  Prove a second real workspace without scene-specific regions/factories.
+- [ ] **ED6.4 — Log and Settings.** Move complete model/view/action ownership to
+  feature editor targets; generic UI/workspace contains no concrete Log/Settings
+  types. Preserve their domain request/save/close semantics and actual consumers.
+- [ ] **ED6.5 — Other features and SceneEditor.** Migrate Console, Asset,
+  Gameplay, Audio and diagnostics by owner; SceneEditor composes its preset and
+  viewport/selection tools. Feature addition/removal does not edit generic UI.
+  Route all feature/workspace drawing through Editor's general UI API, including
+  focused custom-canvas/image/input contracts; retire direct ImGui usage there.
+- [ ] **ED6.6 — Runtime boundary.** Application composition supplies optional
+  presentation through neutral host lifecycle; remove Engine's concrete Editor
+  ownership/include and the RuntimeLib-to-EditorLib edge. Preserve core Scene3D,
+  CLI, loading/promotion/closing order and standalone modes.
+- [ ] **ED6.7 — Final acceptance.** Remove compatibility paths; verify acyclic
+  targets, UI-only/runtime-only links, legacy layouts and commands, optional
+  builds, all enabled hosts and visible Vulkan/OpenGL lifecycle. Record matched
+  RelWithDebInfo evidence for any presentation overhead change.
+  Enforce toolkit-free feature/workspace code and public UI interfaces; ImGui
+  stays within explicit backend implementation/test and vendored-integration scope.
+
 ## Deferred follow-up
 
+- **Agent-readable UI and another GUI backend, after ED6 reconstruction.**
+  Design a structured UI representation and reverse translation, clarifying
+  observation, interaction and UI-authoring scope. ED6 already requires a neutral
+  Editor UI API and migration of feature-level ImGui calls. The later design
+  evaluates another production backend against that API; a serializable schema,
+  agent UI framework and second backend are not required for ED6 completion.
 - Tab reordering and tab-strip overflow scrolling (the hand-rolled strip has neither).
 - Detached windows currently lose the base window chrome (lock toggle, focus accent).
 - The **loading tree** still places itself with ratios: `EditorLoadingComponent` is a

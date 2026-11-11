@@ -39,6 +39,27 @@ target_link_libraries(UiRecordingContractTest PRIVATE
 include(GoogleTest)
 gtest_discover_tests(UiRecordingContractTest PROPERTIES LABELS "editor;ui")
 
+add_executable(EditorIconsTest editor_icons_test.cpp)
+target_include_directories(EditorIconsTest BEFORE PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ui_poison)
+target_link_libraries(EditorIconsTest PRIVATE EditorIcons KP::GoogleTest)
+gtest_discover_tests(EditorIconsTest PROPERTIES LABELS "editor;ui")
+
+add_executable(SettingsPropertyFieldsTest
+    settings_property_fields_test.cpp
+)
+target_include_directories(SettingsPropertyFieldsTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui_poison
+    ${CMAKE_SOURCE_DIR}/engine/editor/settings
+)
+target_include_directories(SettingsPropertyFieldsTest BEFORE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui_poison
+)
+target_link_libraries(SettingsPropertyFieldsTest PRIVATE
+    SettingsPropertyFields UIPresentation UIRecordingBackend KP::GoogleTest
+)
+include(GoogleTest)
+gtest_discover_tests(SettingsPropertyFieldsTest PROPERTIES LABELS "editor;ui;settings")
+
 add_executable(EditorLoadingIcosahedronTest
     editor_loading_icosahedron_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_loading_icosahedron.cpp
@@ -83,6 +104,7 @@ gtest_discover_tests(ActorEditorModelUnitTest PROPERTIES LABELS "editor")
 # region is under the cursor. Also ImGui-free, so the layering check still holds.
 add_executable(EditorToolRowModelUnitTest
     editor_tool_row_model_test.cpp
+    editor_panel_content_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_tool_row_model.cpp
     ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_layout_model.cpp
 )
@@ -114,6 +136,25 @@ target_link_libraries(EditorPanelCommandProviderUnitTest PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(EditorPanelCommandProviderUnitTest PROPERTIES LABELS "editor")
+
+add_executable(EditorSettingsModelUnitTest
+    editor_settings_model_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/settings/editor/editor_settings_model.cpp
+)
+
+target_include_directories(EditorSettingsModelUnitTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/settings/editor
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+)
+
+target_link_libraries(EditorSettingsModelUnitTest PRIVATE
+    KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(EditorSettingsModelUnitTest PROPERTIES LABELS "editor")
 
 # The layout model is ImGui-free by design, so this target links no ImGui and compiles
 # the model source directly. If it ever starts pulling imgui.h, the layering has been
