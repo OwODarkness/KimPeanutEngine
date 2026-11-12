@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -148,6 +149,7 @@ namespace kpengine::runtime::command
         std::string message;
         uint64_t request_id = 0;
         CommandData data;
+        std::map<std::string, std::string> structured_json;
 
         bool IsSuccess() const noexcept { return status == CommandStatus::Success; }
     };
@@ -170,6 +172,7 @@ namespace kpengine::runtime::command
         CommandCapability capabilities = CommandCapability::None;
         uint64_t request_id = 0;
         CommandCompletionSink complete;
+        std::function<bool(uint64_t)> request_is_active;
     };
 
     using CommandHandler = std::function<CommandResult(const CommandCall &, const CommandContext &)>;

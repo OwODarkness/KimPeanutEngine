@@ -9,6 +9,7 @@
 #include <optional>
 #include <cstdint>
 #include <string_view>
+#include <string>
 #include "base/type.h"
 #include "editor/asset/asset_browser_model.h"
 #include "editor/asset/asset_reference_view_model.h"
@@ -101,6 +102,7 @@ namespace kpengine::editor
         MemoryStatsSampler *memory_sampler = nullptr;
         render::RenderSystem *render_system = nullptr;
         runtime::command::CommandRegistry *command_registry = nullptr;
+        ui::UiSnapshotStore *snapshot_store = nullptr;
         input::InputSystem *input_system = nullptr;
         WindowSystem *window_system = nullptr;
         runtime::ISceneCameraControlSink *camera_control_sink = nullptr;
@@ -158,6 +160,7 @@ namespace kpengine::editor
         }
         void RegisterRenderTargetImage(ui::UiImageId id,
                                        const graphics::RenderTargetView &view);
+        ui::UiSessionId SessionId() const noexcept { return presentation_host_.SessionId(); }
 
         double GetLastRenderTimeMs() const noexcept { return last_render_time_ms_; }
         ImFont *GetCodeFont() const noexcept { return presentation_host_.CodeFont(); }

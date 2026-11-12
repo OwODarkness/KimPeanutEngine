@@ -19,13 +19,19 @@ namespace kpengine::editor::ui
             control.enabled = descriptor.enabled;
             control.disabled_reason = descriptor.disabled_reason;
             control.hint = descriptor.hint;
+            control.unit = descriptor.unit;
+            control.domain_summary = descriptor.domain_summary;
             control.width = descriptor.width;
             control.height = descriptor.height;
             control.multiline = descriptor.multiline;
             control.text_role = descriptor.text_role;
             control.emphasized = descriptor.emphasized;
             control.span_row = descriptor.span_row;
+            control.selection_decoration = descriptor.selection_decoration;
             control.value = std::move(value);
+            if (descriptor.semantic_value) control.value = *descriptor.semantic_value;
+            control.minimum = descriptor.semantic_minimum;
+            control.maximum = descriptor.semantic_maximum;
             control.actions = std::move(actions);
             return control;
         }
@@ -53,9 +59,29 @@ namespace kpengine::editor::ui
         window_depth_ = 0;
         in_table_ = false;
         in_virtual_list_ = false;
+        node_depth_ = 0;
         host_container_set_ = false;
         frame_ids_.clear();
         named_ids_.clear();
+        frame_styles_.clear();
+        theme_stack_.clear();
+        virtual_list_range_.reset();
+        semantic_parent_ = 0;
+        semantic_scopes_.clear();
+        observation_parents_.clear();
+        semantic_observations_.clear();
+        observed_table_columns_.clear();
+        table_column_.reset();
+        table_row_index_ = 0;
+        table_id_ = table_parent_ = active_row_id_ = 0;
+        text_index_ = 0;
+        if (info.observe)
+        {
+            const UiNodeId root = StableUiNodeId("ui.session." + std::to_string(session_));
+            semantic_parent_ = root;
+            semantic_observations_.push_back({.session = session_, .frame = frame_, .id = root,
+                .role = UiRole::Session, .label = "UI Session"});
+        }
         UiFrameInfo frame_info = info;
         frame_info.session = session_;
         frame_info.frame = frame_;
@@ -88,6 +114,26 @@ namespace kpengine::editor::ui
             throw;
         }
         frame_ids_.insert(window.id);
+        if (frame_info_.observe)
+        {
+            observation_parents_.insert_or_assign(window.id, semantic_parent_);
+            UiNodeObservation observation{.session = session_, .frame = frame_, .id = window.id,
+                .parent = semantic_parent_, .role = UiRole::Window, .label = window.label,
+                .description = window.description, .enabled = window.enabled,
+                .disabled_reason = window.disabled_reason};
+            observation.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+            if (const auto bounds = backend_.WindowBounds(window.id))
+            {
+                observation.bounds = *bounds;
+                observation.geometry = UiGeometryProvenance::ActualBackend;
+            }
+            RecordSemanticNode(std::move(observation));
+        }
+        if (frame_info_.observe)
+        {
+            semantic_scopes_.push_back(semantic_parent_);
+            semantic_parent_ = window.id;
+        }
         ++window_depth_;
         return visible;
     }
@@ -111,6 +157,26 @@ namespace kpengine::editor::ui
             throw;
         }
         frame_ids_.insert(window.id);
+        if (frame_info_.observe)
+        {
+            observation_parents_.insert_or_assign(window.id, semantic_parent_);
+            UiNodeObservation observation{.session = session_, .frame = frame_, .id = window.id,
+                .parent = semantic_parent_, .role = UiRole::Window, .label = window.label,
+                .description = window.description, .enabled = window.enabled,
+                .disabled_reason = window.disabled_reason};
+            observation.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+            if (const auto bounds = backend_.WindowBounds(window.id))
+            {
+                observation.bounds = *bounds;
+                observation.geometry = UiGeometryProvenance::ActualBackend;
+            }
+            RecordSemanticNode(std::move(observation));
+        }
+        if (frame_info_.observe)
+        {
+            semantic_scopes_.push_back(semantic_parent_);
+            semantic_parent_ = window.id;
+        }
         ++window_depth_;
         return visible;
     }
@@ -137,6 +203,26 @@ namespace kpengine::editor::ui
             throw;
         }
         frame_ids_.insert(window.id);
+        if (frame_info_.observe)
+        {
+            observation_parents_.insert_or_assign(window.id, semantic_parent_);
+            UiNodeObservation observation{.session = session_, .frame = frame_, .id = window.id,
+                .parent = semantic_parent_, .role = UiRole::Window, .label = window.label,
+                .description = window.description, .enabled = window.enabled,
+                .disabled_reason = window.disabled_reason};
+            observation.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+            if (const auto bounds = backend_.WindowBounds(window.id))
+            {
+                observation.bounds = *bounds;
+                observation.geometry = UiGeometryProvenance::ActualBackend;
+            }
+            RecordSemanticNode(std::move(observation));
+        }
+        if (frame_info_.observe)
+        {
+            semantic_scopes_.push_back(semantic_parent_);
+            semantic_parent_ = window.id;
+        }
         ++window_depth_;
         return visible;
     }
@@ -239,6 +325,58 @@ namespace kpengine::editor::ui
         return TabItemScope(*this, control);
     }
 
+    UiContext::NodeScope UiContext::Node(const UiControlDescriptor &descriptor,
+                                         const UiRole role, const bool selected)
+    {
+        if (role != UiRole::Group && role != UiRole::Panel)
+            throw std::logic_error("semantic UI nodes must use a container role");
+        UiControl control = MakeControl(descriptor, role, false, {});
+        control.id = HashNamedId(descriptor.id);
+        return NodeScope(*this, control, selected);
+    }
+
+    void UiContext::BeginNode(const UiControl &node, const bool selected)
+    {
+        VerifyThread();
+        if (!in_frame_ || node.id == 0 || in_table_ || in_virtual_list_ ||
+            !frame_ids_.insert(node.id).second)
+            throw std::logic_error("invalid or duplicate UI semantic node scope");
+        if (frame_info_.observe)
+        {
+            UiNodeObservation observation{};
+            observation.session = session_;
+            observation.frame = frame_;
+            observation.id = node.id;
+            observation.parent = semantic_parent_;
+            observation.role = node.role;
+            observation.label = node.label;
+            observation.description = node.description;
+            observation.enabled = node.enabled;
+            observation.disabled_reason = node.disabled_reason;
+            observation.domain_summary = node.domain_summary;
+            observation.selected = node.role == UiRole::Panel
+                ? std::optional<bool>{selected} : std::nullopt;
+            observation.visible = true;
+            semantic_observations_.push_back(std::move(observation));
+            semantic_scopes_.push_back(semantic_parent_);
+            semantic_parent_ = node.id;
+        }
+        ++node_depth_;
+    }
+
+    void UiContext::EndNode()
+    {
+        VerifyThread();
+        if (!in_frame_ || node_depth_ == 0)
+            throw std::logic_error("unbalanced UI semantic node scope");
+        --node_depth_;
+        if (frame_info_.observe && !semantic_scopes_.empty())
+        {
+            semantic_parent_ = semantic_scopes_.back();
+            semantic_scopes_.pop_back();
+        }
+    }
+
     bool UiContext::BeginTabBar(const UiControl &tab_bar)
     {
         VerifyThread();
@@ -256,7 +394,19 @@ namespace kpengine::editor::ui
             throw;
         }
         frame_ids_.insert(tab_bar.id);
-        if (visible) ++tab_bar_depth_;
+        if (visible)
+        {
+            if (frame_info_.observe)
+            {
+                UiNodeObservation observation{.session = session_, .frame = frame_, .id = tab_bar.id,
+                    .parent = semantic_parent_, .role = UiRole::TabBar, .label = tab_bar.label,
+                    .visible = visible};
+                RecordSemanticNode(std::move(observation));
+                semantic_scopes_.push_back(semantic_parent_);
+                semantic_parent_ = tab_bar.id;
+            }
+            ++tab_bar_depth_;
+        }
         return visible;
     }
 
@@ -275,6 +425,11 @@ namespace kpengine::editor::ui
             throw;
         }
         --tab_bar_depth_;
+        if (frame_info_.observe)
+        {
+            semantic_parent_ = semantic_scopes_.back();
+            semantic_scopes_.pop_back();
+        }
     }
 
     bool UiContext::BeginTabItem(const UiControl &tab_item)
@@ -294,7 +449,22 @@ namespace kpengine::editor::ui
             throw;
         }
         frame_ids_.insert(tab_item.id);
-        if (visible) ++tab_item_depth_;
+        if (frame_info_.observe)
+        {
+            UiNodeObservation observation{.session = session_, .frame = frame_, .id = tab_item.id,
+                .parent = semantic_parent_, .role = UiRole::Tab, .label = tab_item.label,
+                .selected = visible, .visible = true};
+            RecordSemanticNode(std::move(observation));
+        }
+        if (visible)
+        {
+            if (frame_info_.observe)
+            {
+                semantic_scopes_.push_back(semantic_parent_);
+                semantic_parent_ = tab_item.id;
+            }
+            ++tab_item_depth_;
+        }
         return visible;
     }
 
@@ -313,6 +483,11 @@ namespace kpengine::editor::ui
             throw;
         }
         --tab_item_depth_;
+        if (frame_info_.observe)
+        {
+            semantic_parent_ = semantic_scopes_.back();
+            semantic_scopes_.pop_back();
+        }
     }
 
     UiContext::ThemeScope UiContext::Theme(const UiTheme &theme)
@@ -328,6 +503,15 @@ namespace kpengine::editor::ui
         try
         {
             backend_.PushTheme(theme);
+            if (frame_info_.observe)
+            {
+                const auto existing = std::find_if(frame_styles_.begin(), frame_styles_.end(),
+                    [&theme](const UiThemeObservation &style) { return style.declared == theme; });
+                const std::string id = existing != frame_styles_.end() ? existing->id
+                    : "style." + std::to_string(frame_styles_.size() + 1);
+                if (existing == frame_styles_.end()) frame_styles_.push_back({id, theme});
+                theme_stack_.emplace_back(theme, id);
+            }
             ++theme_depth_;
         }
         catch (...)
@@ -344,6 +528,7 @@ namespace kpengine::editor::ui
         try
         {
             backend_.PopTheme();
+            if (frame_info_.observe && !theme_stack_.empty()) theme_stack_.pop_back();
             --theme_depth_;
         }
         catch (...)
@@ -367,6 +552,11 @@ namespace kpengine::editor::ui
             throw;
         }
         --window_depth_;
+        if (frame_info_.observe && !semantic_scopes_.empty())
+        {
+            semantic_parent_ = semantic_scopes_.back();
+            semantic_scopes_.pop_back();
+        }
     }
 
     std::optional<UiRect> UiContext::WindowBounds(const std::string_view id) const
@@ -382,9 +572,11 @@ namespace kpengine::editor::ui
         VerifyThread();
         if (!in_frame_ || container.id == 0 || frame_ids_.contains(container.id))
             throw std::logic_error("invalid or duplicate host container ID");
+        UiControl observed = container;
+        observed.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
         try
         {
-            backend_.SetHostContainer(container);
+            backend_.SetHostContainer(observed);
         }
         catch (...)
         {
@@ -392,6 +584,17 @@ namespace kpengine::editor::ui
             throw;
         }
         frame_ids_.insert(container.id);
+        if (frame_info_.observe)
+        {
+            UiNodeObservation observation{.session = session_, .frame = frame_, .id = container.id,
+                .parent = semantic_parent_, .role = UiRole::Group, .label = container.label,
+                .description = container.description, .value = container.value,
+                .enabled = container.enabled, .disabled_reason = container.disabled_reason};
+            observation.style_id = observed.style_id;
+            RecordSemanticNode(std::move(observation));
+            semantic_parent_ = container.id;
+        }
+        semantic_parent_ = container.id;
         host_container_set_ = true;
     }
 
@@ -401,6 +604,14 @@ namespace kpengine::editor::ui
         if (!in_frame_ || name.empty())
             throw std::logic_error("named UI controls require an active frame and stable ID");
         return StableUiNodeId(name);
+    }
+
+    void UiContext::RecordSemanticNode(UiNodeObservation observation)
+    {
+        if (!frame_info_.observe) return;
+        if (in_table_ && observation.parent == active_row_id_)
+            observation.table_column = table_column_;
+        semantic_observations_.push_back(std::move(observation));
     }
 
     UiEditResult UiContext::Control(const UiControl &control)
@@ -413,7 +624,8 @@ namespace kpengine::editor::ui
 
     UiCanvasResult UiContext::Canvas(const UiControlDescriptor &descriptor,
                                      const UiVec2 size,
-                                     std::vector<UiCanvasPrimitive> primitives)
+                                     std::vector<UiCanvasPrimitive> primitives,
+                                     std::optional<UiChartObservation> chart)
     {
         VerifyThread();
         if (!in_frame_ || !std::isfinite(size.x) || !std::isfinite(size.y) ||
@@ -427,6 +639,12 @@ namespace kpengine::editor::ui
         control.description = descriptor.description;
         control.enabled = descriptor.enabled;
         control.disabled_reason = descriptor.disabled_reason;
+        control.unit = descriptor.unit;
+        control.domain_summary = descriptor.domain_summary;
+        if (descriptor.semantic_value) control.value = *descriptor.semantic_value;
+        control.minimum = descriptor.semantic_minimum;
+        control.maximum = descriptor.semantic_maximum;
+        control.actions = descriptor.semantic_actions;
         detail::ValidateControlInput(control);
         const auto existing = named_ids_.find(control.id);
         if (existing != named_ids_.end() && existing->second != descriptor.id)
@@ -440,6 +658,20 @@ namespace kpengine::editor::ui
         frame_ids_.insert(control.id);
         try
         {
+            if (frame_info_.observe)
+            {
+                control.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+                observation_parents_.insert_or_assign(control.id, semantic_parent_);
+                UiNodeObservation observation{.session = session_, .frame = frame_, .id = control.id,
+                    .parent = semantic_parent_, .role = descriptor.semantic_role.value_or(
+                        chart ? UiRole::Chart : UiRole::Canvas),
+                    .label = control.label, .description = control.description,
+                    .selected = descriptor.semantic_role == UiRole::Selectable
+                        ? std::optional<bool>{descriptor.semantic_selected} : std::nullopt,
+                    .chart = std::move(chart)};
+                if (descriptor.semantic_value) observation.value = *descriptor.semantic_value;
+                RecordSemanticNode(std::move(observation));
+            }
             return backend_.Canvas(control, size, primitives);
         }
         catch (...)
@@ -470,11 +702,19 @@ namespace kpengine::editor::ui
             named_ids_.insert_or_assign(control.id, std::string{*named_id});
         }
         frame_ids_.insert(control.id);
+        UiControl observed = control;
+        if (frame_info_.observe)
+        {
+            observed.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+            observation_parents_.insert_or_assign(control.id, semantic_parent_);
+            if (in_table_ && semantic_parent_ == active_row_id_ && table_column_)
+                observed_table_columns_.emplace(control.id, *table_column_);
+        }
         try
         {
-            UiEditResult result = icon.IsValid() ? backend_.IconControl(control, icon)
-                                                 : backend_.Control(control);
-            detail::ValidateControlResult(control, result);
+            UiEditResult result = icon.IsValid() ? backend_.IconControl(observed, icon)
+                                                 : backend_.Control(observed);
+            detail::ValidateControlResult(observed, result);
             return result;
         }
         catch (...)
@@ -566,6 +806,22 @@ namespace kpengine::editor::ui
         try
         {
             backend_.Text(text);
+            if (frame_info_.observe)
+            {
+                const UiNodeId id = StableUiNodeId("ui.text." + std::to_string(semantic_parent_) + "." +
+                                                    std::to_string(text_index_++));
+                UiControl item{};
+                item.id = id;
+                item.role = UiRole::Text;
+                item.label = std::string{text};
+                item.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+                observation_parents_.insert_or_assign(id, semantic_parent_);
+                backend_.ObserveItem(item);
+                UiNodeObservation observation{.session = session_, .frame = frame_,
+                    .id = id, .parent = semantic_parent_, .role = UiRole::Text,
+                    .label = std::string{text}, .style_id = item.style_id};
+                RecordSemanticNode(std::move(observation));
+            }
         }
         catch (...)
         {
@@ -580,6 +836,22 @@ namespace kpengine::editor::ui
         if (!in_frame_)
             throw std::logic_error("UI text requires an active frame");
         backend_.StyledText(text, role);
+        if (frame_info_.observe)
+        {
+            const UiNodeId id = StableUiNodeId("ui.text." + std::to_string(semantic_parent_) + "." +
+                                                std::to_string(text_index_++));
+            UiControl item{};
+            item.id = id;
+            item.role = UiRole::Text;
+            item.label = std::string{text};
+            item.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+            observation_parents_.insert_or_assign(id, semantic_parent_);
+            backend_.ObserveItem(item);
+            UiNodeObservation observation{.session = session_, .frame = frame_,
+                .id = id, .parent = semantic_parent_, .role = UiRole::Text,
+                .label = std::string{text}, .style_id = item.style_id};
+            RecordSemanticNode(std::move(observation));
+        }
     }
 
     void UiContext::SameLine()
@@ -600,6 +872,22 @@ namespace kpengine::editor::ui
         VerifyThread();
         if (!in_frame_) throw std::logic_error("UI section requires an active frame");
         backend_.Section(text);
+        if (frame_info_.observe)
+        {
+            const UiNodeId id = StableUiNodeId("ui.heading." + std::to_string(semantic_parent_) + "." +
+                                                std::to_string(text_index_++));
+            UiControl item{};
+            item.id = id;
+            item.role = UiRole::Heading;
+            item.label = std::string{text};
+            item.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+            observation_parents_.insert_or_assign(id, semantic_parent_);
+            backend_.ObserveItem(item);
+            UiNodeObservation observation{.session = session_, .frame = frame_,
+                .id = id, .parent = semantic_parent_, .role = UiRole::Heading,
+                .label = std::string{text}, .style_id = item.style_id};
+            RecordSemanticNode(std::move(observation));
+        }
     }
 
     void UiContext::WrappedText(const std::string_view text)
@@ -607,10 +895,27 @@ namespace kpengine::editor::ui
         VerifyThread();
         if (!in_frame_) throw std::logic_error("UI text requires an active frame");
         backend_.WrappedText(text);
+        if (frame_info_.observe)
+        {
+            const UiNodeId id = StableUiNodeId("ui.wrapped_text." + std::to_string(semantic_parent_) + "." +
+                                                std::to_string(text_index_++));
+            UiControl item{};
+            item.id = id;
+            item.role = UiRole::Text;
+            item.label = std::string{text};
+            item.style_id = theme_stack_.empty() ? std::string{} : theme_stack_.back().second;
+            observation_parents_.insert_or_assign(id, semantic_parent_);
+            backend_.ObserveItem(item);
+            UiNodeObservation observation{.session = session_, .frame = frame_,
+                .id = id, .parent = semantic_parent_, .role = UiRole::Text,
+                .label = std::string{text}, .style_id = item.style_id};
+            RecordSemanticNode(std::move(observation));
+        }
     }
 
     void UiContext::Table(const std::string_view name, const std::span<const UiTableColumn> columns,
-                          const float height, const bool headers, const std::function<void()> &draw)
+                          const float height, const bool headers, const std::function<void()> &draw,
+                          const std::string_view label)
     {
         const UiNodeId id = HashNamedId(name);
         if (in_table_)
@@ -626,8 +931,34 @@ namespace kpengine::editor::ui
         }
         if (!frame_ids_.insert(id).second)
             throw std::logic_error("duplicate UI table ID in frame");
-        if (!backend_.BeginTable(id, columns, height, headers)) return;
+        const UiNodeId previous_parent = semantic_parent_;
+        const bool visible = backend_.BeginTable(id, columns, height, headers);
+        if (frame_info_.observe)
+        {
+            UiNodeObservation table{};
+            table.session = session_;
+            table.frame = frame_;
+            table.id = id;
+            table.parent = previous_parent;
+            table.role = UiRole::Table;
+            table.label = std::string{label.empty() ? name : label};
+            for (const auto &column : columns) table.table_columns.emplace_back(column.label);
+            table.semantic_key = std::string{name};
+            table.visible = visible;
+            semantic_observations_.push_back(std::move(table));
+        }
+        if (!visible) return;
         in_table_ = true;
+        if (frame_info_.observe)
+        {
+            table_id_ = id;
+            table_parent_ = previous_parent;
+            table_row_index_ = 0;
+            active_row_id_ = 0;
+            table_column_.reset();
+            semantic_scopes_.push_back(previous_parent);
+            semantic_parent_ = id;
+        }
         try
         {
             draw();
@@ -636,16 +967,56 @@ namespace kpengine::editor::ui
         {
             backend_.EndTable();
             in_table_ = false;
+            if (frame_info_.observe)
+            {
+                semantic_parent_ = table_parent_;
+                if (!semantic_scopes_.empty()) semantic_scopes_.pop_back();
+                table_id_ = table_parent_ = active_row_id_ = 0;
+            }
             throw;
         }
         backend_.EndTable();
         in_table_ = false;
+        if (frame_info_.observe)
+        {
+            semantic_parent_ = table_parent_;
+            if (!semantic_scopes_.empty()) semantic_scopes_.pop_back();
+            table_id_ = table_parent_ = active_row_id_ = 0;
+        }
     }
 
     void UiContext::TableRow(const bool highlighted)
     {
+        if (!frame_info_.observe)
+        {
+            VerifyThread();
+            if (!in_frame_ || !in_table_) throw std::logic_error("UI row requires an active table");
+            backend_.TableRow(highlighted);
+            return;
+        }
+        const std::string id = "ui.table." + std::to_string(table_id_) + ".row." +
+                               std::to_string(table_row_index_++);
+        TableRow(id, highlighted);
+    }
+
+    void UiContext::TableRow(const std::string_view name, const bool highlighted,
+                             const std::string_view label)
+    {
         VerifyThread();
         if (!in_frame_ || !in_table_) throw std::logic_error("UI row requires an active table");
+        if (frame_info_.observe)
+        {
+            const UiNodeId id = HashNamedId(name);
+            if (!frame_ids_.insert(id).second)
+                throw std::logic_error("duplicate UI table row ID in frame");
+            UiNodeObservation row{.session = session_, .frame = frame_, .id = id,
+                .parent = table_id_, .role = UiRole::Row, .label = std::string{label},
+                .selected = highlighted, .semantic_key = std::string{name}};
+            RecordSemanticNode(std::move(row));
+            active_row_id_ = id;
+            table_column_.reset();
+            semantic_parent_ = id;
+        }
         backend_.TableRow(highlighted);
     }
 
@@ -654,6 +1025,8 @@ namespace kpengine::editor::ui
         VerifyThread();
         if (!in_frame_ || !in_table_) throw std::logic_error("UI column requires an active table");
         backend_.TableColumn();
+        if (frame_info_.observe && active_row_id_ != 0)
+            table_column_ = table_column_ ? *table_column_ + 1 : 0;
     }
 
     void UiContext::VirtualList(const std::string_view name, const std::size_t item_count,
@@ -685,6 +1058,20 @@ namespace kpengine::editor::ui
             throw std::logic_error("UI backend returned an invalid virtual list range");
         }
 
+        if (frame_info_.observe)
+        {
+            UiNodeObservation list{.session = session_, .frame = frame_, .id = id,
+                .parent = semantic_parent_, .role = UiRole::VirtualList,
+                .label = std::string{name}};
+            list.virtual_list_total = item_count;
+            list.virtual_list_first = range.first;
+            list.virtual_list_last = range.last;
+            RecordSemanticNode(list);
+            virtual_list_range_ = range;
+            semantic_scopes_.push_back(semantic_parent_);
+            semantic_parent_ = id;
+        }
+
         in_virtual_list_ = true;
         try
         {
@@ -694,10 +1081,22 @@ namespace kpengine::editor::ui
         {
             backend_.EndVirtualList();
             in_virtual_list_ = false;
+            if (frame_info_.observe)
+            {
+                semantic_parent_ = semantic_scopes_.back();
+                semantic_scopes_.pop_back();
+                virtual_list_range_.reset();
+            }
             throw;
         }
         backend_.EndVirtualList();
         in_virtual_list_ = false;
+        if (frame_info_.observe)
+        {
+            semantic_parent_ = semantic_scopes_.back();
+            semantic_scopes_.pop_back();
+            virtual_list_range_.reset();
+        }
     }
 
     void UiContext::SetClipboardText(const std::string_view text)
@@ -721,11 +1120,79 @@ namespace kpengine::editor::ui
         VerifyThread();
         if (!in_frame_ || window_depth_ != 0 || theme_depth_ != 0 || in_table_ ||
             in_virtual_list_ ||
-            tab_bar_depth_ != 0 || tab_item_depth_ != 0)
+            tab_bar_depth_ != 0 || tab_item_depth_ != 0 || node_depth_ != 0)
             throw std::logic_error("cannot finish an incomplete UI frame");
         try
         {
             UiFrameResult result = backend_.EndFrame(frame_);
+            result.session = session_;
+            result.viewport = frame_info_.viewport;
+            result.observed = frame_info_.observe;
+            result.styles = frame_styles_;
+            if (frame_info_.observe)
+            {
+                std::vector<UiNodeObservation> backend_observations =
+                    std::move(result.observations);
+                result.observations = std::move(semantic_observations_);
+                std::unordered_map<UiNodeId, std::size_t> positions;
+                positions.reserve(result.observations.size() + backend_observations.size());
+                for (std::size_t index = 0; index < result.observations.size(); ++index)
+                    positions.emplace(result.observations[index].id, index);
+                for (UiNodeObservation &backend_node : backend_observations)
+                {
+                    if (const auto parent = observation_parents_.find(backend_node.id);
+                        parent != observation_parents_.end())
+                        backend_node.parent = parent->second;
+                    const auto [found, inserted] = positions.emplace(
+                        backend_node.id, result.observations.size());
+                    if (inserted)
+                    {
+                        result.observations.push_back(std::move(backend_node));
+                        continue;
+                    }
+                    UiNodeObservation &node = result.observations[found->second];
+                    node.parent = backend_node.parent;
+                    node.focused = backend_node.focused;
+                    node.hovered = backend_node.hovered;
+                    node.clipped = backend_node.clipped;
+                    node.active = backend_node.active;
+                    node.visible = backend_node.visible;
+                    node.clipped_bounds = backend_node.clipped_bounds;
+                    if (backend_node.selected) node.selected = backend_node.selected;
+                    if (backend_node.geometry != UiGeometryProvenance::Unavailable)
+                    {
+                        node.bounds = backend_node.bounds;
+                        node.geometry = backend_node.geometry;
+                    }
+                    if (!backend_node.style_id.empty()) node.style_id = std::move(backend_node.style_id);
+                    if (!backend_node.actions.empty()) node.actions = std::move(backend_node.actions);
+                    node.last_action = backend_node.last_action;
+                    if (backend_node.value) node.value = std::move(backend_node.value);
+                    node.enabled = backend_node.enabled;
+                    node.disabled_reason = std::move(backend_node.disabled_reason);
+                    node.unit = std::move(backend_node.unit);
+                    node.domain_summary = std::move(backend_node.domain_summary);
+                    node.minimum = std::move(backend_node.minimum);
+                    node.maximum = std::move(backend_node.maximum);
+                    node.step = std::move(backend_node.step);
+                    node.choices = std::move(backend_node.choices);
+                }
+                for (UiNodeObservation &node : result.observations)
+                {
+                    if (const auto column = observed_table_columns_.find(node.id);
+                        column != observed_table_columns_.end())
+                        node.table_column = column->second;
+                    if (const auto key = named_ids_.find(node.id); key != named_ids_.end())
+                        node.semantic_key = key->second;
+                    else if (node.role == UiRole::Session)
+                        node.semantic_key = "ui.session";
+                    if (node.role != UiRole::VirtualList) continue;
+                    result.has_virtual_list = true;
+                    result.virtual_list_total += node.virtual_list_total;
+                    result.virtual_list_first += node.virtual_list_first;
+                    result.virtual_list_last += node.virtual_list_last;
+                }
+            }
             in_frame_ = false;
             return result;
         }
@@ -746,6 +1213,7 @@ namespace kpengine::editor::ui
         theme_depth_ = 0;
         tab_bar_depth_ = 0;
         tab_item_depth_ = 0;
+        node_depth_ = 0;
         in_table_ = false;
         in_virtual_list_ = false;
         host_container_set_ = false;
@@ -801,6 +1269,27 @@ namespace kpengine::editor::ui
 
     UiContext::TabItemScope::TabItemScope(TabItemScope &&other) noexcept
         : context_(std::exchange(other.context_, nullptr)), visible_(other.visible_)
+    {
+    }
+
+    UiContext::NodeScope::NodeScope(UiContext &context, const UiControl &control,
+                                    const bool selected)
+        : context_(&context)
+    {
+        context.BeginNode(control, selected);
+    }
+
+    UiContext::NodeScope::~NodeScope() noexcept
+    {
+        if (context_ != nullptr)
+        {
+            try { context_->EndNode(); }
+            catch (...) { context_->AbortFrame(); }
+        }
+    }
+
+    UiContext::NodeScope::NodeScope(NodeScope &&other) noexcept
+        : context_(std::exchange(other.context_, nullptr))
     {
     }
 

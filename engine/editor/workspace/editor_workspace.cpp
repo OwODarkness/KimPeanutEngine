@@ -31,6 +31,101 @@ namespace kpengine::editor
         (void)model_.SetOpen(id, true);
     }
 
+    ui::UiWorkspaceSnapshot EditorWorkspace::Snapshot() const
+    {
+        ui::UiWorkspaceSnapshot snapshot;
+        snapshot.id = workspace_id_;
+        const WorkspaceLayoutPreset &preset = model_.Preset();
+        if (preset.root >= 0 && static_cast<std::size_t>(preset.root) < preset.splits.size())
+            snapshot.root = preset.splits[static_cast<std::size_t>(preset.root)].id;
+
+        snapshot.regions.reserve(preset.regions.size());
+        for (const WorkspaceRegion &region : preset.regions)
+        {
+            ui::UiWorkspaceRegionSnapshot entry{.id = region.id, .label = region.label};
+            if (const WorkspaceRect *const bounds = model_.RegionBounds(region.id);
+                bounds != nullptr && !bounds->IsEmpty())
+            {
+                entry.bounds = {{bounds->x, bounds->y},
+                                {bounds->x + bounds->width, bounds->y + bounds->height}};
+                entry.has_bounds = true;
+            }
+            for (const WorkspacePanelState &panel : model_.Panels())
+            {
+                if (panel.open && panel.region == region.id)
+                    entry.tabs.push_back(panel.id);
+            }
+            const std::string_view active = model_.ActivePanel(region.id);
+            if (!active.empty()) entry.active_tab = std::string{active};
+            snapshot.regions.push_back(std::move(entry));
+        }
+
+        const auto child_id = [&preset](const int child) -> std::string
+        {
+            if (child >= 0)
+                return static_cast<std::size_t>(child) < preset.splits.size()
+                    ? preset.splits[static_cast<std::size_t>(child)].id : std::string{};
+            const std::size_t region = static_cast<std::size_t>(-child - 1);
+            return region < preset.regions.size() ? preset.regions[region].id : std::string{};
+        };
+        snapshot.splits.reserve(preset.splits.size());
+        for (const WorkspaceSplit &split : preset.splits)
+        {
+            ui::UiWorkspaceSplitSnapshot entry{.id = split.id,
+                .axis = split.axis == WorkspaceAxis::Horizontal
+                    ? ui::UiWorkspaceAxis::Horizontal : ui::UiWorkspaceAxis::Vertical,
+                .requested_ratio = split.fraction, .resolved_ratio = split.fraction};
+            entry.children = {child_id(split.first), child_id(split.second)};
+            if (const WorkspaceRect *const bounds = model_.SplitBounds(split.id);
+                bounds != nullptr && !bounds->IsEmpty())
+            {
+                entry.bounds = {{bounds->x, bounds->y},
+                                {bounds->x + bounds->width, bounds->y + bounds->height}};
+                entry.has_bounds = true;
+                const int first = split.first;
+                const WorkspaceRect *first_bounds = first >= 0
+                    ? model_.SplitBounds(preset.splits[static_cast<std::size_t>(first)].id)
+                    : model_.RegionBounds(preset.regions[static_cast<std::size_t>(-first - 1)].id);
+                if (first_bounds != nullptr)
+                {
+                    const float extent = split.axis == WorkspaceAxis::Horizontal
+                        ? bounds->width : bounds->height;
+                    const float resolved = split.axis == WorkspaceAxis::Horizontal
+                        ? first_bounds->width : first_bounds->height;
+                    if (extent > 0.0F) entry.resolved_ratio = resolved / extent;
+                }
+            }
+            snapshot.splits.push_back(std::move(entry));
+        }
+
+        snapshot.panels.reserve(model_.Panels().size());
+        for (const WorkspacePanelState &panel : model_.Panels())
+        {
+            ui::UiWorkspacePanelSnapshot entry{.id = panel.id, .title = panel.title,
+                .region = panel.region, .open = panel.open};
+            if (panel.region)
+            {
+                entry.active = model_.ActivePanel(*panel.region) == panel.id;
+                if (const WorkspaceRect *const bounds = model_.RegionBounds(*panel.region);
+                    bounds != nullptr && !bounds->IsEmpty())
+                {
+                    entry.bounds = {{bounds->x, bounds->y},
+                                    {bounds->x + bounds->width, bounds->y + bounds->height}};
+                    entry.has_bounds = panel.open && entry.active;
+                }
+            }
+            else if (panel.floating_bounds.width > 0.0F && panel.floating_bounds.height > 0.0F)
+            {
+                const WorkspaceRect &bounds = panel.floating_bounds;
+                entry.bounds = {{bounds.x, bounds.y},
+                                {bounds.x + bounds.width, bounds.y + bounds.height}};
+                entry.has_bounds = panel.open;
+            }
+            snapshot.panels.push_back(std::move(entry));
+        }
+        return snapshot;
+    }
+
     void EditorWorkspace::DrawPanelActions(ui::UiContext &context, WorkspacePanelState &panel)
     {
         const std::string float_id = MakeId(panel.id + ".float");
@@ -104,8 +199,8 @@ namespace kpengine::editor
             }
             for (WorkspacePanelState *panel : members)
             {
-                const std::string tab_id = MakeId("tab." + panel->id);
                 const bool active = model_.ActivePanel(region.id) == panel->id;
+                const std::string tab_id = MakeId("tab." + panel->id);
                 const float tab_width = std::max(76.0f, static_cast<float>(panel->title.size()) * 8.0f + 24.0f);
                 const ui::UiColor color = active ? ui::UiColor{0.14f, 0.23f, 0.27f, 1.0f}
                                                  : ui::UiColor{0.08f, 0.12f, 0.15f, 1.0f};
@@ -114,7 +209,11 @@ namespace kpengine::editor
                      .second = {tab_width, 28.0f}, .color = color},
                     {.kind = ui::UiCanvasPrimitiveKind::Text, .first = {8.0f, 7.0f},
                      .color = {0.65f, 0.9f, 0.94f, 1.0f}, .text = panel->title}};
-                const auto tab = context.Canvas({.id = tab_id, .label = panel->title},
+                const auto tab = context.Canvas({.id = tab_id, .label = panel->title,
+                                                 .description = "Select or drag this panel tab",
+                                                 .semantic_actions = {ui::UiActionKind::Select},
+                                                 .semantic_role = ui::UiRole::Tab,
+                                                 .semantic_selected = active},
                                                 {tab_width, 28.0f}, std::move(marks));
                 const float px = tab.pointer_position.x, py = tab.pointer_position.y;
                 if (tab.pressed)
@@ -156,6 +255,9 @@ namespace kpengine::editor
                 [active_id](const WorkspacePanelState *panel) { return panel->id == active_id; });
             if (active_panel != members.end())
             {
+                auto panel_scope = context.Node({.id = MakeId("panel." + (*active_panel)->id),
+                                                 .label = (*active_panel)->title},
+                                                ui::UiRole::Panel, true);
                 DrawPanelActions(context, **active_panel);
                 if (const auto it = draw_.find((*active_panel)->id); it != draw_.end()) it->second(context);
             }
@@ -181,6 +283,9 @@ namespace kpengine::editor
                 floating_bounds_.push_back({rect->min.x, rect->min.y,
                     rect->max.x - rect->min.x, rect->max.y - rect->min.y});
             if (!window.ContentVisible()) continue;
+            auto panel_scope = context.Node({.id = MakeId("panel." + panel.id),
+                                              .label = panel.title},
+                                             ui::UiRole::Panel, true);
             DrawPanelActions(context, panel);
             if (const auto it = draw_.find(panel.id); it != draw_.end()) it->second(context);
         }
@@ -272,7 +377,8 @@ namespace kpengine::editor
                 {handle.x, handle.y}, {handle.width, handle.height});
             if (!overlay.ContentVisible()) continue;
             const auto input = context.Canvas({.id = MakeId("split.handle." + split.id),
-                .label = "Splitter", .enabled = !disable_input},
+                .label = "Splitter", .description = "Drag to resize the adjacent regions",
+                .enabled = !disable_input, .semantic_role = ui::UiRole::Splitter},
                 {handle.width, handle.height}, std::move(marks));
             const float extent = horizontal ? parent->width : parent->height;
             if (input.pressed && active_split_.empty())

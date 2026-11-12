@@ -1,8 +1,11 @@
+#include "editor_ui/ui_plot.h"
 #include "editor_ui/ui_recording_backend.h"
 #include "editor_ui/ui_session.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <memory>
 #include <stdexcept>
@@ -78,6 +81,302 @@ namespace kpengine::editor::ui
         EXPECT_EQ(observations[1].geometry, UiGeometryProvenance::Unavailable);
     }
 
+    TEST(UiRecordingContractTest, SnapshotDescribesTableCellsAndPlottedSignal)
+    {
+        UiSession session(std::make_unique<UiRecordingBackend>());
+        ASSERT_TRUE(session.Initialize({}));
+        ASSERT_TRUE(session.BeginFrame({.observe = true}));
+        auto &ui = session.Context();
+        {
+            auto window = ui.Window({.id = StableUiNodeId("player"), .label = "Player"});
+            auto panel = ui.Node({.id = "queue", .label = "Queue"}, UiRole::Panel, true);
+            constexpr std::array<UiTableColumn, 2> columns{{{"Track"}, {"Duration"}}};
+            ui.Table("tracks", columns, 0, true, [&]
+            {
+                ui.TableRow("track.7", true, "A track");
+                ui.TableColumn();
+                (void)ui.Selectable({.id = "select.7", .label = "A track"}, true);
+                ui.TableColumn();
+                ui.Text("03:14");
+            }, "Playback queue");
+            constexpr std::array<UiPlotPoint, 1> samples{{{100.0, -12.0}}};
+            const std::array<UiPlotSeries, 1> series{{
+                {.label = "Signal", .points = samples, .kind = UiPlotSeriesKind::Bars}}};
+            (void)Plot(ui, {.control = {.id = "spectrum", .label = "Spectrum"},
+                .size = {240, 160},
+                .x_axis = {.minimum = 10, .maximum = 20000, .scale = UiPlotScale::Log10,
+                           .unit = "Hz", .semantic_label = "Frequency"},
+                .y_axis = {.minimum = -60, .maximum = 0, .unit = "dB"},
+                .series = series});
+        }
+        const auto frame = session.EndFrame();
+        const auto find = [&frame](const std::string_view key)
+        {
+            return std::find_if(frame.observations.begin(), frame.observations.end(),
+                [key](const UiNodeObservation &node) { return node.semantic_key == key; });
+        };
+        const auto table = find("tracks");
+        const auto row = find("track.7");
+        const auto cell = find("select.7");
+        const auto chart = find("spectrum");
+        ASSERT_NE(table, frame.observations.end());
+        ASSERT_NE(row, frame.observations.end());
+        ASSERT_NE(cell, frame.observations.end());
+        ASSERT_NE(chart, frame.observations.end());
+        EXPECT_EQ(table->parent, StableUiNodeId("queue"));
+        EXPECT_EQ(table->table_columns, (std::vector<std::string>{"Track", "Duration"}));
+        EXPECT_EQ(row->label, "A track");
+        EXPECT_TRUE(row->selected);
+        EXPECT_EQ(cell->parent, row->id);
+        EXPECT_EQ(cell->table_column, 0U);
+        const auto duration = std::find_if(frame.observations.begin(), frame.observations.end(),
+            [](const UiNodeObservation &node) { return node.label == "03:14"; });
+        ASSERT_NE(duration, frame.observations.end());
+        EXPECT_EQ(duration->parent, row->id);
+        EXPECT_EQ(duration->table_column, 1U);
+        EXPECT_EQ(chart->role, UiRole::Chart);
+        ASSERT_TRUE(chart->chart);
+        EXPECT_EQ(chart->chart->x.unit, "Hz");
+        ASSERT_EQ(chart->chart->series.size(), 1U);
+        ASSERT_EQ(chart->chart->series.front().points.size(), 1U);
+        EXPECT_DOUBLE_EQ(chart->chart->series.front().points.front().y, -12.0);
+    }
+
+    TEST(UiRecordingContractTest, SemanticQueriesExplainAnUnfamiliarInterface)
+    {
+        auto backend = std::make_unique<UiRecordingBackend>();
+        auto *const recording = backend.get();
+        const UiNodeId window_id = StableUiNodeId("demo.window");
+        const UiNodeId panel_id = StableUiNodeId("demo.playback");
+        const UiNodeId play_id = StableUiNodeId("playback.play");
+        const UiNodeId volume_id = StableUiNodeId("playback.volume");
+        const UiNodeId mute_id = StableUiNodeId("playback.mute");
+        recording->SetFixtureBounds(window_id, {{0.0F, 0.0F}, {480.0F, 320.0F}});
+        recording->SetFixtureBounds(volume_id, {{24.0F, 88.0F}, {456.0F, 112.0F}});
+
+        UiSession session(std::move(backend));
+        ASSERT_TRUE(session.Initialize({{480.0F, 320.0F}, {1.0F, 1.0F}, {0.0F, 0.0F}}));
+        ASSERT_TRUE(session.BeginFrame({.observe = true,
+            .viewport = {{480.0F, 320.0F}, {1.0F, 1.0F}, {0.0F, 0.0F}}}));
+        UiContext &ui = session.Context();
+        UiTheme theme{};
+        theme.accent = {0.10F, 0.80F, 0.95F, 1.0F};
+        {
+            auto theme_scope = ui.Theme(theme);
+            auto window = ui.Window({.id = window_id, .label = "Control Surface"});
+            auto panel = ui.Node({.id = "demo.playback", .label = "Playback"}, UiRole::Panel, true);
+            (void)ui.Button({.id = "playback.play", .label = "Play"});
+            (void)ui.Slider<double>({.id = "playback.volume", .label = "Master volume",
+                    .unit = "%"}, 72.0, 0.0, 100.0);
+            (void)ui.Checkbox({.id = "playback.mute", .label = "Mute"}, false);
+        }
+        const UiFrameResult frame = session.EndFrame();
+        ASSERT_TRUE(frame.complete);
+
+        const UiSemanticView semantic = session.Query();
+        ASSERT_TRUE(semantic.IsValid());
+        const UiSemanticTree &tree = semantic.GetUITree();
+        ASSERT_TRUE(tree.complete);
+        ASSERT_EQ(tree.session, semantic.SessionId());
+        ASSERT_EQ(tree.frame, frame.frame);
+        ASSERT_EQ(tree.viewport.logical_extent.x, 480.0F);
+        ASSERT_EQ(tree.viewport.logical_extent.y, 320.0F);
+        ASSERT_EQ(tree.roots.size(), 1U);
+
+        const auto find_tree_node = [&tree](const UiNodeId id) -> const UiSemanticTreeNode *
+        {
+            const auto found = std::find_if(tree.nodes.begin(), tree.nodes.end(),
+                [id](const UiSemanticTreeNode &node) { return node.id == id; });
+            return found == tree.nodes.end() ? nullptr : &*found;
+        };
+        const UiSemanticTreeNode *const root = find_tree_node(tree.roots.front());
+        const UiSemanticTreeNode *const window = find_tree_node(window_id);
+        const UiSemanticTreeNode *const panel = find_tree_node(panel_id);
+        ASSERT_NE(root, nullptr);
+        ASSERT_NE(window, nullptr);
+        ASSERT_NE(panel, nullptr);
+        EXPECT_EQ(root->role, UiRole::Session);
+        EXPECT_EQ(root->children, (std::vector<UiNodeId>{window_id}));
+        EXPECT_EQ(window->role, UiRole::Window);
+        EXPECT_EQ(window->label, "Control Surface");
+        EXPECT_EQ(panel->role, UiRole::Panel);
+        EXPECT_EQ(panel->label, "Playback");
+        ASSERT_TRUE(panel->selected);
+        EXPECT_TRUE(*panel->selected);
+        EXPECT_EQ(panel->geometry, UiGeometryProvenance::DerivedFromChildren);
+        EXPECT_EQ(panel->bounds.min.x, 24.0F);
+        EXPECT_EQ(panel->bounds.max.y, 112.0F);
+        EXPECT_EQ(window->children, (std::vector<UiNodeId>{panel_id}));
+        for (const UiNodeId child : {play_id, volume_id, mute_id})
+            EXPECT_TRUE(std::find(panel->children.begin(), panel->children.end(), child) !=
+                        panel->children.end());
+
+        const auto play = semantic.GetElementInfo(play_id);
+        ASSERT_TRUE(play);
+        ASSERT_NE(play->element, nullptr);
+        EXPECT_EQ(play->element->role, UiRole::Button);
+        EXPECT_EQ(play->element->label, "Play");
+        EXPECT_FALSE(play->element->value.has_value());
+        EXPECT_FALSE(play->element->selected.has_value());
+        EXPECT_FALSE(play->element->active.has_value());
+        ASSERT_EQ(play->element->actions.size(), 1U);
+        EXPECT_EQ(play->element->actions.front(), UiActionKind::Activate);
+
+        const auto volume = semantic.GetElementInfo(volume_id);
+        ASSERT_TRUE(volume);
+        ASSERT_NE(volume->element, nullptr);
+        EXPECT_EQ(volume->element->role, UiRole::Slider);
+        EXPECT_EQ(volume->element->label, "Master volume");
+        EXPECT_EQ(volume->element->unit, "%");
+        ASSERT_TRUE(volume->element->value);
+        EXPECT_DOUBLE_EQ(std::get<double>(*volume->element->value), 72.0);
+        ASSERT_TRUE(volume->element->minimum);
+        ASSERT_TRUE(volume->element->maximum);
+        EXPECT_DOUBLE_EQ(std::get<double>(*volume->element->minimum), 0.0);
+        EXPECT_DOUBLE_EQ(std::get<double>(*volume->element->maximum), 100.0);
+        EXPECT_EQ(volume->element->bounds.min.x, 24.0F);
+        EXPECT_EQ(volume->element->bounds.max.y, 112.0F);
+        EXPECT_EQ(volume->element->geometry, UiGeometryProvenance::TestFixture);
+        EXPECT_TRUE(volume->element->enabled);
+        ASSERT_TRUE(volume->element->visible);
+        EXPECT_TRUE(*volume->element->visible);
+        EXPECT_EQ(volume->element->clipped_bounds->min.x, 24.0F);
+
+        const auto mute = semantic.GetElementInfo(mute_id);
+        ASSERT_TRUE(mute);
+        EXPECT_EQ(mute->element->role, UiRole::CheckBox);
+        ASSERT_TRUE(mute->element->value);
+        EXPECT_FALSE(std::get<bool>(*mute->element->value));
+        EXPECT_FALSE(mute->element->selected.has_value());
+        EXPECT_FALSE(mute->element->focused.has_value());
+        ASSERT_EQ(mute->element->actions.size(), 1U);
+        EXPECT_EQ(mute->element->actions.front(), UiActionKind::Toggle);
+
+        const UiElementStyle *const style = semantic.GetElementStyle(volume_id);
+        ASSERT_NE(style, nullptr);
+        EXPECT_EQ(style->declared.accent, theme.accent);
+        EXPECT_FALSE(style->has_resolved_values);
+        EXPECT_EQ(semantic.GetElementStyle(StableUiNodeId("missing.element")), nullptr);
+
+        UiTheme next_theme = theme;
+        next_theme.accent = {0.95F, 0.20F, 0.25F, 1.0F};
+        ASSERT_TRUE(session.BeginFrame({.observe = true,
+            .viewport = {{480.0F, 320.0F}, {1.0F, 1.0F}, {0.0F, 0.0F}}}));
+        {
+            auto theme_scope = session.Context().Theme(next_theme);
+            auto window_scope = session.Context().Window(
+                {.id = window_id, .label = "Control Surface"});
+            auto panel_scope = session.Context().Node(
+                {.id = "demo.playback", .label = "Playback"}, UiRole::Panel, true);
+            (void)session.Context().Slider<double>({.id = "playback.volume",
+                .label = "Master volume", .unit = "%"}, 30.0, 0.0, 100.0);
+        }
+        const UiFrameResult next_frame = session.EndFrame();
+        const UiSemanticView next_semantic = session.Query();
+        ASSERT_TRUE(next_semantic.IsValid());
+        EXPECT_EQ(semantic.FrameId(), frame.frame);
+        EXPECT_EQ(next_semantic.FrameId(), next_frame.frame);
+        const auto retained_volume = semantic.GetElementInfo(volume_id);
+        const auto next_volume = next_semantic.GetElementInfo(volume_id);
+        ASSERT_TRUE(retained_volume);
+        ASSERT_TRUE(next_volume);
+        ASSERT_TRUE(retained_volume->element->value);
+        ASSERT_TRUE(next_volume->element->value);
+        EXPECT_DOUBLE_EQ(std::get<double>(*retained_volume->element->value), 72.0);
+        EXPECT_DOUBLE_EQ(std::get<double>(*next_volume->element->value), 30.0);
+        ASSERT_NE(semantic.GetElementStyle(volume_id), nullptr);
+        ASSERT_NE(next_semantic.GetElementStyle(volume_id), nullptr);
+        EXPECT_EQ(semantic.GetElementStyle(volume_id)->declared.accent, theme.accent);
+        EXPECT_EQ(next_semantic.GetElementStyle(volume_id)->declared.accent, next_theme.accent);
+    }
+
+    TEST(UiRecordingContractTest, QueryLevelsFilterAndReportBoundedFrameChanges)
+    {
+        UiSession session(std::make_unique<UiRecordingBackend>());
+        ASSERT_TRUE(session.Initialize({}));
+        const UiNodeId root = StableUiNodeId("query.root");
+        const UiNodeId value = StableUiNodeId("query.value");
+        const auto build = [&session, root, value](const double number, const bool add_extra)
+        {
+            if (!session.BeginFrame({.observe = true,
+                .viewport = {{640.0F, 480.0F}, {1.0F, 1.0F}, {0.0F, 0.0F}}})) return UiFrameResult{};
+            UiTheme theme{};
+            theme.accent.r = static_cast<float>(number / 10.0);
+            {
+                auto theme_scope = session.Context().Theme(theme);
+                auto window = session.Context().Window({.id = root, .label = "Query"});
+                (void)session.Context().Slider<double>({.id = "query.value", .label = "Value"},
+                    number, 0.0, 10.0);
+                if (add_extra) (void)session.Context().Button({.id = "query.extra", .label = "Extra"});
+            }
+            return session.EndFrame();
+        };
+
+        const UiFrameResult first = build(2.0, false);
+        const UiSemanticView first_view = session.Query();
+        const auto semantic = first_view.Query({.level = UiQueryLevel::Semantic,
+            .semantic_id = "query.value"});
+        ASSERT_EQ(semantic.status, UiQueryStatus::Ok);
+        ASSERT_EQ(semantic.elements.size(), 1U);
+        EXPECT_EQ(semantic.elements.front().element_id, value);
+        EXPECT_FALSE(semantic.elements.front().bounds.has_value());
+        EXPECT_FALSE(semantic.viewport.has_value());
+        const auto spatial = first_view.Query({.level = UiQueryLevel::Spatial,
+            .element_id = root, .role = UiRole::Slider, .descendants = true});
+        ASSERT_EQ(spatial.status, UiQueryStatus::Ok);
+        ASSERT_EQ(spatial.elements.size(), 1U);
+        ASSERT_TRUE(spatial.viewport.has_value());
+        const auto visual = first_view.Query({.level = UiQueryLevel::Visual,
+            .element_id = value, .descendants = false});
+        ASSERT_EQ(visual.status, UiQueryStatus::Ok);
+        EXPECT_EQ(visual.styles.size(), 1U);
+        ASSERT_TRUE(visual.elements.front().style_id.has_value());
+
+        const UiFrameResult second = build(4.0, true);
+        const UiSemanticChanges delta = session.ChangesSince(first_view.SessionId(), first.frame);
+        ASSERT_EQ(delta.status, UiChangesStatus::Ok);
+        EXPECT_EQ(delta.to_frame, second.frame);
+        EXPECT_TRUE(std::any_of(delta.changes.begin(), delta.changes.end(),
+            [](const auto &change) { return change.kind == UiChangeKind::Added; }));
+        EXPECT_TRUE(std::any_of(delta.changes.begin(), delta.changes.end(),
+            [value](const auto &change) { return change.element_id == value &&
+                (change.fields & static_cast<std::uint16_t>(UiChangeField::Value)) != 0; }));
+        const auto value_change = std::find_if(delta.changes.begin(), delta.changes.end(),
+            [value](const auto &change) { return change.element_id == value; });
+        ASSERT_NE(value_change, delta.changes.end());
+        ASSERT_TRUE(value_change->current.has_value());
+        ASSERT_TRUE(value_change->current->value.has_value());
+        EXPECT_DOUBLE_EQ(std::get<double>(*value_change->current->value), 4.0);
+        EXPECT_TRUE(std::any_of(delta.changes.begin(), delta.changes.end(),
+            [value](const auto &change) { return change.element_id == value &&
+                (change.fields & static_cast<std::uint16_t>(UiChangeField::Style)) != 0; }));
+
+        const UiFrameResult third = build(4.0, false);
+        const UiSemanticChanges removal = session.ChangesSince(first_view.SessionId(), second.frame);
+        ASSERT_EQ(removal.status, UiChangesStatus::Ok);
+        EXPECT_EQ(removal.to_frame, third.frame);
+        EXPECT_TRUE(std::any_of(removal.changes.begin(), removal.changes.end(),
+            [](const auto &change) { return change.kind == UiChangeKind::Removed; }));
+        EXPECT_EQ(session.ChangesSince(first_view.SessionId() + 1, second.frame).status,
+                  UiChangesStatus::FullSnapshotRequired);
+
+        ASSERT_TRUE(session.BeginFrame({.observe = true}));
+        const UiFrameResult empty = session.EndFrame();
+        const UiSemanticChanges cleared = session.ChangesSince(first_view.SessionId(), third.frame);
+        ASSERT_EQ(cleared.status, UiChangesStatus::Ok);
+        EXPECT_EQ(cleared.to_frame, empty.frame);
+        EXPECT_EQ(cleared.changes.size(), 2U);
+        ASSERT_TRUE(session.BeginFrame({}));
+        const UiFrameResult unobserved = session.EndFrame();
+        EXPECT_FALSE(unobserved.observed);
+        const UiFrameResult restored = build(4.0, false);
+        EXPECT_EQ(session.ChangesSince(first_view.SessionId(), empty.frame).status,
+                  UiChangesStatus::Ok);
+        for (int i = 0; i < 34; ++i) (void)build(4.0, false);
+        EXPECT_EQ(session.ChangesSince(first_view.SessionId(), restored.frame).status,
+                  UiChangesStatus::FullSnapshotRequired);
+    }
+
     TEST(UiRecordingContractTest, CompletedObservationOwnsTemporaryControlValues)
     {
         auto backend = std::make_unique<UiRecordingBackend>();
@@ -119,7 +418,8 @@ namespace kpengine::editor::ui
         EXPECT_EQ(observations[0].label, "Temporary window label");
         EXPECT_EQ(observations[1].label, "Temporary control label");
         EXPECT_EQ(observations[1].description, "Temporary control description");
-        EXPECT_EQ(std::get<std::string>(observations[1].value), "edited value");
+        ASSERT_TRUE(observations[1].value);
+        EXPECT_EQ(std::get<std::string>(*observations[1].value), "edited value");
         EXPECT_EQ(observations[1].parent, 1U);
     }
 

@@ -8,15 +8,6 @@
 
 namespace kpengine::editor::ui
 {
-    enum class UiPlotScale : std::uint8_t { Linear, Log10 };
-    enum class UiPlotSeriesKind : std::uint8_t { Line, Bars, Points };
-
-    struct UiPlotPoint
-    {
-        double x = 0.0;
-        double y = 0.0;
-    };
-
     struct UiPlotTick
     {
         double value = 0.0;
@@ -31,6 +22,8 @@ namespace kpengine::editor::ui
         UiPlotScale scale = UiPlotScale::Linear;
         std::span<const UiPlotTick> ticks;
         std::uint8_t divisions = 4;
+        std::string_view unit;
+        std::string_view semantic_label;
     };
 
     struct UiPlotSeries
@@ -42,6 +35,7 @@ namespace kpengine::editor::ui
         float thickness = 1.5F;
         float bar_width = 0.0F;
         double bar_baseline = 0.0;
+        float emission_strength = 0.0F;
     };
 
     struct UiPlotStyle
@@ -55,6 +49,9 @@ namespace kpengine::editor::ui
         float top_margin = 20.0F;
         float right_margin = 12.0F;
         float bottom_margin = 40.0F;
+        // Fade horizontal axis labels and grid lines near both plot edges.
+        // Zero preserves the existing hard-edged axis behavior.
+        float horizontal_edge_fade_fraction = 0.0F;
         bool draw_grid = true;
     };
 

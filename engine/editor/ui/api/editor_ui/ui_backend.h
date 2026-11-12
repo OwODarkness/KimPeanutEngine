@@ -24,6 +24,11 @@ namespace kpengine::editor::ui
         bool observe = false;
         UiViewportInfo viewport{};
     };
+    struct UiThemeObservation
+    {
+        std::string id;
+        UiTheme declared{};
+    };
     struct UiFrameResult
     {
         std::uint64_t frame = 0;
@@ -31,6 +36,14 @@ namespace kpengine::editor::ui
         bool wants_keyboard = false;
         bool wants_pointer = false;
         std::vector<UiNodeObservation> observations;
+        std::vector<UiThemeObservation> styles;
+        UiViewportInfo viewport{};
+        std::size_t virtual_list_total = 0;
+        std::size_t virtual_list_first = 0;
+        std::size_t virtual_list_last = 0;
+        bool has_virtual_list = false;
+        UiSessionId session = 0;
+        bool observed = false;
     };
 
     class IUiBackend
@@ -84,6 +97,7 @@ namespace kpengine::editor::ui
         virtual UiVec2 AvailableContent() const noexcept { return {}; }
         virtual void Section(std::string_view text) { StyledText(text, UiTextRole::Accent); }
         virtual void WrappedText(std::string_view text) { Text(text); }
+        virtual void ObserveItem(const UiControl &) {}
         virtual bool BeginTable(UiNodeId, std::span<const UiTableColumn>, float, bool)
         {
             return true;
@@ -109,6 +123,7 @@ namespace kpengine::editor::ui
         class ThemeScope;
         class TabBarScope;
         class TabItemScope;
+        class NodeScope;
         UiContext(UiSessionId session, IUiBackend &backend) noexcept;
         void BeginFrame(std::uint64_t frame, const UiFrameInfo &info);
         bool BeginWindow(const UiControl &window);
@@ -123,6 +138,8 @@ namespace kpengine::editor::ui
                            UiVec2 first_use_position = {}, UiVec2 first_use_size = {});
         TabBarScope TabBar(const UiControlDescriptor &descriptor);
         TabItemScope TabItem(const UiControlDescriptor &descriptor);
+        NodeScope Node(const UiControlDescriptor &descriptor, UiRole role,
+                       bool selected = false);
         ThemeScope Theme(const UiTheme &theme);
         void PushTheme(const UiTheme &theme);
         void PopTheme() noexcept;
@@ -133,10 +150,13 @@ namespace kpengine::editor::ui
         void EndTabBar();
         bool BeginTabItem(const UiControl &tab_item);
         void EndTabItem();
+        void BeginNode(const UiControl &node, bool selected);
+        void EndNode();
         void SetHostContainer(const UiControl &container);
         UiEditResult Control(const UiControl &control);
         UiCanvasResult Canvas(const UiControlDescriptor &descriptor, UiVec2 size,
-                              std::vector<UiCanvasPrimitive> primitives);
+                              std::vector<UiCanvasPrimitive> primitives,
+                              std::optional<UiChartObservation> chart = {});
         UiEditResult Button(const UiControlDescriptor &descriptor);
         UiTypedEditResult<bool> Checkbox(const UiControlDescriptor &descriptor, bool checked);
         UiTypedEditResult<bool> Selectable(const UiControlDescriptor &descriptor, bool selected);
@@ -196,8 +216,10 @@ namespace kpengine::editor::ui
         void WrappedText(std::string_view text);
         // A positive height scrolls the table within the current panel.
         void Table(std::string_view id, std::span<const UiTableColumn> columns,
-                   float height, bool headers, const std::function<void()> &draw);
+                   float height, bool headers, const std::function<void()> &draw,
+                   std::string_view label = {});
         void TableRow(bool highlighted = false);
+        void TableRow(std::string_view id, bool highlighted = false, std::string_view label = {});
         void TableColumn();
         // Virtual lists may be hosted in a table cell; nested lists remain invalid.
         void VirtualList(std::string_view id, std::size_t item_count, float row_height,
@@ -209,6 +231,7 @@ namespace kpengine::editor::ui
         UiSessionId SessionId() const noexcept { return session_; }
         std::uint64_t FrameId() const noexcept { return frame_; }
         const UiViewportInfo &Viewport() const noexcept { return frame_info_.viewport; }
+        bool IsObserving() const noexcept { return in_frame_ && frame_info_.observe; }
 
     private:
         UiSessionId session_;
@@ -219,15 +242,31 @@ namespace kpengine::editor::ui
         unsigned int theme_depth_ = 0;
         unsigned int tab_bar_depth_ = 0;
         unsigned int tab_item_depth_ = 0;
+        unsigned int node_depth_ = 0;
         bool in_frame_ = false;
         bool in_table_ = false;
         bool in_virtual_list_ = false;
         bool host_container_set_ = false;
         std::unordered_set<UiNodeId> frame_ids_;
         std::unordered_map<UiNodeId, std::string> named_ids_;
+        std::vector<UiThemeObservation> frame_styles_;
+        std::vector<std::pair<UiTheme, std::string>> theme_stack_;
+        std::optional<UiListRange> virtual_list_range_;
+        UiNodeId semantic_parent_ = 0;
+        std::vector<UiNodeId> semantic_scopes_;
+        std::unordered_map<UiNodeId, UiNodeId> observation_parents_;
+        std::vector<UiNodeObservation> semantic_observations_;
+        std::size_t table_row_index_ = 0;
+        std::optional<std::size_t> table_column_;
+        std::unordered_map<UiNodeId, std::size_t> observed_table_columns_;
+        UiNodeId table_id_ = 0;
+        UiNodeId table_parent_ = 0;
+        UiNodeId active_row_id_ = 0;
+        std::size_t text_index_ = 0;
         std::thread::id owner_thread_ = std::this_thread::get_id();
         void VerifyThread() const;
         UiNodeId HashNamedId(std::string_view name);
+        void RecordSemanticNode(UiNodeObservation observation);
         UiEditResult DispatchControl(const UiControl &control,
                                      std::optional<std::string_view> named_id, UiIconMask icon = {});
     };
@@ -260,6 +299,19 @@ namespace kpengine::editor::ui
     private:
         UiContext *context_ = nullptr;
         bool visible_ = false;
+    };
+
+    class UiContext::NodeScope final
+    {
+    public:
+        NodeScope(UiContext &context, const UiControl &control, bool selected);
+        ~NodeScope() noexcept;
+        NodeScope(const NodeScope &) = delete;
+        NodeScope &operator=(const NodeScope &) = delete;
+        NodeScope(NodeScope &&other) noexcept;
+        NodeScope &operator=(NodeScope &&) = delete;
+    private:
+        UiContext *context_ = nullptr;
     };
 
     class UiContext::ThemeScope final

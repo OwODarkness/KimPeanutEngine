@@ -34,11 +34,17 @@
   `EditorUILib`. Splitter drag, persisted workspace state, floating-window
   occlusion, visible Canvas input and SceneEditor migration remain open, along
   with remaining tool ownership and visual acceptance.
+  Audio Player now pilots agent-readable `ui.sessions` and `ui.snapshot` over
+  immutable submitted-frame observations, workspace layout and declared themes;
+  the semantic interface pins one completed frame across tree/detail/style
+  queries, and backend geometry includes active clip intersections and visible
+  state. Higher-window occlusion and resolved-style coverage remain partial.
   Later ED6 stages remain open. →
   [design](editor/.plan/ED6.md),
   [architecture review](editor/.review/ED6.md),
   [baseline](editor/.review/ED6.0.md),
   [ED6.2 execution record](../.spec/journal/2026-11-10-editor-ui-ed6-2.md),
+  [UI snapshot implementation record](../.spec/journal/editor-ui-session-snapshot.md),
   [roadmap](editor/TODO.md#ed6--reusable-ui-and-editor-reconstruction)
 
 - **Central settings (2026-11-10; SET2 complete, SET3 implementation present, SET1/SET3 acceptance follow-up open)** — RuntimeSettings

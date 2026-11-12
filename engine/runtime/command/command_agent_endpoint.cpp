@@ -51,6 +51,32 @@ namespace kpengine::runtime::command
             {
                 data[name] = ToJson(value);
             }
+            try
+            {
+                for (const auto &[name, value] : result.structured_json)
+                {
+                    if (data.contains(name))
+                    {
+                        return ToJson(CommandResult{CommandStatus::Failed,
+                            "Command result has conflicting structured field '" + name + "'",
+                            result.request_id, {}});
+                    }
+                    Json structured = Json::parse(value);
+                    if (!structured.is_object())
+                    {
+                        return ToJson(CommandResult{CommandStatus::Failed,
+                            "Structured command result field '" + name + "' must contain a JSON object",
+                            result.request_id, {}});
+                    }
+                    data[name] = std::move(structured);
+                }
+            }
+            catch (const Json::exception &exception)
+            {
+                return ToJson(CommandResult{CommandStatus::Failed,
+                    std::string{"Invalid structured command result: "} + exception.what(),
+                    result.request_id, {}});
+            }
             return {{"status", StatusName(result.status)}, {"message", result.message},
                     {"request_id", result.request_id}, {"data", std::move(data)}};
         }

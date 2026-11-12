@@ -49,11 +49,12 @@ namespace kpengine::editor::ui
 
         void AddText(std::vector<UiCanvasPrimitive> &primitives, const UiVec2 canvas_size,
                      const UiVec2 pixel, const UiColor color, std::string text,
-                     const UiVec2 anchor = {})
+                     const UiVec2 anchor = {}, const float emission_strength = 0.0F)
         {
             primitives.push_back({.kind = UiCanvasPrimitiveKind::Text,
                 .first = {pixel.x / canvas_size.x, pixel.y / canvas_size.y},
-                .color = color, .text = std::move(text), .text_anchor = anchor});
+                .color = color, .text = std::move(text), .text_anchor = anchor,
+                .emission_strength = emission_strength});
         }
 
         void Validate(const UiPlotDescriptor &descriptor)
@@ -68,13 +69,18 @@ namespace kpengine::editor::ui
                 style.left_margin < 0.0F || style.top_margin < 0.0F ||
                 style.right_margin < 0.0F || style.bottom_margin < 0.0F ||
                 style.left_margin + style.right_margin >= descriptor.size.x ||
-                style.top_margin + style.bottom_margin >= descriptor.size.y)
+                style.top_margin + style.bottom_margin >= descriptor.size.y ||
+                !std::isfinite(style.horizontal_edge_fade_fraction) ||
+                style.horizontal_edge_fade_fraction < 0.0F ||
+                style.horizontal_edge_fade_fraction > 0.5F)
                 throw std::invalid_argument("Plot margins must fit inside the requested size");
             for (const UiPlotSeries &series : descriptor.series)
             {
                 if (!std::isfinite(series.thickness) || series.thickness <= 0.0F ||
                     !std::isfinite(series.bar_width) || series.bar_width < 0.0F ||
-                    !std::isfinite(series.bar_baseline))
+                    !std::isfinite(series.bar_baseline) ||
+                    !std::isfinite(series.emission_strength) ||
+                    series.emission_strength < 0.0F || series.emission_strength > 8.0F)
                     throw std::invalid_argument("Plot series thickness and bar width must be finite");
             }
         }
@@ -92,6 +98,19 @@ namespace kpengine::editor::ui
         const float bottom = size.y - style.bottom_margin;
         const float graph_width = right - left;
         const float graph_height = bottom - top;
+        std::optional<UiChartObservation> observation;
+        if (ui.IsObserving())
+        {
+            const auto axis = [](const UiPlotAxis &value)
+            {
+                return UiChartAxisObservation{
+                    std::string{value.semantic_label.empty() ? value.label : value.semantic_label},
+                    std::string{value.unit}, value.minimum, value.maximum, value.scale};
+            };
+            observation.emplace();
+            observation->x = axis(descriptor.x_axis);
+            observation->y = axis(descriptor.y_axis);
+        }
         std::vector<UiCanvasPrimitive> primitives;
         primitives.reserve(8 + descriptor.x_axis.ticks.size() * 2 +
                            descriptor.y_axis.ticks.size() * 2);
@@ -101,17 +120,22 @@ namespace kpengine::editor::ui
             return UiVec2{x / size.x, y / size.y};
         };
         const auto line = [&](const UiVec2 a, const UiVec2 b, const UiColor color,
-                              const float thickness = 1.0F)
+                              const float thickness = 1.0F,
+                              const float emission_strength = 0.0F)
         {
-            primitives.push_back({UiCanvasPrimitiveKind::Line,
-                point(a.x, a.y), point(b.x, b.y), color, thickness});
+            UiCanvasPrimitive primitive{UiCanvasPrimitiveKind::Line,
+                point(a.x, a.y), point(b.x, b.y), color, thickness};
+            primitive.emission_strength = emission_strength;
+            primitives.push_back(std::move(primitive));
         };
         const auto rect = [&](const UiVec2 a, const UiVec2 b, const UiColor color,
-                              const bool filled)
+                              const bool filled, const float emission_strength = 0.0F)
         {
-            primitives.push_back({filled ? UiCanvasPrimitiveKind::FilledRect
-                                         : UiCanvasPrimitiveKind::Rect,
-                point(a.x, a.y), point(b.x, b.y), color});
+            UiCanvasPrimitive primitive{filled ? UiCanvasPrimitiveKind::FilledRect
+                                               : UiCanvasPrimitiveKind::Rect,
+                point(a.x, a.y), point(b.x, b.y), color};
+            primitive.emission_strength = emission_strength;
+            primitives.push_back(std::move(primitive));
         };
 
         rect({}, size, style.background, true);
@@ -140,12 +164,27 @@ namespace kpengine::editor::ui
                 const float coordinate = start + screen_fraction * extent;
                 std::string label = axis.ticks.empty() ? NumberLabel(value)
                                                        : std::string{axis.ticks[index].label};
+                float alpha = 1.0F;
+                if (horizontal && style.horizontal_edge_fade_fraction > 0.0F)
+                {
+                    const float edge_distance = std::min(value_fraction, 1.0F - value_fraction);
+                    const float blend = std::clamp(
+                        edge_distance / style.horizontal_edge_fade_fraction, 0.0F, 1.0F);
+                    alpha = blend * blend * (3.0F - 2.0F * blend);
+                }
                 if (horizontal)
                 {
-                    if (style.draw_grid) line({coordinate, top}, {coordinate, bottom}, style.grid);
+                    UiColor tick_grid = style.grid;
+                    UiColor tick_label = style.labels;
+                    tick_grid.a *= alpha;
+                    tick_label.a *= alpha;
+                    if (style.draw_grid) line({coordinate, top}, {coordinate, bottom}, tick_grid);
+                    UiVec2 label_anchor{0.5F, 0.0F};
+                    if (value_fraction <= 0.0001F) label_anchor.x = 0.0F;
+                    else if (value_fraction >= 0.9999F) label_anchor.x = 1.0F;
                     AddText(primitives, size,
-                            {coordinate, std::min(bottom + 5.0F, size.y)}, style.labels,
-                            std::move(label), {0.5F, 0.0F});
+                            {coordinate, std::min(bottom + 5.0F, size.y)}, tick_label,
+                            std::move(label), label_anchor);
                 }
                 else
                 {
@@ -171,6 +210,17 @@ namespace kpengine::editor::ui
         bool has_points = false;
         for (const UiPlotSeries &series : descriptor.series)
         {
+            UiChartSeriesObservation *observed_series = nullptr;
+            if (observation && observation->series.size() < 8)
+            {
+                auto &entry = observation->series.emplace_back();
+                entry.label = series.label;
+                entry.kind = series.kind;
+                entry.emission_strength = series.emission_strength;
+                observed_series = &entry;
+            }
+            else if (observation)
+                observation->truncated = true;
             const float bar_width = series.bar_width > 0.0F ? series.bar_width
                 : series.points.empty() ? 1.0F
                 : std::max(1.0F, graph_width / static_cast<float>(series.points.size()));
@@ -193,15 +243,26 @@ namespace kpengine::editor::ui
                 const float y = bottom - static_cast<float>(Normalize(descriptor.y_axis, sample.y)) * graph_height;
                 const UiVec2 current{x, y};
                 has_points = true;
+                if (observed_series)
+                {
+                    ++observed_series->point_count;
+                    if (observed_series->points.size() < 128)
+                        observed_series->points.push_back(sample);
+                    else
+                        observation->truncated = true;
+                }
                 if (series.kind == UiPlotSeriesKind::Line && have_prior)
-                    line(prior, current, series.color, series.thickness);
+                    line(prior, current, series.color, series.thickness, series.emission_strength);
                 else if (series.kind == UiPlotSeriesKind::Bars)
                     rect({x - bar_width * 0.5F, std::min(y, baseline)},
-                         {x + bar_width * 0.5F, std::max(y, baseline)}, series.color, true);
+                         {x + bar_width * 0.5F, std::max(y, baseline)}, series.color, true,
+                         series.emission_strength);
                 else if (series.kind == UiPlotSeriesKind::Points)
                 {
-                    primitives.push_back({UiCanvasPrimitiveKind::Circle, point(x, y), {},
-                        series.color, 1.0F, series.thickness / std::min(size.x, size.y)});
+                    UiCanvasPrimitive primitive{UiCanvasPrimitiveKind::Circle, point(x, y), {},
+                        series.color, 1.0F, series.thickness / std::min(size.x, size.y)};
+                    primitive.emission_strength = series.emission_strength;
+                    primitives.push_back(std::move(primitive));
                 }
                 prior = current;
                 have_prior = true;
@@ -212,7 +273,9 @@ namespace kpengine::editor::ui
                     style.labels, std::string{descriptor.empty_label}, {0.5F, 0.5F});
 
         UiPlotResult result{};
-        result.canvas = ui.Canvas(descriptor.control, size, std::move(primitives));
+        if (observation && !has_points) observation->empty_label = descriptor.empty_label;
+        result.canvas = ui.Canvas(descriptor.control, size, std::move(primitives),
+                                  std::move(observation));
         const float pointer_x = result.canvas.normalized_pointer.x * size.x;
         const float pointer_y = result.canvas.normalized_pointer.y * size.y;
         result.hovered_plot = result.canvas.hovered && pointer_x >= left && pointer_x <= right &&

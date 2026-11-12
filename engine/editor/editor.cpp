@@ -1,7 +1,10 @@
 #include "editor/editor.h"
 
 #include <cassert>
+#include <string>
+#include <utility>
 
+#include "editor/ui/editor_ui_session_commands.h"
 #include "editor/ui/editor_ui.h"
 #include "editor/context/editor_context.h"
 #include "runtime/engine.h"
@@ -11,7 +14,6 @@
 
 namespace kpengine::editor
 {
-
     Editor::Editor() : editor_ui_(std::make_shared<EditorUI>())
     {
     }
@@ -58,6 +60,7 @@ namespace kpengine::editor
         init_info.memory_sampler = global_editor_context.memory_sampler_;
         init_info.render_system = global_editor_context.render_system_;
         init_info.command_registry = runtime::global_runtime_context.GetCommandRegistry();
+        init_info.snapshot_store = &ui_snapshot_store_;
         init_info.input_system = global_editor_context.input_system_;
         init_info.window_system = global_editor_context.window_system_;
         init_info.camera_control_sink = &runtime::global_runtime_context;
@@ -73,6 +76,21 @@ namespace kpengine::editor
                                      : runtime::StartupSnapshot{};
         };
         editor_ui_->InitializePresentation(init_info);
+        RegisterUiSessionCommands();
+    }
+
+    void Editor::RegisterUiSessionCommands()
+    {
+        runtime::command::CommandRegistry *const registry =
+            runtime::global_runtime_context.GetCommandRegistry();
+        if (registry == nullptr || ui_session_registration_) return;
+        std::string diagnostic;
+        ui_session_registration_ = RegisterEditorUiSession(*registry, ui_snapshot_store_,
+            editor_ui_ != nullptr ? editor_ui_->SessionId() : 0,
+            "editor", engine_ != nullptr ? engine_->GetApplicationMode() : "scene3d", diagnostic);
+        if (!ui_session_registration_)
+            KP_LOG("LogEditor", LOG_LEVEL_WARNING, "UI session registration failed: %s",
+                   diagnostic.c_str());
     }
 
     void Editor::PromoteEditorWorkspace()
@@ -129,12 +147,16 @@ namespace kpengine::editor
         // Called on the main thread after the render thread joined; the ImGui state
         // was already torn down there (CloseUI), this only resets editor state.
         global_editor_context.Clear();
+        ui_session_registration_ = {};
+        if (editor_ui_ != nullptr) ui_snapshot_store_.Clear(editor_ui_->SessionId());
         editor_ui_.reset();
         initialized_ = false;
     }
 
     void Editor::CloseUI()
     {
+        ui_session_registration_ = {};
+        if (editor_ui_ != nullptr) ui_snapshot_store_.Clear(editor_ui_->SessionId());
         if (editor_ui_)
         {
             editor_ui_->Close();

@@ -34,6 +34,8 @@ namespace kpengine::editor::ui
         float window_border_size = 1.0F;
         float frame_border_size = 1.0F;
         UiFontRole font = UiFontRole::Body;
+
+        bool operator==(const UiTheme &) const noexcept = default;
     };
 }
 

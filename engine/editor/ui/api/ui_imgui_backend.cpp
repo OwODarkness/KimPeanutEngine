@@ -12,6 +12,8 @@
 #include <limits>
 #include <unordered_map>
 
+#include "../editor_ui_glow.h"
+
 namespace kpengine::editor::ui
 {
     namespace
@@ -63,6 +65,7 @@ namespace kpengine::editor::ui
                 observations_.clear();
                 window_bounds_.clear();
                 window_id_ = 0;
+                next_glow_region_id_ = 1;
             }
 
             void ApplyWindowGeometry(const UiNodeId id, const UiVec2 position,
@@ -135,15 +138,29 @@ namespace kpengine::editor::ui
                 window_border_open_ = window.window_no_border;
                 const ImVec2 position = ImGui::GetWindowPos();
                 const ImVec2 size = ImGui::GetWindowSize();
-                window_bounds_.insert_or_assign(window.id,
-                    UiRect{{position.x, position.y}, {position.x + size.x, position.y + size.y}});
+                const UiRect bounds{{position.x, position.y},
+                                    {position.x + size.x, position.y + size.y}};
+                window_bounds_.insert_or_assign(window.id, bounds);
                 if (!observe_) return visible;
-                observations_.push_back({session_, frame_, window.id, 0, window.role,
-                    window.label, window.description, window.value, window.enabled,
-                    window.disabled_reason, ImGui::IsWindowFocused(),
-                    ImGui::IsWindowHovered(), false,
-                    {{position.x, position.y}, {position.x + size.x, position.y + size.y}},
-                    UiGeometryProvenance::ActualBackend, false});
+                const std::optional<UiRect> clipped_bounds = Intersect(bounds, ViewportBounds());
+                UiNodeObservation observation{};
+                observation.session = session_;
+                observation.frame = frame_;
+                observation.id = window.id;
+                observation.parent = 0;
+                observation.role = window.role;
+                observation.label = window.label;
+                observation.description = window.description;
+                observation.enabled = window.enabled;
+                observation.disabled_reason = window.disabled_reason;
+                observation.focused = ImGui::IsWindowFocused();
+                observation.hovered = ImGui::IsWindowHovered();
+                observation.clipped = !Contains(bounds, clipped_bounds);
+                observation.bounds = bounds;
+                observation.geometry = UiGeometryProvenance::ActualBackend;
+                observation.visible = clipped_bounds.has_value();
+                observation.clipped_bounds = clipped_bounds;
+                observations_.push_back(std::move(observation));
                 return visible;
             }
 
@@ -197,7 +214,10 @@ namespace kpengine::editor::ui
             bool BeginTabItem(const UiControl &control) override
             {
                 PushUiId(control.id);
-                if (ImGui::BeginTabItem(control.label.c_str())) return true;
+                const bool selected = ImGui::BeginTabItem(control.label.c_str());
+                Observe(control, window_id_);
+                if (observe_) observations_.back().selected = selected;
+                if (selected) return true;
                 PopUiId();
                 return false;
             }
@@ -356,6 +376,41 @@ namespace kpengine::editor::ui
                     {
                         const float size = ImGui::GetFontSize();
                         DrawIcon(icon, cursor, size);
+                    }
+                    if (selected && control.selection_decoration && ImGui::IsItemVisible())
+                    {
+                        const auto &decoration = *control.selection_decoration;
+                        const ImVec2 minimum = ImGui::GetItemRectMin();
+                        const ImVec2 maximum = ImGui::GetItemRectMax();
+                        ImDrawList *const draw = ImGui::GetWindowDrawList();
+                        if (table_active_ && control.span_row)
+                        {
+                            const float row_padding = ImGui::GetStyle().CellPadding.y;
+                            table_decorations_.push_back({
+                                {table_origin_.x + 1.0F, minimum.y - row_padding + 1.0F},
+                                {table_origin_.x + table_width_ - 1.0F,
+                                 maximum.y + row_padding - 1.0F},
+                                decoration.color, decoration.thickness,
+                                decoration.emission_strength});
+                        }
+                        else
+                        {
+                            const ImU32 color = ImGui::ColorConvertFloat4ToU32(Color(decoration.color));
+                            if (decoration.emission_strength > 0.0F)
+                            {
+                                const std::uint32_t region = next_glow_region_id_++;
+                                BeginEditorGlowRegion(draw, region, minimum, maximum, 8.0F);
+                                PushEditorGlowEmission(draw, region, color,
+                                                       decoration.emission_strength);
+                                draw->AddRect(minimum, maximum, color, 0.0F, 0,
+                                              decoration.thickness);
+                                PopEditorGlowEmission(draw, region);
+                                EndEditorGlowRegion(draw, region);
+                            }
+                            else
+                                draw->AddRect(minimum, maximum, color, 0.0F, 0,
+                                              decoration.thickness);
+                        }
                     }
                     if (themed) ImGui::PopStyleColor(2);
                     result.value = result.activated ? UiValue{true} : control.value;
@@ -528,6 +583,7 @@ namespace kpengine::editor::ui
                 const float height = maximum.y - minimum.y;
                 result.bounds = {{minimum.x, minimum.y}, {maximum.x, maximum.y}};
                 result.geometry = UiGeometryProvenance::ActualBackend;
+                Observe(control, window_id_);
                 result.pointer_position = {ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y};
                 if (result.hovered || result.dragging || result.secondary_dragging ||
                     active_canvas_id_ == control.id)
@@ -544,6 +600,12 @@ namespace kpengine::editor::ui
                         std::clamp((mouse.y - minimum.y) / height, 0.0F, 1.0F)};
                 }
                 draw->PushClipRect(minimum, maximum, true);
+                const bool has_emission = std::any_of(primitives.begin(), primitives.end(),
+                    [](const UiCanvasPrimitive &primitive)
+                    { return primitive.emission_strength > 0.0F; });
+                const std::uint32_t glow_region_id = has_emission ? next_glow_region_id_++ : 0U;
+                if (has_emission)
+                    BeginEditorGlowRegion(draw, glow_region_id, minimum, maximum, 8.0F);
                 const auto point = [minimum, width, height](const UiVec2 value)
                 {
                     return ImVec2{minimum.x + value.x * width, minimum.y + value.y * height};
@@ -555,6 +617,9 @@ namespace kpengine::editor::ui
                          primitive.color.b, primitive.color.a});
                     const ImVec2 first = point(primitive.first);
                     const ImVec2 second = point(primitive.second);
+                    if (has_emission && primitive.emission_strength > 0.0F)
+                        PushEditorGlowEmission(draw, glow_region_id, color,
+                                               primitive.emission_strength);
                     switch (primitive.kind)
                     {
                     case UiCanvasPrimitiveKind::Line:
@@ -574,12 +639,39 @@ namespace kpengine::editor::ui
                     {
                         ImFont *const font = ImGui::GetFont();
                         const float size = ImGui::GetFontSize() * primitive.text_scale;
-                        const char *const begin = primitive.text.data();
-                        const char *const end = begin + primitive.text.size();
-                        const ImVec2 extent = font->CalcTextSizeA(size, 1.0e6F, 0.0F, begin, end);
-                        draw->AddText(font, size,
-                            {first.x - extent.x * primitive.text_anchor.x,
-                             first.y - extent.y * primitive.text_anchor.y}, color, begin, end);
+                        if (primitive.text_runs.empty())
+                        {
+                            const char *const begin = primitive.text.data();
+                            const char *const end = begin + primitive.text.size();
+                            const ImVec2 extent = font->CalcTextSizeA(size, 1.0e6F, 0.0F, begin, end);
+                            draw->AddText(font, size,
+                                {first.x - extent.x * primitive.text_anchor.x,
+                                 first.y - extent.y * primitive.text_anchor.y}, color, begin, end);
+                        }
+                        else
+                        {
+                            std::vector<float> widths;
+                            widths.reserve(primitive.text_runs.size());
+                            float total_width = 0.0F;
+                            for (const UiCanvasTextRun &run : primitive.text_runs)
+                            {
+                                const ImVec2 extent = font->CalcTextSizeA(size, 1.0e6F, 0.0F,
+                                    run.text.data(), run.text.data() + run.text.size());
+                                widths.push_back(extent.x);
+                                total_width += extent.x;
+                            }
+                            float x = first.x - total_width * primitive.text_anchor.x;
+                            const float y = first.y - size * primitive.text_anchor.y;
+                            for (std::size_t index = 0; index < primitive.text_runs.size(); ++index)
+                            {
+                                const UiCanvasTextRun &run = primitive.text_runs[index];
+                                const ImU32 run_color = ImGui::ColorConvertFloat4ToU32(
+                                    {run.color.r, run.color.g, run.color.b, run.color.a});
+                                draw->AddText(font, size, {x, y}, run_color,
+                                    run.text.data(), run.text.data() + run.text.size());
+                                x += widths[index];
+                            }
+                        }
                         break;
                     }
                     case UiCanvasPrimitiveKind::Image:
@@ -589,16 +681,10 @@ namespace kpengine::editor::ui
                         break;
                     }
                     }
+                    if (has_emission && primitive.emission_strength > 0.0F)
+                        PopEditorGlowEmission(draw, glow_region_id);
                 }
-                if (observe_)
-                {
-                    observations_.push_back({session_, frame_, control.id, window_id_,
-                        control.role, control.label, control.description, control.value,
-                        control.enabled, control.disabled_reason, item_focused,
-                        result.hovered, !item_visible,
-                        {{minimum.x, minimum.y}, {maximum.x, maximum.y}},
-                        UiGeometryProvenance::ActualBackend, item_active});
-                }
+                if (has_emission) EndEditorGlowRegion(draw, glow_region_id);
                 draw->PopClipRect();
                 ImGui::PopID();
                 ImGui::PopID();
@@ -635,9 +721,17 @@ namespace kpengine::editor::ui
                 ImGui::PopTextWrapPos();
             }
 
+            void ObserveItem(const UiControl &item) override
+            {
+                Observe(item, window_id_);
+            }
+
             bool BeginTable(const UiNodeId id, const std::span<const UiTableColumn> columns,
                             const float height, const bool headers) override
             {
+                table_origin_ = ImGui::GetCursorScreenPos();
+                table_width_ = ImGui::GetContentRegionAvail().x;
+                table_decorations_.clear();
                 std::array<std::string, 32> labels;
                 for (std::size_t index = 0; index < columns.size(); ++index)
                     labels[index] = columns[index].label;
@@ -652,6 +746,7 @@ namespace kpengine::editor::ui
                     PopUiId();
                     return false;
                 }
+                table_active_ = true;
                 for (std::size_t index = 0; index < columns.size(); ++index)
                 {
                     const float width = columns[index].width;
@@ -670,6 +765,34 @@ namespace kpengine::editor::ui
             void EndTable() override
             {
                 ImGui::EndTable();
+                table_active_ = false;
+                ImDrawList *const draw = ImGui::GetWindowDrawList();
+                const ImVec2 window_clip_min = draw->GetClipRectMin();
+                const ImVec2 window_clip_max = draw->GetClipRectMax();
+                for (const PendingTableDecoration &decoration : table_decorations_)
+                {
+                    draw->PushClipRect(
+                        {std::max(table_origin_.x, window_clip_min.x), window_clip_min.y},
+                        {std::min(table_origin_.x + table_width_, window_clip_max.x),
+                         window_clip_max.y}, false);
+                    const ImU32 color = ImGui::ColorConvertFloat4ToU32(Color(decoration.color));
+                    if (decoration.emission_strength > 0.0F)
+                    {
+                        const std::uint32_t region = next_glow_region_id_++;
+                        BeginEditorGlowRegion(draw, region, decoration.minimum,
+                                              decoration.maximum, 8.0F);
+                        PushEditorGlowEmission(draw, region, color, decoration.emission_strength);
+                        draw->AddRect(decoration.minimum, decoration.maximum, color, 0.0F, 0,
+                                      decoration.thickness);
+                        PopEditorGlowEmission(draw, region);
+                        EndEditorGlowRegion(draw, region);
+                    }
+                    else
+                        draw->AddRect(decoration.minimum, decoration.maximum, color, 0.0F, 0,
+                                      decoration.thickness);
+                    draw->PopClipRect();
+                }
+                table_decorations_.clear();
                 PopUiId();
             }
 
@@ -800,30 +923,111 @@ namespace kpengine::editor::ui
             void Observe(const UiControl &control, const UiNodeId parent,
                          const std::optional<UiActionKind> action = std::nullopt)
             {
+                if (!observe_) return;
                 const ImVec2 min = ImGui::GetItemRectMin();
                 const ImVec2 max = ImGui::GetItemRectMax();
-                observations_.push_back({session_, frame_, control.id, parent, control.role,
-                    control.label, control.description, control.value, control.enabled,
-                    control.disabled_reason, ImGui::IsItemFocused(), ImGui::IsItemHovered(),
-                    ImGui::IsItemVisible() == false,
-                    {{min.x, min.y}, {max.x, max.y}}, UiGeometryProvenance::ActualBackend,
-                    ImGui::IsItemActive()});
-                observations_.back().actions = control.actions;
-                observations_.back().last_action = action;
+                const UiRect bounds{{min.x, min.y}, {max.x, max.y}};
+                const ImDrawList *const draw_list = ImGui::GetWindowDrawList();
+                const ImVec2 clip_min = draw_list->GetClipRectMin();
+                const ImVec2 clip_max = draw_list->GetClipRectMax();
+                const UiRect clip{{clip_min.x, clip_min.y}, {clip_max.x, clip_max.y}};
+                const std::optional<UiRect> clipped_bounds = Intersect(
+                    Intersect(clip, ViewportBounds()), bounds);
+
+                UiNodeObservation observation{};
+                observation.session = session_;
+                observation.frame = frame_;
+                observation.id = control.id;
+                observation.parent = parent;
+                observation.role = control.role;
+                observation.label = control.label;
+                observation.description = control.description;
+                if (HasIntrinsicValue(control.role)) observation.value = control.value;
+                observation.enabled = control.enabled;
+                observation.disabled_reason = control.disabled_reason;
+                observation.focused = ImGui::IsItemFocused();
+                observation.hovered = ImGui::IsItemHovered();
+                observation.clipped = !Contains(bounds, clipped_bounds);
+                observation.bounds = bounds;
+                observation.geometry = UiGeometryProvenance::ActualBackend;
+                observation.active = ImGui::IsItemActive();
+                observation.actions = control.actions;
+                observation.last_action = action;
+                observation.unit = control.unit;
+                observation.domain_summary = control.domain_summary;
+                observation.minimum = control.minimum;
+                observation.maximum = control.maximum;
+                observation.step = control.step;
+                observation.choices = control.choices;
+                observation.style_id = control.style_id;
+                if (control.role == UiRole::Selectable)
+                    observation.selected = std::get<bool>(control.value);
+                observation.visible = ImGui::IsItemVisible() && clipped_bounds.has_value();
+                observation.clipped_bounds = clipped_bounds;
+                observations_.push_back(std::move(observation));
             }
+
+            static std::optional<UiRect> Intersect(const UiRect a, const UiRect b) noexcept
+            {
+                const UiRect result{{std::max(a.min.x, b.min.x), std::max(a.min.y, b.min.y)},
+                                    {std::min(a.max.x, b.max.x), std::min(a.max.y, b.max.y)}};
+                if (result.min.x >= result.max.x || result.min.y >= result.max.y)
+                    return std::nullopt;
+                return result;
+            }
+
+            static std::optional<UiRect> Intersect(const std::optional<UiRect> a,
+                                                    const UiRect b) noexcept
+            {
+                return a ? Intersect(*a, b) : std::nullopt;
+            }
+
+            UiRect ViewportBounds() const noexcept
+            {
+                return {viewport_.logical_origin,
+                    {viewport_.logical_origin.x + viewport_.logical_extent.x,
+                     viewport_.logical_origin.y + viewport_.logical_extent.y}};
+            }
+
+            static bool Contains(const UiRect outer, const std::optional<UiRect> inner) noexcept
+            {
+                return inner && inner->min.x <= outer.min.x && inner->min.y <= outer.min.y &&
+                    inner->max.x >= outer.max.x && inner->max.y >= outer.max.y;
+            }
+
+            static bool HasIntrinsicValue(const UiRole role) noexcept
+            {
+                return role == UiRole::CheckBox || role == UiRole::Selectable ||
+                    role == UiRole::TextInput || role == UiRole::NumericInput ||
+                    role == UiRole::Slider || role == UiRole::Combo;
+            }
+
+            struct PendingTableDecoration
+            {
+                ImVec2 minimum{};
+                ImVec2 maximum{};
+                UiColor color{};
+                float thickness = 1.0F;
+                float emission_strength = 0.0F;
+            };
 
             ImFont *code_font_ = nullptr; // Borrowed from the host font atlas.
             UiSessionId session_ = 0;
             std::uint64_t frame_ = 0;
             UiNodeId window_id_ = 0;
             UiNodeId active_canvas_id_ = 0;
+            std::uint32_t next_glow_region_id_ = 1;
             bool observe_ = false;
             bool window_padding_open_ = false;
             bool window_border_open_ = false;
             bool virtual_list_open_ = false;
+            bool table_active_ = false;
             bool list_clipper_started_ = false;
+            ImVec2 table_origin_{};
+            float table_width_ = 0.0F;
             ImGuiListClipper list_clipper_;
             std::vector<UiTheme> theme_stack_;
+            std::vector<PendingTableDecoration> table_decorations_;
             UiViewportInfo viewport_{};
             std::unordered_map<UiNodeId, UiViewportInfo> window_viewports_;
             std::unordered_map<UiNodeId, UiRect> window_bounds_;

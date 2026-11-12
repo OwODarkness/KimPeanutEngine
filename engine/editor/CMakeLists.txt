@@ -37,6 +37,7 @@ target_compile_definitions(EditorUILib PRIVATE
 
 target_link_libraries(EditorLib PRIVATE RuntimeLib EditorUILib)
 target_link_libraries(EditorUILib PRIVATE RuntimeLib RuntimeCommand Input ImageIO KP::ImGui KP::Glfw KP::Glad KP::Vulkan KP::NlohmannJson EditorUIPlatform)
+target_link_libraries(EditorUILib PRIVATE EditorUISessionLib)
 target_link_libraries(EditorUILib PRIVATE UIWidgets UIPresentation UIBackendImGui EditorUiHostLib EditorSettingsConfigLib SettingsPropertyFields EditorIcons RenderEditor)
 target_link_libraries(EditorUILib PRIVATE $<TARGET_NAME_IF_EXISTS:LogEditor>)
 if(WIN32)

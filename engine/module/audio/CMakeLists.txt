@@ -12,7 +12,7 @@ target_include_directories(AudioPlayerMode PUBLIC
 
 target_link_libraries(AudioPlayerMode
     PUBLIC Audio RuntimeLib
-    PRIVATE AudioPlayerController AudioPlayerEditorUI)
+    PRIVATE AudioPlayerController AudioPlayerEditorUI UIWidgets KP::NlohmannJson)
 
 add_library(AudioPlayerRegistration OBJECT
     audio_player_registration.cpp)

@@ -92,6 +92,7 @@ namespace kpengine::editor::ui
             throw;
         }
         state_ = closing_requested_ ? UiSessionState::Closing : UiSessionState::Ready;
+        semantic_.Update(result);
         return result;
     }
 

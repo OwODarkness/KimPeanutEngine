@@ -92,6 +92,20 @@ namespace kpengine::editor::ui::detail
                     "selectable controls require a bool value");
             Require(HasAction(control, UiActionKind::Select),
                     "selectable controls must declare the select action");
+            if (control.selection_decoration)
+            {
+                const auto &decoration = *control.selection_decoration;
+                Require(std::isfinite(decoration.color.r) && decoration.color.r >= 0.0F &&
+                            decoration.color.r <= 1.0F && std::isfinite(decoration.color.g) &&
+                            decoration.color.g >= 0.0F && decoration.color.g <= 1.0F &&
+                            std::isfinite(decoration.color.b) && decoration.color.b >= 0.0F &&
+                            decoration.color.b <= 1.0F && std::isfinite(decoration.color.a) &&
+                            decoration.color.a >= 0.0F && decoration.color.a <= 1.0F &&
+                            std::isfinite(decoration.thickness) && decoration.thickness > 0.0F &&
+                            std::isfinite(decoration.emission_strength) &&
+                            decoration.emission_strength >= 0.0F && decoration.emission_strength <= 8.0F,
+                        "selectable decoration must use finite normalized color and bounded stroke/emission");
+            }
         }
 
         void ValidateNumericInput(const UiControl &control)
@@ -149,6 +163,17 @@ namespace kpengine::editor::ui::detail
             case UiRole::Group:
             case UiRole::Image:
             case UiRole::Canvas: break;
+            case UiRole::Session:
+            case UiRole::Panel:
+            case UiRole::TabBar:
+            case UiRole::Tab:
+            case UiRole::Table:
+            case UiRole::Row:
+            case UiRole::Heading:
+            case UiRole::Text:
+            case UiRole::VirtualList:
+            case UiRole::Splitter:
+            case UiRole::Chart: break;
             }
         }
 
@@ -290,6 +315,17 @@ namespace kpengine::editor::ui::detail
             case UiRole::Group:
             case UiRole::Image:
             case UiRole::Canvas:
+            case UiRole::Session:
+            case UiRole::Panel:
+            case UiRole::TabBar:
+            case UiRole::Tab:
+            case UiRole::Table:
+            case UiRole::Row:
+            case UiRole::Heading:
+            case UiRole::Text:
+            case UiRole::VirtualList:
+            case UiRole::Splitter:
+            case UiRole::Chart:
                 Require(result.value.index() == control.value.index(),
                         "UI backend returned a value with the wrong type");
                 break;
@@ -335,6 +371,10 @@ namespace kpengine::editor::ui::detail
             Require(std::isfinite(primitive.thickness) && primitive.thickness > 0.0F &&
                         std::isfinite(primitive.radius) && primitive.radius >= 0.0F,
                     "canvas stroke width and radius must be finite and non-negative");
+            Require(std::isfinite(primitive.emission_strength) &&
+                        primitive.emission_strength >= 0.0F &&
+                        primitive.emission_strength <= 8.0F,
+                    "canvas emission strength must be finite and within its supported range");
             if (primitive.kind == UiCanvasPrimitiveKind::Rect ||
                 primitive.kind == UiCanvasPrimitiveKind::FilledRect)
                 Require(primitive.second.x >= primitive.first.x &&
@@ -344,6 +384,23 @@ namespace kpengine::editor::ui::detail
                 Require(primitive.text.size() <= 8192 && finite_point(primitive.text_anchor) &&
                             std::isfinite(primitive.text_scale) && primitive.text_scale > 0.0F,
                         "canvas text exceeds its bounded length");
+            if (!primitive.text_runs.empty())
+            {
+                Require(primitive.kind == UiCanvasPrimitiveKind::Text &&
+                            primitive.text_runs.size() <= 32,
+                        "canvas text runs require a text primitive and stay within their count limit");
+                std::size_t total_length = primitive.text.size();
+                for (const UiCanvasTextRun &run : primitive.text_runs)
+                {
+                    total_length += run.text.size();
+                    Require(std::isfinite(run.color.r) && run.color.r >= 0.0F && run.color.r <= 1.0F &&
+                                std::isfinite(run.color.g) && run.color.g >= 0.0F && run.color.g <= 1.0F &&
+                                std::isfinite(run.color.b) && run.color.b >= 0.0F && run.color.b <= 1.0F &&
+                                std::isfinite(run.color.a) && run.color.a >= 0.0F && run.color.a <= 1.0F,
+                            "canvas text run colors must be finite normalized RGBA values");
+                }
+                Require(total_length <= 8192, "canvas text runs exceed their bounded length");
+            }
             if (primitive.kind == UiCanvasPrimitiveKind::Image)
                 Require(primitive.image != 0 &&
                             primitive.second.x >= primitive.first.x &&

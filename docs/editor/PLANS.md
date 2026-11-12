@@ -7,7 +7,7 @@ composition; feature modules own their editor tools. Reusable UI can remain
 under `engine/editor/ui` with independent build targets.
 Feature and workspace views use its general UI API; ImGui calls/types remain
 inside the backend implementation. ED6 must establish this boundary while a
-second production GUI backend and structured agent UI remain follow-up work.
+second production GUI backend and Agent-readable GUI snapshots remain follow-up work.
 
 `EditorIcons` owns stable `EditorIcon` names and ImageIO loading.
 `EditorIconCatalog` reads the `icons` object in `resouce/icon/setting.json`;
@@ -40,6 +40,7 @@ Existing behavior, build targets, threading, and known boundary debt are in
 | [ED5](.plan/ED5.md) | Selective UI bloom through editor-owned presentation and common RHI commands |
 | [ED6](.plan/ED6.md) | Toolkit-neutral Editor UI API/private ImGui backend, reusable presentation, explicit workspaces, feature-owned tools and removal of concrete Runtime-to-Editor dependency |
 | [ED6.2](.plan/ED6.2.md) | Detailed neutral API/backend/session design, bounded semantic observations for later AI work, real feature pilot and compile/runtime gates |
+| [GUI session snapshots](.plan/ui-session-snapshot.md) | Read-only command proposal for frame-consistent layout, hierarchy, styles and semantics |
 
 ## Reconstruction direction
 

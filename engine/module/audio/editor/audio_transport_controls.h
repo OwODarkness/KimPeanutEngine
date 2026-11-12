@@ -42,7 +42,9 @@ namespace kpengine::audio_editor
         editor::ui::UiColor background{2.0F / 255.0F, 9.0F / 255.0F, 14.0F / 255.0F, 1.0F};
         editor::ui::UiColor border{16.0F / 255.0F, 82.0F / 255.0F, 101.0F / 255.0F, 1.0F};
         editor::ui::UiColor fill{1.0F, 184.0F / 255.0F, 58.0F / 255.0F, 1.0F};
+        editor::ui::UiColor secondary_text{48.0F / 255.0F, 211.0F / 255.0F, 239.0F / 255.0F, 1.0F};
         float label_width = 150.0F;
+        float label_scale = 1.2F;
         bool glow = false;
     };
 

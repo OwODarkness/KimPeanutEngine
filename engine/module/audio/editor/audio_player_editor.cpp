@@ -16,8 +16,12 @@
 #include "audio_preview_widget.h"
 #include "editor/asset/editor_asset_file_dialog.h"
 #include "editor/ui/api/editor_ui/ui_backend.h"
+#include "editor/ui/editor_ui_session_commands.h"
 #include "editor/ui/host/editor_ui_host.h"
 #include "editor/workspace/editor_workspace.h"
+#include "asset/shader.h"
+#include "asset/shader_program.h"
+#include "render/prepared_render_asset_catalog.h"
 #include "runtime/audio/miniaudio_audio_system.h"
 #include "runtime/core/log/log_system.h"
 #include "runtime/runtime_global_context.h"
@@ -31,6 +35,30 @@ namespace kpengine::audio_player
         using editor::ui::UiContext;
         using editor::ui::UiTableColumn;
         using editor::ui::UiTextRole;
+
+        editor::ui::UiControlDescriptor::SelectionDecoration AudioSelectionDecoration()
+        {
+            return {{1.0F, 184.0F / 255.0F, 58.0F / 255.0F, 1.0F}, 1.5F, 0.4F};
+        }
+
+        void UpdateBloomShaders(editor::EditorUiHost &host,
+                                render::RenderSystem *render_system)
+        {
+            const auto prepared = render_system != nullptr
+                ? render_system->GetEditorPresentationAssets() : nullptr;
+            const auto program = prepared != nullptr
+                ? prepared->GetEditorUiBloomProgram() : nullptr;
+            const auto vertex = program != nullptr
+                ? prepared->Get<asset::ShaderResource>(program->GetData(
+                      ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL))
+                : nullptr;
+            const auto fragment = program != nullptr
+                ? prepared->Get<asset::ShaderResource>(program->GetData(
+                      ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL))
+                : nullptr;
+            host.SetBloomShaderData(vertex != nullptr ? vertex->data : nullptr,
+                                    fragment != nullptr ? fragment->data : nullptr);
+        }
 
         editor::WorkspaceLayoutPreset AudioWorkspaceLayout()
         {
@@ -179,6 +207,19 @@ namespace kpengine::audio_player
             ui_->Initialize({
                 .window = context.window_system_->GetNativeHandle(),
                 .presentation_bridge = context.render_system_->GetEditorPresentationBridge()});
+            UpdateBloomShaders(*ui_, context.render_system_.get());
+            ui_->SetSnapshotSource(ui_snapshot_store_, "audio-player", "audio-player", [this]
+            {
+                return workspace_ ? std::vector<editor::ui::UiWorkspaceSnapshot>{workspace_->Snapshot()}
+                                  : std::vector<editor::ui::UiWorkspaceSnapshot>{};
+            });
+            runtime::command::CommandRegistry *const registry = context.GetCommandRegistry();
+            if (registry == nullptr)
+                throw std::runtime_error("Audio Player command registry is unavailable");
+            ui_session_registration_ = editor::RegisterEditorUiSession(*registry,
+                ui_snapshot_store_, ui_->SessionId(), "audio-player", "audio-player", diagnostic);
+            if (!ui_session_registration_)
+                throw std::runtime_error(diagnostic);
         }
         catch (const std::exception &exception)
         {
@@ -192,6 +233,8 @@ namespace kpengine::audio_player
     bool AudioPlayerEditor::Render(std::string &diagnostic)
     {
         diagnostic.clear();
+        if (ui_ != nullptr)
+            UpdateBloomShaders(*ui_, runtime::global_runtime_context.render_system_.get());
         if (ui_ == nullptr || !ui_->RenderFrame(
                 [this](UiContext &ui) { RenderWorkspace(ui); }))
         {
@@ -201,8 +244,15 @@ namespace kpengine::audio_player
         return true;
     }
 
+    editor::ui::UiSessionId AudioPlayerEditor::SessionId() const noexcept
+    {
+        return ui_ ? ui_->SessionId() : 0;
+    }
+
     void AudioPlayerEditor::Shutdown() noexcept
     {
+        ui_session_registration_ = {};
+        ui_snapshot_store_.Clear(SessionId());
         if (ui_ != nullptr)
         {
             ui_->Close();
@@ -255,6 +305,7 @@ namespace kpengine::audio_player
                 control.height = 26.0F;
                 control.text_role = active ? UiTextRole::Warning : UiTextRole::Accent;
                 control.span_row = true;
+                if (active) control.selection_decoration = AudioSelectionDecoration();
                 if (ui.Selectable(control, active).activated)
                 {
                     library_filter_ = filter;
@@ -265,7 +316,7 @@ namespace kpengine::audio_player
                 ui.Text("[" + CountLabel(filter == 2 ? favorites : queue.size()) + "]",
                         active ? UiTextRole::Warning : UiTextRole::Primary);
             }
-        });
+        }, "Library collections");
         ui.Section("// PROJECT MUSIC");
         const auto library = controller_->GetProjectLibrary();
         const float field_width = std::max(1.0F, ui.AvailableContent().x);
@@ -281,8 +332,9 @@ namespace kpengine::audio_player
                 std::string diagnostic;
                 if (!controller_->RefreshProjectLibrary(diagnostic)) ui_error_ = diagnostic;
             }
-        });
+        }, "Project music track count");
         project_search_ = ui.TextInput({.id = "audio.library.search", .label = "",
+            .description = "Filter project music by track name or path",
             .hint = "Filter project music...", .width = field_width}, project_search_).value;
         const auto needle = LowerAscii(project_search_);
         const float list_height = std::clamp(ui.AvailableContent().y * 0.31F, 56.0F, 115.0F);
@@ -322,7 +374,7 @@ namespace kpengine::audio_player
                 ui.TableColumn();
                 ui.Text(needle.empty() ? "No project music found." : "No matches.", UiTextRole::Muted);
             }
-        });
+        }, "Project music");
         if (!library.status.empty()) ui.Text(library.status, UiTextRole::Muted);
         if (!library.error.empty()) ui.WrappedText(library.error);
 
@@ -394,8 +446,11 @@ namespace kpengine::audio_player
         ui.Section("// PLAYLISTS");
         const auto queue = controller_->GetQueue();
         const std::string label = "Current queue   [" + CountLabel(queue.size()) + "]";
-        if (ui.Selectable({.id = "audio.playlists.current", .label = label, .height = 28.0F,
-                           .text_role = UiTextRole::Warning}, true).activated)
+        editor::ui::UiControlDescriptor current_queue{
+            .id = "audio.playlists.current", .label = label, .height = 28.0F,
+            .text_role = UiTextRole::Warning,
+            .selection_decoration = AudioSelectionDecoration()};
+        if (ui.Selectable(current_queue, true).activated)
         {
             library_filter_ = 0;
             queue_search_.clear();
@@ -432,6 +487,7 @@ namespace kpengine::audio_player
                    library_filter_ == 2 ? "// PLAYLIST / FAVORITES" : "// PLAYLIST / ALL");
         const float width = std::max(1.0F, ui.AvailableContent().x);
         queue_search_ = ui.TextInput({.id = "audio.queue.search", .label = "",
+            .description = "Search tracks in the playback queue",
             .hint = "Search tracks...", .width = std::min(width, 340.0F)}, queue_search_).value;
         const auto queue = controller_->GetQueue();
         const auto playback = controller_->GetPlaybackView();
@@ -469,17 +525,19 @@ namespace kpengine::audio_player
             {
                 const bool selected = playback.track && playback.track->id == track->id;
                 const auto color = selected ? UiTextRole::Warning : UiTextRole::Primary;
-                ui.TableRow(selected);
+                ui.TableRow(TrackControlId("queue.row", track->id), selected, track->name);
                 ui.TableColumn();
                 ui.Text(CountLabel(++row), color);
                 ui.TableColumn();
                 const std::string id = TrackControlId("queue", track->id);
                 editor::ui::UiControlDescriptor control{id, track->name};
+                control.description = "Select this track in the playback queue";
                 control.icon = icons_.Get(selected && playback.state == audio::AudioState::Playing
                     ? editor::EditorIcon::Play : editor::EditorIcon::Music);
                 control.height = 20.0F;
                 control.text_role = selected ? UiTextRole::Warning : UiTextRole::Accent;
                 control.span_row = true;
+                if (selected) control.selection_decoration = AudioSelectionDecoration();
                 if (ui.Selectable(control, selected).activated)
                     (void)controller_->Select(track->id);
                 ui.TableColumn();
@@ -496,7 +554,7 @@ namespace kpengine::audio_player
                     ui.Text(track->project_asset ? "CONTENT" : "SESSION", color);
                 }
             }
-        });
+        }, "Playback queue");
 
         if (ui.Button({.id = "audio.queue.remove", .label = "REMOVE",
                        .enabled = playback.track.has_value()}).activated)

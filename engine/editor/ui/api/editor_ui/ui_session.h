@@ -2,6 +2,7 @@
 #define KPENGINE_EDITOR_UI_API_UI_SESSION_H
 
 #include "ui_backend.h"
+#include "ui_semantic_interface.h"
 
 namespace kpengine::editor::ui
 {
@@ -23,6 +24,9 @@ namespace kpengine::editor::ui
         bool BeginFrame(const UiFrameInfo &frame);
         FrameScope Frame(const UiFrameInfo &frame);
         UiFrameResult EndFrame();
+        UiSemanticView Query() const { return semantic_.Query(); }
+        UiSemanticChanges ChangesSince(UiSessionId session, std::uint64_t frame) const
+        { return semantic_.ChangesSince(session, frame); }
         void AbortFrame() noexcept;
         void BeginClosing() noexcept;
         void Shutdown() noexcept;
@@ -32,6 +36,7 @@ namespace kpengine::editor::ui
     private:
         std::unique_ptr<IUiBackend> backend_;
         UiContext context_;
+        UiSemanticInterface semantic_;
         UiSessionState state_ = UiSessionState::Uninitialized;
         std::uint64_t frame_ = 0;
         bool closing_requested_ = false;

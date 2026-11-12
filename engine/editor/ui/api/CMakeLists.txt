@@ -2,6 +2,8 @@ add_library(UIWidgets STATIC
     ui_backend.cpp
     ui_plot.cpp
     ui_control_validation.cpp
+    ui_snapshot.cpp
+    ui_semantic_interface.cpp
 )
 target_include_directories(UIWidgets PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

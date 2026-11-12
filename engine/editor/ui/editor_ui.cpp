@@ -246,6 +246,9 @@ namespace kpengine::editor
                 .wsi_factory = init_info.wsi_factory,
                 .background_color = init_info.background_color_override.has_value()
                     ? *init_info.background_color_override : settings.background_color});
+            if (init_info.snapshot_store != nullptr)
+                presentation_host_.SetSnapshotSource(*init_info.snapshot_store, "editor",
+                    init_info.engine != nullptr ? init_info.engine->GetApplicationMode() : "editor", {});
 
             BuildLoadingTree();
 

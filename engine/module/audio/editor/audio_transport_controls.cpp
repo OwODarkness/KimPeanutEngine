@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace kpengine::audio_editor
@@ -69,10 +70,13 @@ namespace kpengine::audio_editor
         std::vector<UiCanvasPrimitive> marks;
         const auto point = [size](const float x, const float y) { return UiVec2{x / size.x, y / size.y}; };
         const auto box = [&](const float left, const float top, const float right, const float bottom,
-                             const UiColor color, const bool fill = true)
+                             const UiColor color, const bool fill = true,
+                             const float emission = 0.0F)
         {
-            marks.push_back({fill ? UiCanvasPrimitiveKind::FilledRect : UiCanvasPrimitiveKind::Rect,
-                point(left, top), point(right, bottom), color});
+            UiCanvasPrimitive mark{fill ? UiCanvasPrimitiveKind::FilledRect : UiCanvasPrimitiveKind::Rect,
+                point(left, top), point(right, bottom), color};
+            mark.emission_strength = emission;
+            marks.push_back(std::move(mark));
         };
         const float inset = std::min(4.0F, size.x * 0.15F);
         const float reserve = label.empty() ? 0.0F : std::min(style.label_width, size.x * 0.5F);
@@ -94,21 +98,41 @@ namespace kpengine::audio_editor
         }
         if (finish > start)
         {
-            if (style.glow)
-            {
-                auto faint = style.fill;
-                faint.a *= 0.16F;
-                box(start, center - half * 2.0F, finish, center + half * 2.0F, faint);
-                faint.a = style.fill.a * 0.45F;
-                box(start, center - half * 1.5F, finish, center + half * 1.5F, faint);
-            }
-            box(start, center - half, finish, center + half, style.fill);
+            box(start, center - half, finish, center + half, style.fill, true,
+                style.glow ? 1.0F : 0.0F);
         }
         if (!label.empty() && reserve > 0.0F)
-            marks.push_back({.kind = UiCanvasPrimitiveKind::Text,
+        {
+            UiCanvasPrimitive text{.kind = UiCanvasPrimitiveKind::Text,
                 .first = point(size.x - inset, center), .color = style.fill,
-                .text = std::string{label}, .text_anchor = {1.0F, 0.5F}});
-        const auto hit = ui.Canvas(control, size, std::move(marks));
+                .text_anchor = {1.0F, 0.5F}, .text_scale = style.label_scale};
+            constexpr std::string_view separator = " / ";
+            const std::size_t split = label.find(separator);
+            if (split == std::string_view::npos)
+                text.text_runs.push_back({std::string{label}, style.fill});
+            else
+            {
+                text.text_runs.push_back({std::string{label.substr(0, split)}, style.fill});
+                text.text_runs.push_back({std::string{separator}, style.secondary_text});
+                text.text_runs.push_back({std::string{label.substr(split + separator.size())},
+                                          style.secondary_text});
+            }
+            marks.push_back(std::move(text));
+        }
+        auto descriptor = control;
+        if (!indeterminate)
+        {
+            descriptor.semantic_role = editor::ui::UiRole::Slider;
+            if (ui.IsObserving() && !descriptor.semantic_value)
+            {
+                descriptor.unit = "%";
+                descriptor.semantic_value = editor::ui::UiValue{static_cast<double>(FiniteUnit(fraction)) * 100.0};
+                descriptor.semantic_minimum = editor::ui::UiValue{0.0};
+                descriptor.semantic_maximum = editor::ui::UiValue{100.0};
+                descriptor.semantic_actions = {editor::ui::UiActionKind::Edit, editor::ui::UiActionKind::Commit};
+            }
+        }
+        const auto hit = ui.Canvas(descriptor, size, std::move(marks));
         if (control.enabled && !indeterminate && (hit.pressed || hit.dragging))
             return FiniteUnit((hit.normalized_pointer.x * size.x - inset) / (end - inset));
         return std::nullopt;
@@ -122,7 +146,13 @@ namespace kpengine::audio_editor
         AudioProgressStyle style;
         style.fill = {48.0F / 255.0F, 211.0F / 255.0F, 239.0F / 255.0F, 1.0F};
         style.label_width = 37.0F;
-        return DrawAudioProgressControl(ui, {.id = id, .label = "Volume"}, value,
+        UiControlDescriptor control{id, "Volume"};
+        control.unit = "%";
+        control.semantic_value = editor::ui::UiValue{static_cast<double>(value * 100.0F)};
+        control.semantic_minimum = editor::ui::UiValue{0.0};
+        control.semantic_maximum = editor::ui::UiValue{100.0};
+        control.semantic_actions = {editor::ui::UiActionKind::Edit, editor::ui::UiActionKind::Commit};
+        return DrawAudioProgressControl(ui, control, value,
             {std::max(1.0F, width), 36.0F}, label, style);
     }
 

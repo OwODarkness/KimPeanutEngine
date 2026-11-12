@@ -6,6 +6,8 @@
 #include <string>
 
 #include "editor/ui/editor_icons.h"
+#include "editor/ui/api/editor_ui/ui_snapshot.h"
+#include "editor/ui/editor_ui_session_commands.h"
 
 namespace kpengine::audio
 {
@@ -46,6 +48,7 @@ namespace kpengine::audio_player
                         AudioPlayerController &controller,
                         std::string &diagnostic);
         bool Render(std::string &diagnostic);
+        editor::ui::UiSessionId SessionId() const noexcept;
         void Shutdown() noexcept;
 
     private:
@@ -65,6 +68,8 @@ namespace kpengine::audio_player
         AudioPlayerController *controller_ = nullptr;
         audio::MiniAudioSystem *audio_system_ = nullptr;
         LogSystem *log_system_ = nullptr;
+        editor::ui::UiSnapshotStore ui_snapshot_store_;
+        editor::EditorUiSessionRegistration ui_session_registration_;
         std::string import_path_;
         std::string subtitle_path_;
         std::string queue_search_;

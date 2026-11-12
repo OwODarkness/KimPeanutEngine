@@ -528,6 +528,16 @@ namespace kpengine::runtime::command
                                                          std::move(result));
                     }
                 };
+                context.request_is_active = [weak_state](const uint64_t id)
+                {
+                    const std::shared_ptr<State> locked_state = weak_state.lock();
+                    if (!locked_state) return false;
+                    std::scoped_lock active_lock(locked_state->mutex);
+                    const auto active = locked_state->requests.find(id);
+                    return active != locked_state->requests.end() &&
+                           active->second.state != State::RequestState::Complete &&
+                           !active->second.result.has_value();
+                };
             }
 
             if (!registration_active)

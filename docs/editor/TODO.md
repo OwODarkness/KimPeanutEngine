@@ -155,12 +155,20 @@ and independent ED5/SET3 acceptance.
 
 ## Deferred follow-up
 
-- **Agent-readable UI and another GUI backend, after ED6 reconstruction.**
-  Design a structured UI representation and reverse translation, clarifying
-  observation, interaction and UI-authoring scope. ED6 already requires a neutral
-  Editor UI API and migration of feature-level ImGui calls. The later design
-  evaluates another production backend against that API; a serializable schema,
-  agent UI framework and second backend are not required for ED6 completion.
+- **Agent-readable GUI snapshots.** The [session snapshot proposal](.plan/ui-session-snapshot.md)
+  defines the generic read-only query and snapshot contract. `UiSession::Query()`
+  returns a pinned immutable GUI Semantic Interface view for consistent tree,
+  element and style queries. The ImGui backend now captures actual logical
+  bounds, active clip intersections and visible state; Audio Player's full
+  snapshot includes coordinate conversion and role-specific state definitions.
+  Its serializer still lives in `AudioPlayerHost` and must move to generic
+  application composition before the transport is host-agnostic. Higher-window
+  occlusion and resolved backend styles remain unavailable. Generic command
+  composition, headless/multiple-session behavior, paging, cancellation and
+  failure-path acceptance remain open.
+- **Agent interaction, UI authoring and a second GUI backend.** Design the
+  interaction and authoring contracts separately. Evaluate a second production
+  backend against the neutral Editor UI API after ED6.
 - Tab reordering and tab-strip overflow scrolling (the hand-rolled strip has neither).
 - Detached windows currently lose the base window chrome (lock toggle, focus accent).
 - The **loading tree** still places itself with ratios: `EditorLoadingComponent` is a

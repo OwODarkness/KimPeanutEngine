@@ -10,11 +10,14 @@
 
 #include "base/type.h"
 #include "editor/ui/api/editor_ui/ui_session.h"
+#include "editor/ui/api/editor_ui/ui_snapshot.h"
 #include "editor/settings/editor_settings.h"
 #include "graphics/backend/common/editor_presentation_bridge.h"
 #include "graphics/backend/common/render_target.h"
 
 struct ImFont;
+
+namespace kpengine::data { struct ShaderData; }
 
 namespace kpengine::editor
 {
@@ -47,11 +50,16 @@ namespace kpengine::editor
         std::pair<double, double> SubmitFrame(
             const std::function<void(IEditorImguiRenderer &)> &before_submit = {});
         void EndFrame();
+        void SetSnapshotSource(ui::UiSnapshotStore &store, std::string host,
+                               std::string mode,
+                               std::function<std::vector<ui::UiWorkspaceSnapshot>()> workspaces);
         void BeginClosing();
         void Close();
 
         void RegisterRenderTargetImage(ui::UiImageId id,
                                        const graphics::RenderTargetView &view);
+        void SetBloomShaderData(std::shared_ptr<data::ShaderData> vertex,
+                                std::shared_ptr<data::ShaderData> fragment);
         void ClearFrameImages() noexcept { image_sources_.clear(); }
         void ClearLastObservation() noexcept { last_ui_observation_.clear(); }
         ui::UiContext &Context();
@@ -61,6 +69,8 @@ namespace kpengine::editor
         double LastBuildTimeMs() const noexcept { return last_build_time_ms_; }
         double LastSubmitTimeMs() const noexcept { return last_submit_time_ms_; }
         bool IsInitialized() const noexcept { return imgui_context_created_ && renderer_ && wsi_; }
+        ui::UiSessionId SessionId() const noexcept
+        { return ui_session_ ? ui_session_->Context().SessionId() : 0; }
         const std::vector<ui::UiNodeObservation> &LastObservation() const noexcept
         {
             return last_ui_observation_;
@@ -68,14 +78,25 @@ namespace kpengine::editor
 
     private:
         void CreateBackends(const EditorUiHostInitInfo &info);
+        void PublishSnapshot() noexcept;
 
         std::unique_ptr<IEditorImguiRenderer> renderer_;
         std::unique_ptr<IEditorImguiWSI> wsi_;
+        std::shared_ptr<data::ShaderData> bloom_vertex_shader_;
+        std::shared_ptr<data::ShaderData> bloom_fragment_shader_;
+        bool bloom_shader_data_configured_ = false;
         std::unique_ptr<ui::UiSession> ui_session_;
         std::unordered_map<ui::UiImageId, graphics::RenderTargetView> image_sources_;
         std::vector<ui::UiNodeObservation> last_ui_observation_;
+        ui::UiSnapshotStore *snapshot_store_ = nullptr;
+        ui::UiSessionId snapshot_session_ = 0;
+        std::string snapshot_host_;
+        std::string snapshot_mode_;
+        std::function<std::vector<ui::UiWorkspaceSnapshot>()> snapshot_workspaces_;
+        ui::UiViewportInfo last_viewport_{};
         ImFont *code_font_ = nullptr;
         bool imgui_context_created_ = false;
+        bool imgui_frame_open_ = false;
         bool renderer_init_attempted_ = false;
         bool wsi_init_attempted_ = false;
         double last_render_time_ms_ = 0.0;

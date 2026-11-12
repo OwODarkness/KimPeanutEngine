@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "editor_workspace_model.h"
+#include "editor/ui/api/editor_ui/ui_snapshot.h"
 
 namespace kpengine::editor::ui { class UiContext; }
 
@@ -22,6 +23,7 @@ namespace kpengine::editor
         void ShowPanel(std::string_view id);
         void Render(ui::UiContext &context);
         EditorWorkspaceModel &Model() noexcept { return model_; }
+        ui::UiWorkspaceSnapshot Snapshot() const;
 
     private:
         enum class ActionKind { Close, Float, Move, Show, Select };

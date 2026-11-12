@@ -47,10 +47,24 @@ namespace kpengine::editor::ui
         window_open_ = true;
         parent_ = window.id;
         operations_.push_back({UiOperation::Kind::BeginWindow, window, {}});
-        pending_observations_.push_back({session_, frame_, window.id, 0, window.role, window.label,
-                                 window.description, window.value, window.enabled,
-                                 window.disabled_reason, false, false, false, {},
-                                 UiGeometryProvenance::Unavailable});
+        UiNodeObservation observation{};
+        observation.session = session_;
+        observation.frame = frame_;
+        observation.id = window.id;
+        observation.role = window.role;
+        observation.label = window.label;
+        observation.description = window.description;
+        observation.enabled = window.enabled;
+        observation.disabled_reason = window.disabled_reason;
+        if (const auto bounds = fixture_bounds_.find(window.id); bounds != fixture_bounds_.end())
+        {
+            observation.bounds = bounds->second;
+            observation.clipped_bounds = bounds->second;
+            observation.geometry = UiGeometryProvenance::TestFixture;
+            observation.visible = true;
+            observation.clipped = false;
+        }
+        pending_observations_.push_back(std::move(observation));
         return true;
     }
 
@@ -109,6 +123,7 @@ namespace kpengine::editor::ui
         pending_observations_.push_back({session_, frame_, container.id, 0, container.role,
                                  container.label, container.description, container.value,
                                  container.enabled, container.disabled_reason});
+        pending_observations_.back().style_id = container.style_id;
     }
 
     UiEditResult UiRecordingBackend::Control(const UiControl &control)
@@ -179,15 +194,35 @@ namespace kpengine::editor::ui
             input_.erase(it);
             break;
         }
-        UiNodeObservation observation{session_, frame_, control.id, parent_, control.role,
-                                      control.label, control.description, result.value,
-                                      control.enabled, control.disabled_reason};
+        UiNodeObservation observation{};
+        observation.session = session_;
+        observation.frame = frame_;
+        observation.id = control.id;
+        observation.parent = parent_;
+        observation.role = control.role;
+        observation.label = control.label;
+        observation.description = control.description;
+        if (control.role != UiRole::Button) observation.value = result.value;
+        observation.enabled = control.enabled;
+        observation.disabled_reason = control.disabled_reason;
         observation.actions = control.actions;
         observation.last_action = result.action;
+        observation.unit = control.unit;
+        observation.domain_summary = control.domain_summary;
+        observation.minimum = control.minimum;
+        observation.maximum = control.maximum;
+        observation.step = control.step;
+        observation.choices = control.choices;
+        observation.style_id = control.style_id;
+        if (control.role == UiRole::Selectable)
+            observation.selected = std::get<bool>(control.value);
         if (const auto bounds = fixture_bounds_.find(control.id); bounds != fixture_bounds_.end())
         {
             observation.bounds = bounds->second;
+            observation.clipped_bounds = bounds->second;
             observation.geometry = UiGeometryProvenance::TestFixture;
+            observation.visible = true;
+            observation.clipped = false;
         }
         pending_observations_.push_back(std::move(observation));
         return result;
@@ -203,9 +238,23 @@ namespace kpengine::editor::ui
         operation.canvas_size = size;
         operation.canvas_primitives.assign(primitives.begin(), primitives.end());
         operations_.push_back(std::move(operation));
-        UiNodeObservation observation{session_, frame_, control.id, parent_, control.role,
-                                      control.label, control.description, control.value,
-                                      control.enabled, control.disabled_reason};
+        UiNodeObservation observation{};
+        observation.session = session_;
+        observation.frame = frame_;
+        observation.id = control.id;
+        observation.parent = parent_;
+        observation.role = control.role;
+        observation.label = control.label;
+        observation.description = control.description;
+        observation.enabled = control.enabled;
+        observation.disabled_reason = control.disabled_reason;
+        observation.unit = control.unit;
+        observation.domain_summary = control.domain_summary;
+        observation.minimum = control.minimum;
+        observation.maximum = control.maximum;
+        observation.step = control.step;
+        observation.actions = control.actions;
+        observation.style_id = control.style_id;
         UiCanvasResult result{};
         if (const auto bounds = fixture_bounds_.find(control.id); bounds != fixture_bounds_.end())
         {

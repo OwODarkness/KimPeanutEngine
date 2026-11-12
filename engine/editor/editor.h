@@ -2,6 +2,8 @@
 #define KPENGINE_EDITOR_H
 
 #include <memory>
+#include "editor/ui/api/editor_ui/ui_snapshot.h"
+#include "editor/ui/editor_ui_session_commands.h"
 
 namespace kpengine{
 
@@ -29,9 +31,12 @@ namespace kpengine::editor{
         void CloseUI();        // render thread — shuts ImGui down before window teardown
 
     private:
+        void RegisterUiSessionCommands();
         kpengine::runtime::Engine* engine_ = nullptr;
         bool initialized_ = false;
         std::shared_ptr<EditorUI> editor_ui_;
+        ui::UiSnapshotStore ui_snapshot_store_;
+        EditorUiSessionRegistration ui_session_registration_;
     };
 }
 

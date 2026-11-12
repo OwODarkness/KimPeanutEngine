@@ -8,4 +8,5 @@ add_library(AudioPlayerEditorUI STATIC
 target_include_directories(AudioPlayerEditorUI PUBLIC "${CMAKE_SOURCE_DIR}/engine")
 target_link_libraries(AudioPlayerEditorUI
     PUBLIC UIWidgets
-    PRIVATE AudioPlayerController AudioEditorWidgets EditorWorkspaceLib EditorUiHostLib RuntimeLib)
+    PRIVATE AudioPlayerController AudioEditorWidgets EditorWorkspaceLib EditorUiHostLib
+            EditorUISessionLib RuntimeLib)
